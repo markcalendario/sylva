@@ -386,6 +386,50 @@
   color: var(--firefly);
 }
 
+/* ---------- settings sections ---------- */
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-3);
+  padding-bottom: var(--pad-4);
+  margin-bottom: var(--pad-3);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.settings-section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: var(--pad-2);
+}
+
+.settings-heading {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xs);
+  letter-spacing: 1px;
+  color: var(--firefly);
+  margin: 0;
+  text-transform: lowercase;
+}
+
+.settings-control {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-3);
+  padding: var(--pad-1) 0;
+}
+
+.audio-btn-solo {
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: 4px var(--pad-2);
+}
+
+.audio-btn-muted {
+  color: var(--ember);
+  border-color: var(--ember-dim);
+}
+
 .inherit-row {
   display: flex;
   align-items: center;

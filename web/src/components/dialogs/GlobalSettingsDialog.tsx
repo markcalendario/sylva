@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { AgentSettings } from "sylva-shared";
 import { api, ApiFailure } from "../../lib/api";
+import { AudioControls } from "../AudioControls";
 import { Dialog } from "../Dialog";
+import { TextSize } from "../TextSize";
 import { BypassWarning, EffortField, ModelField, PermissionField } from "./settingsFields";
 
 /** Defaults every worktree inherits unless it overrides them. */
@@ -23,7 +25,7 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
 
   if (!settings || !saved) {
     return (
-      <Dialog title="Global settings" open={open} onClose={onClose}>
+      <Dialog title="Settings" open={open} onClose={onClose}>
         <p className="dialog-hint">Loading…</p>
       </Dialog>
     );
@@ -50,11 +52,41 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
   };
 
   return (
-    <Dialog title="Global settings" open={open} onClose={onClose}>
-      <p className="dialog-hint">
-        Defaults for every worktree. A worktree that sets its own value keeps it — these only fill
-        in the rest.
-      </p>
+    <Dialog title="Settings" open={open} onClose={onClose}>
+      <section className="settings-section">
+        <h3 className="settings-heading">Appearance</h3>
+        <div className="field">
+          Text size
+          <div className="settings-control">
+            <TextSize />
+          </div>
+          <span className="field-hint">
+            Scales every piece of text in Sylva. Saved to this browser; applies as you change it.
+          </span>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3 className="settings-heading">Sound</h3>
+        <div className="field">
+          Volume and ambience
+          <div className="settings-control">
+            <AudioControls />
+          </div>
+          <span className="field-hint">
+            Chimes when an agent finishes, a firmer cue when one needs your approval, and blips for
+            commits and prompts. ♪ plays a forest ambience — wind, a low pad, the occasional
+            cricket.
+          </span>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3 className="settings-heading">Agent defaults</h3>
+        <p className="dialog-hint">
+          Defaults for every worktree. A worktree that sets its own value keeps it — these only
+          fill in the rest.
+        </p>
 
       <ModelField
         value={settings.model}
@@ -83,26 +115,28 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
         />
       )}
 
-      {error && <div className="form-error">{error}</div>}
+        {error && <div className="form-error">{error}</div>}
 
-      {dirty && (
-        <p className="dialog-hint">
-          Saving restarts any running session that inherits a changed value. Conversations carry
-          over.
-        </p>
-      )}
+        {dirty && (
+          <p className="dialog-hint">
+            Saving restarts any running session that inherits a changed value. Conversations carry
+            over.
+          </p>
+        )}
+      </section>
 
       <div className="dialog-actions">
         <button type="button" className="btn-quiet" onClick={onClose} disabled={busy}>
-          Cancel
+          {dirty ? "Cancel" : "Close"}
         </button>
         <button
           type="button"
           className="btn-primary"
           onClick={() => void save()}
           disabled={busy || !dirty}
+          title={dirty ? undefined : "Appearance and sound are already saved"}
         >
-          {busy ? "Saving…" : "Save settings"}
+          {busy ? "Saving…" : "Save agent defaults"}
         </button>
       </div>
     </Dialog>

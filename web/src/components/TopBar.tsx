@@ -1,7 +1,6 @@
 import { api } from "../lib/api";
 import { useSylva } from "../state/store";
 import { AudioControls } from "./AudioControls";
-import { TextSize } from "./TextSize";
 
 export function TopBar({
   onAbout,
@@ -30,15 +29,10 @@ export function TopBar({
         )}
       </div>
       <div className="topbar-right">
-        <button
-          className="topbar-settings"
-          onClick={onGlobalSettings}
-          title="Global agent settings"
-        >
+        <AudioControls compact />
+        <button className="topbar-settings" onClick={onGlobalSettings} title="Settings">
           ⚙ Settings
         </button>
-        <AudioControls />
-        <TextSize />
         <div className={`conn conn-${connection}`}>
           <span className="conn-dot" />
           {connection === "connected"

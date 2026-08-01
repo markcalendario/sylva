@@ -36,9 +36,28 @@ function SpeakerIcon({ muted }: { muted: boolean }) {
   );
 }
 
-/** Mute, volume, and the ambient-bed toggle, next to the text size stepper. */
-export function AudioControls() {
+/**
+ * Mute, volume, and the ambient-bed toggle. `compact` renders the mute switch
+ * alone — the top bar keeps that one because silencing is the thing you want
+ * instantly; the rest lives in Settings.
+ */
+export function AudioControls({ compact = false }: { compact?: boolean }) {
   const state = useSyncExternalStore(subscribe, getAudioState, getAudioState);
+
+  if (compact) {
+    return (
+      <button
+        className={`audio-btn audio-btn-solo ${state.muted ? "audio-btn-muted" : ""}`}
+        onClick={() => setMuted(!state.muted)}
+        role="switch"
+        aria-checked={!state.muted}
+        title={state.muted ? "Unmute sound" : "Mute sound"}
+        aria-label={state.muted ? "Unmute sound" : "Mute sound"}
+      >
+        <SpeakerIcon muted={state.muted} />
+      </button>
+    );
+  }
 
   return (
     <div className="audio" role="group" aria-label="Sound">
