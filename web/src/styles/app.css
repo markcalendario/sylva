@@ -1924,6 +1924,16 @@ button:disabled {
   gap: var(--pad-2);
 }
 
+.commit-actions {
+  display: flex;
+  gap: var(--pad-2);
+  flex-wrap: wrap;
+}
+
+.commit-actions .btn-primary {
+  flex: 1;
+}
+
 .commit-form textarea {
   resize: vertical;
   background: var(--pine-0);
@@ -2140,4 +2150,74 @@ button:disabled {
 .seg .seg-on {
   background: var(--pine-3);
   color: var(--moon);
+}
+
+/* ── Tooltips ───────────────────────────────────────────────────────────────
+   One shared node, positioned by TooltipLayer and driven by [data-tip].
+   Shown as a popover so it sits in the top layer and clears open dialogs. */
+.tooltip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+  bottom: auto;
+  z-index: 200;
+  width: max-content;
+  max-width: 260px;
+  margin: 0;
+  padding: 5px var(--pad-2);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-2);
+  color: var(--moon);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  text-align: left;
+  overflow: visible;
+  box-shadow: var(--shadow-raise);
+  pointer-events: none;
+}
+
+.tooltip:not([data-open]) {
+  display: none;
+}
+
+/* Caret. --tip-arrow is set inline so it tracks the anchor even when the
+   tip has been clamped against a viewport edge. */
+.tooltip::after {
+  content: "";
+  position: absolute;
+  left: var(--tip-arrow, 50%);
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  background: var(--pine-2);
+  border: 1px solid var(--pine-3);
+  transform: rotate(45deg);
+}
+
+.tooltip[data-placement="top"]::after {
+  bottom: -4px;
+  border-top: 0;
+  border-left: 0;
+}
+
+.tooltip[data-placement="bottom"]::after {
+  top: -4px;
+  border-bottom: 0;
+  border-right: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tooltip[data-open] {
+    animation: tip-in 90ms ease-out;
+  }
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
 }

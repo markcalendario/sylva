@@ -29,6 +29,17 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     return gitOps.status(worktreeId);
   });
 
+  /** Seeds the Files feed on focus, so the tab isn't blank on arrival. */
+  app.get("/api/worktrees/:worktreeId/recent-files", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    return gitOps.recentFiles(worktreeId);
+  });
+
+  app.post("/api/worktrees/:worktreeId/commit-message", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    return ctx.commitMessages.generate(worktreeId);
+  });
+
   app.get("/api/worktrees/:worktreeId/diff", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     const query = diffQuerySchema.parse(req.query);

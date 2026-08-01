@@ -22,16 +22,33 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
         <div className="credits-role">Full-stack web developer · Caloocan, Philippines</div>
         <div className="credits-tagline">Design ▸ Build ▸ Ship</div>
         <div className="credits-links">
-          <a href="https://markcalendario.vercel.app/" target="_blank" rel="noreferrer">
+          <a
+            href="https://markcalendario.vercel.app/"
+            target="_blank"
+            rel="noreferrer"
+            data-tip="Open the author's portfolio in a new tab"
+          >
             Portfolio
           </a>
-          <a href="https://github.com/markcalendario" target="_blank" rel="noreferrer">
+          <a
+            href="https://github.com/markcalendario"
+            target="_blank"
+            rel="noreferrer"
+            data-tip="Open the author's GitHub in a new tab"
+          >
             GitHub
           </a>
-          <a href="https://www.linkedin.com/in/markcalendario" target="_blank" rel="noreferrer">
+          <a
+            href="https://www.linkedin.com/in/markcalendario"
+            target="_blank"
+            rel="noreferrer"
+            data-tip="Open the author's LinkedIn in a new tab"
+          >
             LinkedIn
           </a>
-          <a href="mailto:markcalendario@gmail.com">Email</a>
+          <a href="mailto:markcalendario@gmail.com" data-tip="Email the author">
+            Email
+          </a>
         </div>
       </div>
 
@@ -41,7 +58,12 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
       </p>
 
       <div className="dialog-actions">
-        <button type="button" className="btn-primary" onClick={onClose}>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={onClose}
+          data-tip="Close and go back to Sylva"
+        >
           Back to the forest
         </button>
       </div>

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   AgentAvailability,
   AgentEvent,
+  Attachment,
   FileEvent,
   PermissionRequest,
   ServerEvent,
@@ -14,6 +15,19 @@ const CELEBRATE_MS = 4000;
 
 /** Stable empty arrays so selectors don't mint new references every render. */
 export const NO_EVENTS: never[] = [];
+
+/** What you've typed but not sent, per worktree. */
+export interface Draft {
+  text: string;
+  attachments: Attachment[];
+}
+
+/**
+ * Shared empty draft. Must be a stable reference: the selector returns it for
+ * every untouched worktree, and a fresh object each call would re-render the
+ * prompt bar on every store update.
+ */
+export const EMPTY_DRAFT: Draft = { text: "", attachments: [] };
 
 export type Connection = "connecting" | "connected" | "disconnected";
 
@@ -29,13 +43,23 @@ interface SylvaState {
   celebratingUntil: Record<string, number>; // by worktreeId
   /** Worktrees with activity the user hasn't looked at (unfocused). */
   unseenActivity: Record<string, boolean>;
+  /**
+   * Unsent prompt text and attachments, by worktreeId. Lives here rather than
+   * in AgentPanel because switching tabs unmounts that panel — local state
+   * would throw away whatever you'd typed. Keying by worktree also means a
+   * half-written prompt survives wandering off to another tree and back.
+   */
+  drafts: Record<string, Draft>;
 
   setConnection: (c: Connection) => void;
+  setDraft: (worktreeId: string, patch: Partial<Draft>) => void;
+  clearDraft: (worktreeId: string) => void;
   setFocus: (worktreeId: string | null) => void;
   setTranscript: (worktreeId: string, events: AgentEvent[]) => void;
   setSession: (worktreeId: string, session: SessionInfo | null) => void;
   setPermissions: (worktreeId: string, reqs: PermissionRequest[]) => void;
   setStatus: (status: WorktreeStatus) => void;
+  seedFileFeed: (worktreeId: string, events: FileEvent[]) => void;
   setAvailability: (a: AgentAvailability) => void;
   celebrate: (worktreeId: string) => void;
   applyServerEvent: (event: ServerEvent) => void;
@@ -52,8 +76,37 @@ export const useSylva = create<SylvaState>((set, get) => ({
   statuses: {},
   celebratingUntil: {},
   unseenActivity: {},
+  drafts: {},
 
   setConnection: (connection) => set({ connection }),
+
+  setDraft: (worktreeId, patch) =>
+    set((s) => ({
+      drafts: {
+        ...s.drafts,
+        [worktreeId]: { ...(s.drafts[worktreeId] ?? EMPTY_DRAFT), ...patch },
+      },
+    })),
+
+  clearDraft: (worktreeId) =>
+    set((s) => {
+      if (!s.drafts[worktreeId]) return {};
+      const drafts = { ...s.drafts };
+      delete drafts[worktreeId];
+      return { drafts };
+    }),
+
+  /**
+   * Fill the feed from git status on arrival. Anything already streamed in is
+   * newer than a seeded mtime, so live entries stay on top and win on path.
+   */
+  seedFileFeed: (worktreeId, events) =>
+    set((s) => {
+      const live = s.fileFeed[worktreeId] ?? [];
+      const seen = new Set(live.map((e) => e.path));
+      const merged = [...live, ...events.filter((e) => !seen.has(e.path))];
+      return { fileFeed: { ...s.fileFeed, [worktreeId]: merged.slice(0, FEED_CAP) } };
+    }),
 
   setFocus: (focusedWorktreeId) =>
     set((s) => ({

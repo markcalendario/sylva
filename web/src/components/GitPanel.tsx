@@ -8,16 +8,21 @@ import { DiffView } from "./DiffView";
 
 function FileList({
   title,
+  tip,
   entries,
   action,
   actionLabel,
+  actionTip,
   onSelect,
   selectedPath,
 }: {
   title: string;
+  /** What this group of files means, for the header tooltip. */
+  tip: string;
   entries: StatusEntry[];
   action: (path: string) => void;
   actionLabel: string;
+  actionTip: string;
   onSelect: (path: string, staged: boolean) => void;
   selectedPath: string | null;
 }) {
@@ -26,16 +31,24 @@ function FileList({
   return (
     <section className="git-group">
       <header className="git-group-head">
-        <span className="pixel-label">{title.toLowerCase()}</span>
-        <span className="git-count">{entries.length}</span>
+        <span className="pixel-label" data-tip={tip}>
+          {title.toLowerCase()}
+        </span>
+        <span className="git-count" data-tip="Files in this group">
+          {entries.length}
+        </span>
       </header>
       {entries.map((entry) => (
         <div
           key={`${title}-${entry.path}`}
           className={`git-file ${selectedPath === entry.path ? "git-file-on" : ""}`}
         >
-          <button className="git-file-name" onClick={() => onSelect(entry.path, staged)}>
-            <span className={`chg chg-${entry.kind}`}>
+          <button
+            className="git-file-name"
+            onClick={() => onSelect(entry.path, staged)}
+            data-tip="Show this file's diff"
+          >
+            <span className={`chg chg-${entry.kind}`} data-tip={`This file was ${entry.kind}`}>
               {entry.kind === "added" || entry.kind === "untracked"
                 ? "+"
                 : entry.kind === "deleted"
@@ -46,7 +59,11 @@ function FileList({
             </span>
             {entry.renamedFrom ? `${entry.renamedFrom} → ${entry.path}` : entry.path}
           </button>
-          <button className="ghost git-file-action" onClick={() => action(entry.path)}>
+          <button
+            className="ghost git-file-action"
+            onClick={() => action(entry.path)}
+            data-tip={actionTip}
+          >
             {actionLabel}
           </button>
         </div>
@@ -71,10 +88,28 @@ export function GitPanel({
     initialDiffPath ? { path: initialDiffPath, staged: false } : null,
   );
   const [message, setMessage] = useState("");
+  const [drafting, setDrafting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const diff = useDiff(selected ? worktreeId : null, selected?.path ?? null, selected?.staged ?? false);
+
+  /**
+   * Runs as its own one-off query, not through this worktree's chat session,
+   * so it works mid-turn and leaves nothing in the transcript.
+   */
+  const draftMessage = async () => {
+    setDrafting(true);
+    setFeedback(null);
+    try {
+      const { message: drafted } = await api.commitMessage(worktreeId);
+      setMessage(drafted);
+    } catch (e) {
+      setFeedback(e instanceof ApiFailure ? (e.detail ?? e.message) : "Couldn't draft a message");
+    } finally {
+      setDrafting(false);
+    }
+  };
 
   const run = async (fn: () => Promise<unknown>, done?: string) => {
     setBusy(true);
@@ -110,6 +145,7 @@ export function GitPanel({
             className="btn-quiet"
             disabled={busy}
             onClick={() => void run(() => api.pull(worktreeId), "Pulled.")}
+            data-tip="Fetch and merge commits from the remote"
           >
             ↓ Pull
           </button>
@@ -117,6 +153,7 @@ export function GitPanel({
             className="btn-quiet"
             disabled={busy}
             onClick={() => void run(() => api.push(worktreeId, false), "Pushed.")}
+            data-tip="Send your commits to the remote"
           >
             ↑ Push
           </button>
@@ -125,34 +162,45 @@ export function GitPanel({
               className="btn-quiet"
               disabled={busy}
               onClick={() => void run(() => api.stage(worktreeId, "all"))}
+              data-tip="Stage every change in this worktree"
             >
               Stage all
             </button>
           )}
         </div>
 
-        {clean && <div className="git-clean">Clean canopy — nothing to commit.</div>}
+        {clean && (
+          <div className="git-clean" data-tip="Nothing has changed since the last commit">
+            Clean canopy — nothing to commit.
+          </div>
+        )}
 
         <FileList
           title="Staged"
+          tip="Changes that will go into the next commit"
           entries={status.staged}
           actionLabel="unstage"
+          actionTip="Take this file back out of the next commit"
           action={(p) => void run(() => api.unstage(worktreeId, [p]))}
           onSelect={(path, staged) => setSelected({ path, staged })}
           selectedPath={selected?.staged ? selected.path : null}
         />
         <FileList
           title="Changes"
+          tip="Tracked files you've edited but not staged yet"
           entries={status.unstaged}
           actionLabel="stage"
+          actionTip="Add this file to the next commit"
           action={(p) => void run(() => api.stage(worktreeId, [p]))}
           onSelect={(path, staged) => setSelected({ path, staged })}
           selectedPath={selected && !selected.staged ? selected.path : null}
         />
         <FileList
           title="Untracked"
+          tip="New files git isn't following yet"
           entries={status.untracked}
           actionLabel="stage"
+          actionTip="Start tracking this file and add it to the next commit"
           action={(p) => void run(() => api.stage(worktreeId, [p]))}
           onSelect={(path) => setSelected({ path, staged: false })}
           selectedPath={selected && !selected.staged ? selected.path : null}
@@ -175,14 +223,35 @@ export function GitPanel({
               placeholder="Commit message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
+              data-tip="Describe what this commit changes"
             />
-            <button className="btn-primary" type="submit" disabled={busy || !message.trim()}>
-              Commit {status.staged.length} file{status.staged.length === 1 ? "" : "s"}
-            </button>
+            <div className="commit-actions">
+              <button
+                className="btn-quiet"
+                type="button"
+                disabled={busy || drafting}
+                onClick={() => void draftMessage()}
+                data-tip="Have a dryad read the staged diff and write the message"
+              >
+                {drafting ? "Reading the diff…" : "✦ Draft message"}
+              </button>
+              <button
+                className="btn-primary"
+                type="submit"
+                disabled={busy || drafting || !message.trim()}
+                data-tip="Record the staged files as a commit"
+              >
+                Commit {status.staged.length} file{status.staged.length === 1 ? "" : "s"}
+              </button>
+            </div>
           </form>
         )}
 
-        {feedback && <div className="git-feedback">{feedback}</div>}
+        {feedback && (
+          <div className="git-feedback" data-tip="Result of the last git command">
+            {feedback}
+          </div>
+        )}
       </div>
 
       <div className="git-diff">
@@ -190,8 +259,17 @@ export function GitPanel({
           diff.data ? (
             <>
               <div className="diff-title">
-                <code>{selected.path}</code>
-                <span className="pixel-label">{selected.staged ? "staged" : "unstaged"}</span>
+                <code data-tip="File you're looking at">{selected.path}</code>
+                <span
+                  className="pixel-label"
+                  data-tip={
+                    selected.staged
+                      ? "Showing the copy already staged for commit"
+                      : "Showing edits that aren't staged yet"
+                  }
+                >
+                  {selected.staged ? "staged" : "unstaged"}
+                </span>
               </div>
               <DiffView diff={diff.data} />
             </>

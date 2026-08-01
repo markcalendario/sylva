@@ -30,6 +30,14 @@ function buildSheet(state: SpriteState): string {
   return uri;
 }
 
+/** What each animation is telling you, for the tooltip. */
+const STATE_TIP: Record<SpriteState, string> = {
+  idle: "Resting — no agent is running here",
+  working: "Working — the agent is running right now",
+  success: "Celebrating — the last turn finished cleanly",
+  error: "Panicking — the last turn ended in an error",
+};
+
 interface SpriteProps {
   state: SpriteState;
   /** Pixel scale factor; 2 → 32px, 4 → 64px. */
@@ -50,7 +58,7 @@ export function Sprite({ state, scale = 2, title }: SpriteProps) {
       className="sprite"
       role="img"
       aria-label={title ?? `sprite: ${state}`}
-      title={title}
+      data-tip={title ? `${title} · ${STATE_TIP[state]}` : STATE_TIP[state]}
       style={{ width: size, height: size }}
     >
       <div

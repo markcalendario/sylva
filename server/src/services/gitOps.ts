@@ -1,5 +1,13 @@
-import { isAbsolute, normalize } from "node:path";
-import type { BaseDivergence, BranchInfo, FileDiff, WorktreeStatus } from "sylva-shared";
+import { stat } from "node:fs/promises";
+import { isAbsolute, join, normalize } from "node:path";
+import type {
+  BaseDivergence,
+  BranchInfo,
+  FileChangeKind,
+  FileDiff,
+  FileEvent,
+  WorktreeStatus,
+} from "sylva-shared";
 import { badRequest, conflict, GitError } from "../lib/errors.js";
 import { parseBranches, parseDiff, parseStatusV2 } from "../lib/parse.js";
 import type { GitService } from "./git.js";
@@ -76,6 +84,51 @@ export class GitOps {
       }
     }
     return null;
+  }
+
+  /**
+   * The worktree's current uncommitted changes as feed entries, timestamped by
+   * each file's mtime.
+   *
+   * The Files tab watches the filesystem, so it only ever knew about changes
+   * that happened while Sylva was watching — arriving at a worktree with weeks
+   * of work in it showed an empty feed. This seeds that feed with what's
+   * already changed, so the tab reads as "what's different here, newest first"
+   * from the moment you open it.
+   */
+  async recentFiles(worktreeId: string, limit = 200): Promise<FileEvent[]> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const status = await this.status(worktreeId);
+
+    // A path can be both staged and unstaged; the feed wants it once.
+    const kinds = new Map<string, FileChangeKind>();
+    for (const entry of [...status.staged, ...status.unstaged, ...status.untracked]) {
+      // Later groups win: an unstaged edit is more recent than its staged copy.
+      kinds.set(entry.path, entry.kind);
+    }
+
+    const events = await Promise.all(
+      [...kinds].map(async ([path, kind]): Promise<FileEvent | null> => {
+        const change =
+          kind === "deleted" ? "deleted" : kind === "modified" || kind === "renamed" ? "changed" : "added";
+        if (change === "deleted") {
+          // Nothing on disk to stat; date it to now so it still sorts sensibly.
+          return { worktreeId, path, change, at: new Date().toISOString() };
+        }
+        try {
+          const st = await stat(join(worktree.path, path));
+          return { worktreeId, path, change, at: new Date(st.mtimeMs).toISOString() };
+        } catch {
+          // Raced with a delete, or an unreadable path — drop it.
+          return null;
+        }
+      }),
+    );
+
+    return events
+      .filter((e): e is FileEvent => e !== null)
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, limit);
   }
 
   async diff(worktreeId: string, filePath: string, staged: boolean): Promise<FileDiff> {

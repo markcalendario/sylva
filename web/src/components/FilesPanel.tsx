@@ -1,9 +1,9 @@
 import { NO_EVENTS, useSylva } from "../state/store";
 
-const CHANGE_GLYPH: Record<string, { glyph: string; cls: string }> = {
-  added: { glyph: "+", cls: "chg-add" },
-  changed: { glyph: "~", cls: "chg-mod" },
-  deleted: { glyph: "−", cls: "chg-del" },
+const CHANGE_GLYPH: Record<string, { glyph: string; cls: string; tip: string }> = {
+  added: { glyph: "+", cls: "chg-add", tip: "This file was created" },
+  changed: { glyph: "~", cls: "chg-mod", tip: "This file was edited" },
+  deleted: { glyph: "−", cls: "chg-del", tip: "This file was deleted" },
 };
 
 export function FilesPanel({
@@ -33,11 +33,13 @@ export function FilesPanel({
             key={`${event.path}-${event.at}-${i}`}
             className="file-row"
             onClick={() => onOpenDiff(event.path)}
-            title="Open diff"
+            data-tip="Open this file's diff in the Git tab"
           >
-            <span className={`chg ${meta.cls}`}>{meta.glyph}</span>
+            <span className={`chg ${meta.cls}`} data-tip={meta.tip}>
+              {meta.glyph}
+            </span>
             <span className="file-path">{event.path}</span>
-            <span className="file-time">
+            <span className="file-time" data-tip="When Sylva saw the change">
               {new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
             </span>
           </button>

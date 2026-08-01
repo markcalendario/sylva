@@ -6,6 +6,7 @@ import type {
   BranchInfo,
   DirListing,
   FileDiff,
+  FileEvent,
   PermissionAnswer,
   PermissionRequest,
   Repo,
@@ -85,6 +86,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ message }),
     }),
+  recentFiles: (worktreeId: string) =>
+    request<FileEvent[]>(`/api/worktrees/${worktreeId}/recent-files`),
+  commitMessage: (worktreeId: string) =>
+    request<{ message: string }>(`/api/worktrees/${worktreeId}/commit-message`, {
+      method: "POST",
+      body: "{}",
+    }),
+
   branches: (repoId: string) => request<BranchInfo[]>(`/api/repos/${repoId}/branches`),
   push: (worktreeId: string, setUpstream: boolean) =>
     request<{ output: string }>(`/api/worktrees/${worktreeId}/push`, {

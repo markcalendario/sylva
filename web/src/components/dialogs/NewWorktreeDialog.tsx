@@ -65,6 +65,7 @@ export function NewWorktreeDialog({
           type="button"
           className={mode === "new" ? "seg-on" : ""}
           onClick={() => setMode("new")}
+          data-tip="Create a branch and check it out in the new worktree"
         >
           New branch
         </button>
@@ -72,6 +73,7 @@ export function NewWorktreeDialog({
           type="button"
           className={mode === "existing" ? "seg-on" : ""}
           onClick={() => setMode("existing")}
+          data-tip="Check out a branch that has no worktree yet"
         >
           Existing branch
         </button>
@@ -86,7 +88,11 @@ export function NewWorktreeDialog({
         {!repo && (
           <label className="field">
             Repository
-            <select value={targetRepoId} onChange={(e) => setRepoId(e.target.value)}>
+            <select
+              value={targetRepoId}
+              onChange={(e) => setRepoId(e.target.value)}
+              data-tip="Repository the worktree is created in"
+            >
               {available.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
@@ -106,6 +112,7 @@ export function NewWorktreeDialog({
                 placeholder="feature/night-mode"
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}
+                data-tip="Name for the branch this worktree will create"
               />
             </label>
             <label className="field">
@@ -115,13 +122,18 @@ export function NewWorktreeDialog({
                 placeholder="main"
                 value={baseRef}
                 onChange={(e) => setBaseRef(e.target.value)}
+                data-tip="Branch or commit the new branch starts from"
               />
             </label>
           </>
         ) : (
           <label className="field">
             Branch
-            <select value={branch} onChange={(e) => setBranch(e.target.value)}>
+            <select
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              data-tip="Existing branch to check out here"
+            >
               <option value="">Choose a branch…</option>
               {freeBranches.map((b) => (
                 <option key={b.name} value={b.name}>
@@ -135,16 +147,28 @@ export function NewWorktreeDialog({
           </label>
         )}
 
-        {error && <div className="form-error">{error}</div>}
+        {error && (
+          <div className="form-error" data-tip="Git wouldn't create the worktree">
+            {error}
+          </div>
+        )}
 
         <div className="dialog-actions">
-          <button type="button" className="btn-quiet" onClick={onClose}>
+          <button
+            type="button"
+            className="btn-quiet"
+            onClick={onClose}
+            data-tip="Close without creating a worktree"
+          >
             Cancel
           </button>
           <button
             type="submit"
             className="btn-primary"
             disabled={busy || !branch.trim() || !targetRepoId}
+            data-tip={
+              branch.trim() ? "Create the worktree and open it" : "Name a branch first"
+            }
           >
             {busy ? "Growing…" : "Create worktree"}
           </button>

@@ -12,17 +12,24 @@ export function TopBar({
   const connection = useSylva((s) => s.connection);
   const focused = useSylva((s) => s.focusedWorktreeId);
 
+  const connTip =
+    connection === "connected"
+      ? "Live connection to the Sylva server is healthy"
+      : connection === "connecting"
+        ? "Opening the live connection to the Sylva server"
+        : "Connection lost — retrying in the background";
+
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <button className="wordmark" onClick={onAbout} title="About Sylva">
+        <button className="wordmark" onClick={onAbout} data-tip="What Sylva is, and who built it">
           <span className="wordmark-glyph">✦</span> SYLVA
         </button>
         {focused && (
           <button
             className="btn-quiet topbar-forest"
             onClick={() => void api.setFocus(null)}
-            title="Show every worktree"
+            data-tip="Leave this worktree and see the whole forest"
           >
             ⌂ Forest
           </button>
@@ -30,10 +37,14 @@ export function TopBar({
       </div>
       <div className="topbar-right">
         <AudioControls compact />
-        <button className="topbar-settings" onClick={onGlobalSettings} title="Settings">
+        <button
+          className="topbar-settings"
+          onClick={onGlobalSettings}
+          data-tip="Agent defaults, sound and text size"
+        >
           ⚙ Settings
         </button>
-        <div className={`conn conn-${connection}`}>
+        <div className={`conn conn-${connection}`} data-tip={connTip}>
           <span className="conn-dot" />
           {connection === "connected"
             ? "connected"

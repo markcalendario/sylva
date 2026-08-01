@@ -66,11 +66,14 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
           className="btn-quiet browse-up"
           onClick={() => listing?.parent && go(listing.parent)}
           disabled={!listing?.parent || loading}
-          title="Go to parent folder"
+          data-tip="Go up to the parent folder"
         >
           ↑
         </button>
-        <code className="browse-current" title={listing?.path}>
+        <code
+          className="browse-current"
+          data-tip={listing?.path ? `Browsing ${listing.path}` : "Folder you're browsing"}
+        >
           {listing?.path ?? "…"}
         </code>
       </div>
@@ -80,8 +83,17 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
         {!loading &&
           visible.map((entry) => (
             <div key={entry.path} className={`browse-row ${entry.isRepo ? "browse-row-repo" : ""}`}>
-              <button className="browse-open" onClick={() => go(entry.path)} title="Open folder">
-                <span className="browse-icon">{entry.isRepo ? "🌳" : "📁"}</span>
+              <button
+                className="browse-open"
+                onClick={() => go(entry.path)}
+                data-tip="Look inside this folder"
+              >
+                <span
+                  className="browse-icon"
+                  data-tip={entry.isRepo ? "A git repository" : "A plain folder"}
+                >
+                  {entry.isRepo ? "🌳" : "📁"}
+                </span>
                 <span className="browse-name">{entry.name}</span>
               </button>
               {entry.isRepo && (
@@ -89,6 +101,7 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
                   className="btn-primary browse-pick"
                   disabled={busy}
                   onClick={() => void register(entry.path)}
+                  data-tip="Add this repository to Sylva"
                 >
                   Register
                 </button>
@@ -101,7 +114,11 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
       </div>
 
       {hiddenCount > 0 && (
-        <button className="browse-toggle-hidden" onClick={() => setShowHidden((h) => !h)}>
+        <button
+          className="browse-toggle-hidden"
+          onClick={() => setShowHidden((h) => !h)}
+          data-tip={showHidden ? "Hide dot-folders again" : "Also list folders whose names start with a dot"}
+        >
           {showHidden ? "Hide" : `Show ${hiddenCount}`} hidden folder{hiddenCount === 1 ? "" : "s"}
         </button>
       )}
@@ -131,8 +148,14 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
               placeholder="/Users/you/Desktop/my-project"
               value={typedPath}
               onChange={(e) => setTypedPath(e.target.value)}
+              data-tip="Absolute path to a git repository on this machine"
             />
-            <button type="submit" className="btn-quiet" disabled={busy || !typedPath.trim()}>
+            <button
+              type="submit"
+              className="btn-quiet"
+              disabled={busy || !typedPath.trim()}
+              data-tip="Register the path you typed"
+            >
               Use path
             </button>
           </div>
@@ -140,7 +163,13 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
       </form>
 
       <div className="dialog-actions">
-        <button type="button" className="btn-quiet" onClick={onClose} disabled={busy}>
+        <button
+          type="button"
+          className="btn-quiet"
+          onClick={onClose}
+          disabled={busy}
+          data-tip="Close without registering anything"
+        >
           Cancel
         </button>
         <button
@@ -148,7 +177,7 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
           className="btn-primary"
           disabled={busy || !listing?.isRepo}
           onClick={() => listing && void register(listing.path)}
-          title={
+          data-tip={
             listing?.isRepo
               ? "Register the folder you're currently in"
               : "The current folder isn't a git repository"

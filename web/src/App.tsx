@@ -9,6 +9,7 @@ import { useSylva } from "./state/store";
 import { Sidebar } from "./components/Sidebar";
 import { MainPanel } from "./components/MainPanel";
 import { StatusStrip } from "./components/StatusStrip";
+import { TooltipLayer } from "./components/Tooltip";
 import { TopBar } from "./components/TopBar";
 import "./styles/tokens.css";
 import "./styles/base.css";
@@ -59,6 +60,8 @@ function Shell() {
           void qc.invalidateQueries({ queryKey: ["repos"] });
         }}
       />
+
+      <TooltipLayer />
     </div>
   );
 }

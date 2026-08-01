@@ -25,21 +25,35 @@ function WorktreeRow({
 
   return (
     <div className={`wt-row ${focused ? "focused" : ""}`}>
-      <button className="wt-open" onClick={() => void api.setFocus(worktree.id)}>
+      <button
+        className="wt-open"
+        onClick={() => void api.setFocus(worktree.id)}
+        data-tip="Open this worktree and work in it"
+      >
         <Sprite state={spriteState} scale={1} title={worktree.branch ?? "detached"} />
-        <span className="wt-name">
+        <span className="wt-name" data-tip="Branch checked out in this worktree">
           {worktree.branch ?? `${worktree.head.slice(0, 7)} (detached)`}
-          {worktree.isMain && <span className="wt-main-tag">main worktree</span>}
+          {worktree.isMain && (
+            <span className="wt-main-tag" data-tip="The repository's original checkout">
+              main worktree
+            </span>
+          )}
         </span>
       </button>
       <span className="wt-meta">
-        {unseen && !focused && <span className="unseen-dot" title="New activity" />}
-        {dirtyCount > 0 && <span className="dirty-count">{dirtyCount}</span>}
+        {unseen && !focused && (
+          <span className="unseen-dot" data-tip="New agent activity you haven't looked at" />
+        )}
+        {dirtyCount > 0 && (
+          <span className="dirty-count" data-tip="Files changed but not committed">
+            {dirtyCount}
+          </span>
+        )}
       </span>
       {!worktree.isMain && (
         <button
           className="ghost wt-remove"
-          title="Remove worktree"
+          data-tip="Delete this worktree's folder; the branch stays"
           aria-label={`Remove worktree ${worktree.branch ?? worktree.path}`}
           onClick={() => onRemove(worktree)}
         >
@@ -60,23 +74,31 @@ function RepoGroup({ repo }: { repo: Repo }) {
   return (
     <div className="repo-group">
       <div className="repo-head">
-        <button className="repo-toggle" onClick={() => setExpanded((e) => !e)}>
+        <button
+          className="repo-toggle"
+          onClick={() => setExpanded((e) => !e)}
+          data-tip={expanded ? "Hide this repo's worktrees" : "Show this repo's worktrees"}
+        >
           <span className={`chevron ${expanded ? "open" : ""}`}>▸</span>
           <span className="repo-name">{repo.name}</span>
-          {!repo.available && <span className="repo-missing">missing</span>}
+          {!repo.available && (
+            <span className="repo-missing" data-tip="Sylva can't find this repository on disk">
+              missing
+            </span>
+          )}
         </button>
         {repo.available && (
           <div className="repo-actions">
             <button
               className="ghost"
-              title="New worktree"
+              data-tip="Grow a new worktree in this repository"
               onClick={() => setShowNewWorktree(true)}
             >
               +
             </button>
             <button
               className="ghost"
-              title="Remove from Sylva (files stay on disk)"
+              data-tip="Forget this repo — the folder on disk is untouched"
               onClick={() => {
                 if (confirm(`Remove ${repo.name} from Sylva? The repository on disk is untouched.`)) {
                   void api.removeRepo(repo.id).then(() => invalidate.repos());
@@ -123,7 +145,9 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-label">forest</div>
+      <div className="sidebar-label" data-tip="Every repository you've registered with Sylva">
+        forest
+      </div>
       <div className="sidebar-scroll">
         {repos.data?.map((r) => <RepoGroup key={r.id} repo={r} />)}
         {repos.data?.length === 0 && (
@@ -131,10 +155,18 @@ export function Sidebar() {
         )}
       </div>
       <div className="sidebar-foot">
-        <button className="btn-primary" onClick={() => setShowNewWorktree(true)}>
+        <button
+          className="btn-primary"
+          onClick={() => setShowNewWorktree(true)}
+          data-tip="Check out a branch in its own folder and open it"
+        >
           ✦ New worktree
         </button>
-        <button className="btn-quiet" onClick={() => setShowRegister(true)}>
+        <button
+          className="btn-quiet"
+          onClick={() => setShowRegister(true)}
+          data-tip="Add a git repository from this machine to Sylva"
+        >
           + Register repo
         </button>
       </div>

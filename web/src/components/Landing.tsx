@@ -18,7 +18,11 @@ export function Landing({ onRegister, onAbout }: { onRegister: () => void; onAbo
           A local mission control for git worktrees and Claude agents. Every worktree is a tree in
           your forest, tended by a dryad you can put to work — and watch.
         </p>
-        <button className="btn-primary landing-cta" onClick={onRegister}>
+        <button
+          className="btn-primary landing-cta"
+          onClick={onRegister}
+          data-tip="Point Sylva at a git repository on this machine"
+        >
           Register your first repository
         </button>
         <p className="landing-note">Nothing leaves your machine. Sylva runs entirely on localhost.</p>
@@ -60,7 +64,7 @@ export function Landing({ onRegister, onAbout }: { onRegister: () => void; onAbo
       </div>
 
       <footer className="landing-foot">
-        <button className="landing-credit" onClick={onAbout}>
+        <button className="landing-credit" onClick={onAbout} data-tip="About Sylva and its author">
           Built by Mark Kenneth Calendario
         </button>
       </footer>

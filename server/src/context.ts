@@ -1,3 +1,4 @@
+import { CommitMessageService } from "./services/commitMessage.js";
 import { GitService } from "./services/git.js";
 import { GitOps } from "./services/gitOps.js";
 import { SessionManager } from "./services/sessions.js";
@@ -15,6 +16,7 @@ export interface AppContext {
   gitOps: GitOps;
   watchers: WatcherManager;
   sessions: SessionManager;
+  commitMessages: CommitMessageService;
 }
 
 export async function createContext(baseDir?: string): Promise<AppContext> {
@@ -40,5 +42,6 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
   };
 
   const sessions = new SessionManager(store, workspace, watchers, hub);
-  return { store, git, hub, workspace, gitOps, watchers, sessions };
+  const commitMessages = new CommitMessageService(git, workspace, store);
+  return { store, git, hub, workspace, gitOps, watchers, sessions, commitMessages };
 }

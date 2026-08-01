@@ -12,6 +12,13 @@ const STATE_LABEL: Record<string, string> = {
   error: "needs you",
 };
 
+const STATE_TIP: Record<string, string> = {
+  idle: "No agent is running in this worktree",
+  working: "An agent is running here right now",
+  success: "The last turn finished cleanly",
+  error: "The last turn failed — open it to see why",
+};
+
 function TreeCard({ worktree, repo }: { worktree: Worktree; repo: Repo }) {
   const state = useSylva((s) => spriteStateFor(s, worktree.id));
   const focused = useSylva((s) => s.focusedWorktreeId) === worktree.id;
@@ -32,21 +39,32 @@ function TreeCard({ worktree, repo }: { worktree: Worktree; repo: Repo }) {
     <button
       className={`tree-card tree-card-${state} ${focused ? "tree-card-focused" : ""}`}
       onClick={() => void api.setFocus(worktree.id)}
-      title={worktree.path}
+      data-tip={`Open this worktree · ${worktree.path}`}
     >
       <div className="tree-card-sprite">
         <Sprite state={state} scale={3} />
-        {unseen && !focused && <span className="unseen-dot tree-card-dot" />}
+        {unseen && !focused && (
+          <span
+            className="unseen-dot tree-card-dot"
+            data-tip="New agent activity you haven't looked at"
+          />
+        )}
       </div>
 
-      <div className="tree-card-branch">{worktree.branch ?? `${worktree.head.slice(0, 7)}`}</div>
-      <div className="tree-card-repo">{repo.name}</div>
+      <div className="tree-card-branch" data-tip="Branch checked out in this worktree">
+        {worktree.branch ?? `${worktree.head.slice(0, 7)}`}
+      </div>
+      <div className="tree-card-repo" data-tip="Repository this worktree belongs to">
+        {repo.name}
+      </div>
 
-      <div className={`tree-card-state tree-state-${state}`}>{STATE_LABEL[state]}</div>
+      <div className={`tree-card-state tree-state-${state}`} data-tip={STATE_TIP[state]}>
+        {STATE_LABEL[state]}
+      </div>
 
       <div className="tree-card-facts">
         {status?.base ? (
-          <span title={`Compared with ${status.base.branch}`}>
+          <span data-tip={`Commits ahead ↑ and behind ↓ ${status.base.branch}`}>
             <span className={status.base.ahead ? "div-ahead" : "div-zero"}>
               ↑{status.base.ahead}
             </span>{" "}
@@ -55,11 +73,20 @@ function TreeCard({ worktree, repo }: { worktree: Worktree; repo: Repo }) {
             </span>
           </span>
         ) : (
-          <span className="div-zero">—</span>
+          <span className="div-zero" data-tip="No base branch to compare against">
+            —
+          </span>
         )}
-        <span className={dirty ? "" : "div-zero"}>{dirty === 0 ? "clean" : `${dirty} dirty`}</span>
+        <span
+          className={dirty ? "" : "div-zero"}
+          data-tip={dirty === 0 ? "Nothing uncommitted here" : "Files changed but not committed"}
+        >
+          {dirty === 0 ? "clean" : `${dirty} dirty`}
+        </span>
         {session && session.totalCostUsd > 0 && (
-          <span className="tree-card-cost">${session.totalCostUsd.toFixed(2)}</span>
+          <span className="tree-card-cost" data-tip="What this worktree's agent has cost so far">
+            ${session.totalCostUsd.toFixed(2)}
+          </span>
         )}
       </div>
     </button>

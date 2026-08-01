@@ -26,18 +26,29 @@ export function AgentSettingsButton({ worktreeId }: { worktreeId: string }) {
       <button
         className={`agent-settings ${effective?.bypassPermissions ? "agent-settings-danger" : ""}`}
         onClick={() => setOpen(true)}
-        title={
+        data-tip={
           overridden
-            ? "Agent settings — this worktree overrides the global defaults"
-            : "Agent settings — inheriting the global defaults"
+            ? "Model and effort for this worktree — it overrides the global defaults"
+            : "Model and effort for this worktree — inherited from the global defaults"
         }
       >
         <span className="agent-settings-icon">⚙</span>
         <span className="agent-settings-summary">
           {effective ? summarize(effective) : "…"}
-          {overridden && <span className="agent-settings-override"> ·</span>}
+          {overridden && (
+            <span className="agent-settings-override" data-tip="This worktree sets its own values">
+              {" "}
+              ·
+            </span>
+          )}
           {effective?.bypassPermissions && (
-            <span className="agent-settings-warn"> · unrestricted</span>
+            <span
+              className="agent-settings-warn"
+              data-tip="The dryad runs every command here without asking"
+            >
+              {" "}
+              · unrestricted
+            </span>
           )}
         </span>
       </button>

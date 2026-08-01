@@ -3,7 +3,7 @@ import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { ensureNotifyPermission } from "../lib/notify";
-import { NO_EVENTS, useSylva } from "../state/store";
+import { EMPTY_DRAFT, NO_EVENTS, useSylva } from "../state/store";
 import { Markdown } from "./Markdown";
 import { PromptNav, type PromptMark } from "./PromptNav";
 import { ToolGroup, type ToolItem } from "./ToolGroup";
@@ -103,18 +103,37 @@ function PermissionCard({ request }: { request: PermissionRequest }) {
   return (
     <div className="permission-card">
       <div className="permission-title">
-        <span className="pixel-label">permission</span>
+        <span className="pixel-label" data-tip="The dryad is paused until you answer">
+          permission
+        </span>
         The dryad wants to use <strong>{request.tool}</strong>
       </div>
-      <pre className="permission-summary">{request.summary}</pre>
+      <pre className="permission-summary" data-tip="Exactly what the dryad wants to run">
+        {request.summary}
+      </pre>
       <div className="permission-actions">
-        <button className="btn-primary" disabled={busy} onClick={() => answer("allow")}>
+        <button
+          className="btn-primary"
+          disabled={busy}
+          onClick={() => answer("allow")}
+          data-tip="Permit this one use and carry on"
+        >
           Allow
         </button>
-        <button className="btn-quiet" disabled={busy} onClick={() => answer("allow-always")}>
+        <button
+          className="btn-quiet"
+          disabled={busy}
+          onClick={() => answer("allow-always")}
+          data-tip="Stop asking for this tool until the session ends"
+        >
           Allow always this session
         </button>
-        <button className="btn-danger" disabled={busy} onClick={() => answer("deny")}>
+        <button
+          className="btn-danger"
+          disabled={busy}
+          onClick={() => answer("deny")}
+          data-tip="Refuse — the dryad continues without it"
+        >
           Deny
         </button>
       </div>
@@ -136,15 +155,30 @@ function BlockRow({ block }: { block: Block }) {
       return <ToolGroup items={block.items} />;
     case "result":
       return (
-        <div className={`turn-result turn-${block.outcome}`}>
+        <div
+          className={`turn-result turn-${block.outcome}`}
+          data-tip={
+            block.outcome === "success"
+              ? "The dryad finished this turn cleanly"
+              : block.outcome === "interrupted"
+                ? "You stopped this turn before it finished"
+                : "This turn ended in an error"
+          }
+        >
           {block.outcome === "success" ? "✦ turn complete" : `✕ ${block.outcome}`}
           {block.costUsd !== undefined && (
-            <span className="turn-cost">${block.costUsd.toFixed(3)}</span>
+            <span className="turn-cost" data-tip="What this turn cost">
+              ${block.costUsd.toFixed(3)}
+            </span>
           )}
         </div>
       );
     case "notice":
-      return <div className="tool-result-error">{block.text}</div>;
+      return (
+        <div className="tool-result-error" data-tip="Something went wrong in this session">
+          {block.text}
+        </div>
+      );
   }
 }
 
@@ -153,8 +187,19 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   const session = useSylva((s) => s.sessions[worktreeId]);
   const permissions = useSylva((s) => s.pendingPermissions[worktreeId] ?? NO_EVENTS);
   const availability = useSylva((s) => s.availability);
-  const [text, setText] = useState("");
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+
+  // The draft lives in the store so switching tabs (which unmounts this panel)
+  // doesn't discard what you've typed.
+  const draft = useSylva((s) => s.drafts[worktreeId] ?? EMPTY_DRAFT);
+  const { text, attachments } = draft;
+  const setText = (next: string) =>
+    useSylva.getState().setDraft(worktreeId, { text: next });
+  const setAttachments = (next: (current: Attachment[]) => Attachment[]) => {
+    const store = useSylva.getState();
+    const current = store.drafts[worktreeId]?.attachments ?? EMPTY_DRAFT.attachments;
+    store.setDraft(worktreeId, { attachments: next(current) });
+  };
+
   const [uploading, setUploading] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -236,8 +281,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           .map((a) => `- ${a.path}`)
           .join("\n")}`
       : "";
-    setText("");
-    setAttachments([]);
+    useSylva.getState().clearDraft(worktreeId);
     void api.prompt(worktreeId, `${prompt}${attachmentNote}`.trim());
   };
 
@@ -259,9 +303,13 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
       <div className="agent-meta">
         {session && (
           <>
-            <span title="Total session cost">${session.totalCostUsd.toFixed(3)}</span>
+            <span data-tip="What this worktree's agent session has cost so far">
+              ${session.totalCostUsd.toFixed(3)}
+            </span>
             <span className="agent-meta-sep">·</span>
-            <span title="Total tokens">{session.totalTokens.toLocaleString()} tokens</span>
+            <span data-tip="Tokens read and written across this session">
+              {session.totalTokens.toLocaleString()} tokens
+            </span>
           </>
         )}
       </div>
@@ -296,7 +344,9 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
             <PermissionCard key={p.id} request={p} />
           ))}
           {running && permissions.length === 0 && (
-            <div className="thinking">the dryad is working…</div>
+            <div className="thinking" data-tip="Output streams in live as the agent works">
+              the dryad is working…
+            </div>
           )}
         </div>
         <PromptNav prompts={prompts} activeIndex={activePrompt} onJump={jumpTo} />
@@ -306,10 +356,12 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
         <div className="queue-list">
           {session?.queuedPrompts.map((q) => (
             <div key={q.id} className="queue-item">
-              <span className="queue-text">{q.text}</span>
+              <span className="queue-text" data-tip="Queued prompt — sends when the current turn ends">
+                {q.text}
+              </span>
               <button
                 className="ghost"
-                title="Remove from queue"
+                data-tip="Drop this prompt from the queue"
                 onClick={() => void api.removeQueued(worktreeId, q.id)}
               >
                 ✕
@@ -342,20 +394,29 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
         {(attachments.length > 0 || uploading > 0 || uploadError) && (
           <div className="attach-list">
             {attachments.map((a) => (
-              <span key={a.path} className="attach-chip" title={a.path}>
+              <span key={a.path} className="attach-chip" data-tip={`Attached · ${a.path}`}>
                 {a.name}
                 <button
                   type="button"
                   className="ghost"
                   aria-label={`Remove ${a.name}`}
+                  data-tip="Remove this attachment"
                   onClick={() => setAttachments((l) => l.filter((x) => x.path !== a.path))}
                 >
                   ✕
                 </button>
               </span>
             ))}
-            {uploading > 0 && <span className="attach-pending">attaching {uploading}…</span>}
-            {uploadError && <span className="attach-error">{uploadError}</span>}
+            {uploading > 0 && (
+              <span className="attach-pending" data-tip="Copying files into the worktree">
+                attaching {uploading}…
+              </span>
+            )}
+            {uploadError && (
+              <span className="attach-error" data-tip="This file couldn't be attached">
+                {uploadError}
+              </span>
+            )}
           </div>
         )}
 
@@ -363,8 +424,8 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           <button
             type="button"
             className="attach-btn"
-            title="Attach a file"
             aria-label="Attach a file"
+            data-tip="Attach files for the dryad to read — or just drop them here"
             onClick={() => fileInputRef.current?.click()}
           >
             ＋
@@ -381,6 +442,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           />
           <textarea
             rows={2}
+            data-tip="Enter sends · Shift+Enter starts a new line"
             placeholder={
               dragging
                 ? "Drop to attach"
@@ -406,13 +468,19 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           />
           {running ? (
             <div className="prompt-actions">
-              <button type="submit" className="btn-quiet" disabled={!text.trim()}>
+              <button
+                type="submit"
+                className="btn-quiet"
+                disabled={!text.trim()}
+                data-tip="Line this up to send once the current turn ends"
+              >
                 Queue
               </button>
               <button
                 type="button"
                 className="btn-danger"
                 onClick={() => void api.interrupt(worktreeId)}
+                data-tip="Interrupt the dryad's current turn"
               >
                 Stop
               </button>
@@ -422,6 +490,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
               type="submit"
               className="btn-primary"
               disabled={!text.trim() && attachments.length === 0}
+              data-tip="Send this prompt to the dryad"
             >
               Send
             </button>

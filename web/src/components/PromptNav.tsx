@@ -21,14 +21,16 @@ export function PromptNav({
 
   return (
     <nav className="prompt-nav" aria-label="Your prompts">
-      <div className="prompt-nav-label">your prompts</div>
+      <div className="prompt-nav-label" data-tip="Jump to any prompt you've sent in this worktree">
+        your prompts
+      </div>
       <ol className="prompt-nav-list">
         {prompts.map((p, i) => (
           <li key={p.blockIndex}>
             <button
               className={`prompt-nav-item ${activeIndex === p.blockIndex ? "prompt-nav-on" : ""}`}
               onClick={() => onJump(p.blockIndex)}
-              title={p.text}
+              data-tip={`Jump to this prompt · ${p.text}`}
               aria-current={activeIndex === p.blockIndex ? "true" : undefined}
             >
               <span className="prompt-nav-num">{i + 1}</span>

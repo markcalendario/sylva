@@ -12,6 +12,14 @@ import { AgentSettingsButton } from "./AgentSettingsButton";
 
 type Tab = "agent" | "files" | "git";
 
+const TAB_LABEL: Record<Tab, string> = { agent: "Agent", files: "Files", git: "Git" };
+
+const TAB_TIP: Record<Tab, string> = {
+  agent: "Prompt the dryad and watch it work",
+  files: "Live feed of files changing in this worktree",
+  git: "Stage, diff, commit, push and pull",
+};
+
 
 export function MainPanel({
   onRegister,
@@ -40,6 +48,12 @@ export function MainPanel({
       useSylva.getState().setAvailability(availability);
     });
     void api.status(worktreeId).then((st) => useSylva.getState().setStatus(st));
+    // The watcher only reports changes from the moment it starts, so without
+    // this the Files tab is blank until something happens to move.
+    void api
+      .recentFiles(worktreeId)
+      .then((events) => useSylva.getState().seedFileFeed(worktreeId, events))
+      .catch(() => {});
   }, [worktreeId]);
 
   // Nothing focused: first run gets the landing page, otherwise the overview.
@@ -61,10 +75,15 @@ export function MainPanel({
       <div className="wt-header">
         <Sprite state={spriteState} scale={2} />
         <div className="wt-header-text">
-          <div className="wt-header-branch">{status?.branch ?? "…"}</div>
+          <div className="wt-header-branch" data-tip="Branch checked out in this worktree">
+            {status?.branch ?? "…"}
+          </div>
           <div className="wt-header-sub">
             {status?.base ? (
-              <span className="divergence" title={`Compared with ${status.base.branch}`}>
+              <span
+                className="divergence"
+                data-tip={`Commits ahead ↑ and behind ↓ ${status.base.branch}`}
+              >
                 <span className={status.base.ahead ? "div-ahead" : "div-zero"}>
                   ↑{status.base.ahead}
                 </span>
@@ -74,9 +93,22 @@ export function MainPanel({
                 <span className="div-base">{status.base.branch}</span>
               </span>
             ) : (
-              <span className="div-zero">no base branch to compare</span>
+              <span className="div-zero" data-tip="No base branch to compare against">
+                no base branch to compare
+              </span>
             )}
-            <span className="wt-header-state">
+            <span
+              className="wt-header-state"
+              data-tip={
+                session?.status === "running"
+                  ? "An agent is running here right now"
+                  : session?.status === "errored"
+                    ? "The last turn ended in an error"
+                    : spriteState === "success"
+                      ? "The last turn finished cleanly"
+                      : "No agent is running in this worktree"
+              }
+            >
               {session?.status === "running"
                 ? "dryad is working"
                 : session?.status === "errored"
@@ -90,8 +122,13 @@ export function MainPanel({
         {tab === "agent" && <AgentSettingsButton worktreeId={worktreeId} />}
         <nav className="tabs">
           {(["agent", "files", "git"] as Tab[]).map((t) => (
-            <button key={t} className={`tab ${tab === t ? "tab-on" : ""}`} onClick={() => setTab(t)}>
-              {t === "agent" ? "Agent" : t === "files" ? "Files" : "Git"}
+            <button
+              key={t}
+              className={`tab ${tab === t ? "tab-on" : ""}`}
+              onClick={() => setTab(t)}
+              data-tip={TAB_TIP[t]}
+            >
+              {TAB_LABEL[t]}
             </button>
           ))}
         </nav>

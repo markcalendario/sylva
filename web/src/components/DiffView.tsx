@@ -11,7 +11,9 @@ export function DiffView({ diff }: { diff: FileDiff }) {
     <div className="diff">
       {diff.hunks.map((hunk, hi) => (
         <div key={hi} className="hunk">
-          <div className="hunk-header">{hunk.header}</div>
+          <div className="hunk-header" data-tip="Line range this block of changes covers">
+            {hunk.header}
+          </div>
           <table className="hunk-table">
             <tbody>
               {hunk.lines.map((line, li) => (

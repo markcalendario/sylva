@@ -6,22 +6,42 @@ export function StatusStrip() {
   const session = useSylva((s) => (worktreeId ? s.sessions[worktreeId] : undefined));
 
   if (!worktreeId || !status) {
-    return <footer className="statusstrip statusstrip-empty">no worktree focused</footer>;
+    return (
+      <footer
+        className="statusstrip statusstrip-empty"
+        data-tip="Open a worktree to see its git status here"
+      >
+        no worktree focused
+      </footer>
+    );
   }
 
   const dirty = status.staged.length + status.unstaged.length + status.untracked.length;
 
   return (
     <footer className="statusstrip">
-      <span className="strip-branch">⎇ {status.branch ?? "detached"}</span>
+      <span className="strip-branch" data-tip="Branch checked out in this worktree">
+        ⎇ {status.branch ?? "detached"}
+      </span>
       {status.upstream && (
-        <span className="strip-item" title={`upstream: ${status.upstream}`}>
+        <span
+          className="strip-item"
+          data-tip={`Commits ahead ↑ and behind ↓ ${status.upstream}`}
+        >
           ↑{status.ahead} ↓{status.behind}
         </span>
       )}
-      <span className="strip-item">{dirty === 0 ? "clean" : `${dirty} dirty`}</span>
+      <span
+        className="strip-item"
+        data-tip={dirty === 0 ? "Nothing uncommitted here" : "Files changed but not committed"}
+      >
+        {dirty === 0 ? "clean" : `${dirty} dirty`}
+      </span>
       {session && (
-        <span className="strip-item strip-cost" title="Session cost">
+        <span
+          className="strip-item strip-cost"
+          data-tip="What this worktree's agent session has cost so far"
+        >
           ✦ ${session.totalCostUsd.toFixed(3)}
         </span>
       )}

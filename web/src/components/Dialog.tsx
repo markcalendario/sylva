@@ -29,7 +29,7 @@ export function Dialog({ title, open, onClose, children }: DialogProps) {
       <div className="dialog-inner">
         <header className="dialog-head">
           <h2>{title}</h2>
-          <button className="ghost" onClick={onClose} aria-label="Close">
+          <button className="ghost" onClick={onClose} aria-label="Close" data-tip="Close this dialog">
             ✕
           </button>
         </header>

@@ -20,15 +20,15 @@ export function TextSize() {
         className="textsize-btn"
         onClick={() => set(scale - STEP)}
         disabled={scale <= MIN_SCALE}
-        title="Smaller text"
         aria-label="Smaller text"
+        data-tip="Shrink every piece of text in Sylva"
       >
         A
       </button>
       <button
         className="textsize-value"
         onClick={() => set(DEFAULT_SCALE)}
-        title="Reset text size"
+        data-tip="Current text scale — click to reset to 100%"
       >
         {Math.round(scale * 100)}%
       </button>
@@ -36,8 +36,8 @@ export function TextSize() {
         className="textsize-btn textsize-btn-lg"
         onClick={() => set(scale + STEP)}
         disabled={scale >= MAX_SCALE}
-        title="Larger text"
         aria-label="Larger text"
+        data-tip="Enlarge every piece of text in Sylva"
       >
         A
       </button>

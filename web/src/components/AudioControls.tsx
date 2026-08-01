@@ -51,8 +51,8 @@ export function AudioControls({ compact = false }: { compact?: boolean }) {
         onClick={() => setMuted(!state.muted)}
         role="switch"
         aria-checked={!state.muted}
-        title={state.muted ? "Unmute sound" : "Mute sound"}
         aria-label={state.muted ? "Unmute sound" : "Mute sound"}
+        data-tip={state.muted ? "Turn Sylva's sounds back on" : "Silence every Sylva sound"}
       >
         <SpeakerIcon muted={state.muted} />
       </button>
@@ -66,8 +66,8 @@ export function AudioControls({ compact = false }: { compact?: boolean }) {
         onClick={() => setMuted(!state.muted)}
         role="switch"
         aria-checked={!state.muted}
-        title={state.muted ? "Unmute sound" : "Mute sound"}
         aria-label={state.muted ? "Unmute sound" : "Mute sound"}
+        data-tip={state.muted ? "Turn Sylva's sounds back on" : "Silence every Sylva sound"}
       >
         <SpeakerIcon muted={state.muted} />
       </button>
@@ -80,20 +80,20 @@ export function AudioControls({ compact = false }: { compact?: boolean }) {
         value={state.volume}
         disabled={state.muted}
         onChange={(e) => setVolume(Number(e.target.value))}
-        title={`Volume ${Math.round(state.volume * 100)}%`}
         aria-label="Volume"
+        data-tip={`How loud cues and ambience play — ${Math.round(state.volume * 100)}%`}
       />
       <button
         className={`audio-btn ${state.ambient ? "audio-btn-on" : ""}`}
         onClick={() => setAmbient(!state.ambient)}
         role="switch"
         aria-checked={state.ambient}
-        title={
+        aria-label="Forest ambience"
+        data-tip={
           state.ambient
             ? "Stop the forest ambience"
-            : "Play forest ambience (wind, a low pad, the occasional cricket)"
+            : "Play a forest ambience — wind, a low pad, the odd cricket"
         }
-        aria-label="Forest ambience"
       >
         ♪
       </button>

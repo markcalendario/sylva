@@ -120,7 +120,13 @@ export function AgentSettingsDialog({
       )}
 
       <div className="dialog-actions">
-        <button type="button" className="btn-quiet" onClick={onClose} disabled={busy}>
+        <button
+          type="button"
+          className="btn-quiet"
+          onClick={onClose}
+          disabled={busy}
+          data-tip="Close without saving these overrides"
+        >
           Cancel
         </button>
         <button
@@ -128,6 +134,11 @@ export function AgentSettingsDialog({
           className="btn-primary"
           onClick={() => void save()}
           disabled={busy || !dirty}
+          data-tip={
+            dirty
+              ? "Save these overrides and restart this worktree's session"
+              : "Nothing has changed yet"
+          }
         >
           {busy ? "Saving…" : "Save settings"}
         </button>

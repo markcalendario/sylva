@@ -54,9 +54,11 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
   return (
     <Dialog title="Settings" open={open} onClose={onClose}>
       <section className="settings-section">
-        <h3 className="settings-heading">Appearance</h3>
+        <h3 className="settings-heading" data-tip="How Sylva looks on this machine">
+          Appearance
+        </h3>
         <div className="field">
-          Text size
+          <span data-tip="Scales every piece of text in Sylva">Text size</span>
           <div className="settings-control">
             <TextSize />
           </div>
@@ -67,9 +69,13 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
       </section>
 
       <section className="settings-section">
-        <h3 className="settings-heading">Sound</h3>
+        <h3 className="settings-heading" data-tip="Cues Sylva plays as agents work">
+          Sound
+        </h3>
         <div className="field">
-          Volume and ambience
+          <span data-tip="How loud cues play, and the background forest bed">
+            Volume and ambience
+          </span>
           <div className="settings-control">
             <AudioControls />
           </div>
@@ -82,7 +88,12 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
       </section>
 
       <section className="settings-section">
-        <h3 className="settings-heading">Agent defaults</h3>
+        <h3
+          className="settings-heading"
+          data-tip="Fallback settings for every worktree that doesn't set its own"
+        >
+          Agent defaults
+        </h3>
         <p className="dialog-hint">
           Defaults for every worktree. A worktree that sets its own value keeps it — these only
           fill in the rest.
@@ -126,7 +137,13 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
       </section>
 
       <div className="dialog-actions">
-        <button type="button" className="btn-quiet" onClick={onClose} disabled={busy}>
+        <button
+          type="button"
+          className="btn-quiet"
+          onClick={onClose}
+          disabled={busy}
+          data-tip={dirty ? "Discard your unsaved agent defaults" : "Close settings"}
+        >
           {dirty ? "Cancel" : "Close"}
         </button>
         <button
@@ -134,7 +151,11 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
           className="btn-primary"
           onClick={() => void save()}
           disabled={busy || !dirty}
-          title={dirty ? undefined : "Appearance and sound are already saved"}
+          data-tip={
+            dirty
+              ? "Save these defaults for every worktree"
+              : "Nothing to save — appearance and sound apply instantly"
+          }
         >
           {busy ? "Saving…" : "Save agent defaults"}
         </button>

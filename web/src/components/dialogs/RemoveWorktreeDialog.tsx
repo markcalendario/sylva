@@ -42,13 +42,17 @@ export function RemoveWorktreeDialog({
         Removes the worktree directory from disk. The branch{" "}
         <code>{worktree.branch ?? "(detached)"}</code> and its commits stay in the repository.
       </p>
-      <pre className="permission-summary">{worktree.path}</pre>
+      <pre className="permission-summary" data-tip="Folder that will be deleted from disk">
+        {worktree.path}
+      </pre>
 
       {error && <div className="form-error">{error}</div>}
 
       {needsForce && (
         <div className="force-warning">
-          <span className="pixel-label">uncommitted work</span>
+          <span className="pixel-label" data-tip="Git refused because this worktree has changes">
+            uncommitted work
+          </span>
           <p>
             This worktree has changes that aren't committed. Forcing the removal deletes them, and
             they can't be recovered.
@@ -57,15 +61,33 @@ export function RemoveWorktreeDialog({
       )}
 
       <div className="dialog-actions">
-        <button type="button" className="btn-quiet" onClick={onClose} disabled={busy}>
+        <button
+          type="button"
+          className="btn-quiet"
+          onClick={onClose}
+          disabled={busy}
+          data-tip="Keep this worktree and close"
+        >
           Cancel
         </button>
         {needsForce ? (
-          <button type="button" className="btn-danger" disabled={busy} onClick={() => void remove(true)}>
+          <button
+            type="button"
+            className="btn-danger"
+            disabled={busy}
+            onClick={() => void remove(true)}
+            data-tip="Delete the folder and its uncommitted changes for good"
+          >
             {busy ? "Removing…" : "Force remove and lose changes"}
           </button>
         ) : (
-          <button type="button" className="btn-danger" disabled={busy} onClick={() => void remove(false)}>
+          <button
+            type="button"
+            className="btn-danger"
+            disabled={busy}
+            onClick={() => void remove(false)}
+            data-tip="Delete the folder; the branch and its commits stay"
+          >
             {busy ? "Removing…" : "Remove worktree"}
           </button>
         )}
