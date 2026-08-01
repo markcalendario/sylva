@@ -84,12 +84,35 @@ export interface BranchInfo {
 
 export type SessionStatus = "idle" | "running" | "interrupted" | "errored";
 
+/** Reasoning effort, as the Agent SDK defines it. */
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
+export const EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
+
+export interface ModelChoice {
+  id: string;
+  label: string;
+  note: string;
+}
+
+/** Offered in the settings dialog; null means "whatever Claude Code defaults to". */
+export const MODEL_CHOICES: ModelChoice[] = [
+  { id: "claude-opus-5", label: "Opus 5", note: "Best all-round coding agent" },
+  { id: "claude-fable-5", label: "Fable 5", note: "Most capable, highest cost" },
+  { id: "claude-sonnet-5", label: "Sonnet 5", note: "Near-Opus quality, cheaper" },
+  { id: "claude-haiku-4-5", label: "Haiku 4.5", note: "Fastest, for simple tasks" },
+];
+
 export interface WorktreePrefs {
   /**
    * Run the agent with every permission check bypassed. Dangerous: the agent
    * can run any command without asking.
    */
   bypassPermissions: boolean;
+  /** Model id, or null to inherit the Claude Code default. */
+  model: string | null;
+  /** Reasoning effort, or null to inherit the default. */
+  effort: EffortLevel | null;
 }
 
 export interface Attachment {
@@ -218,9 +241,7 @@ export interface PermissionAnswerRequest {
   answer: PermissionAnswer;
 }
 
-export interface SetPrefsRequest {
-  bypassPermissions: boolean;
-}
+export type SetPrefsRequest = WorktreePrefs;
 
 export interface ApiError {
   error: string;

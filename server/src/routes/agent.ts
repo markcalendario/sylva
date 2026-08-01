@@ -11,7 +11,11 @@ const answerSchema = z.object({
   requestId: z.string().min(1),
   answer: z.enum(["allow", "allow-always", "deny"]),
 });
-const prefsSchema = z.object({ bypassPermissions: z.boolean() });
+const prefsSchema = z.object({
+  bypassPermissions: z.boolean(),
+  model: z.string().min(1).nullable(),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).nullable(),
+});
 
 /** Keep uploaded names to a safe leaf; never let one escape the directory. */
 function safeFileName(name: string): string {

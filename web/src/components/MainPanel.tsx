@@ -5,7 +5,7 @@ import { Sprite } from "../sprites/Sprite";
 import { AgentPanel } from "./AgentPanel";
 import { FilesPanel } from "./FilesPanel";
 import { GitPanel } from "./GitPanel";
-import { PermissionToggle } from "./PermissionToggle";
+import { AgentSettingsButton } from "./AgentSettingsButton";
 
 type Tab = "agent" | "files" | "git";
 
@@ -81,7 +81,7 @@ export function MainPanel() {
             </span>
           </div>
         </div>
-        {tab === "agent" && <PermissionToggle worktreeId={worktreeId} />}
+        {tab === "agent" && <AgentSettingsButton worktreeId={worktreeId} />}
         <nav className="tabs">
           {(["agent", "files", "git"] as Tab[]).map((t) => (
             <button key={t} className={`tab ${tab === t ? "tab-on" : ""}`} onClick={() => setTab(t)}>

@@ -23,7 +23,11 @@ interface RegistryFile {
 
 const EMPTY: RegistryFile = { repos: [], sessions: [], prefs: {} };
 
-export const DEFAULT_PREFS: WorktreePrefs = { bypassPermissions: false };
+export const DEFAULT_PREFS: WorktreePrefs = {
+  bypassPermissions: false,
+  model: null,
+  effort: null,
+};
 
 /**
  * Persistence for Sylva's state under ~/.sylva/ (override with SYLVA_HOME):

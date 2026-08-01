@@ -197,6 +197,23 @@
   padding-left: var(--pad-2);
 }
 
+/* Active markers are a real bar, not an inset shadow: an inset shadow follows
+   the element's border-radius and renders as a crescent at the corners. */
+.active-bar {
+  position: relative;
+}
+
+.active-bar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--firefly);
+}
+
 .wt-row {
   display: flex;
   align-items: center;
@@ -205,6 +222,7 @@
   border-radius: var(--radius);
   color: var(--moon);
   min-width: 0;
+  position: relative;
 }
 
 .wt-open {
@@ -238,7 +256,17 @@
 
 .wt-row.focused {
   background: var(--pine-2);
-  box-shadow: inset 2px 0 0 var(--firefly);
+}
+
+.wt-row.focused::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--firefly);
 }
 
 .wt-name {
@@ -524,12 +552,12 @@ button:disabled {
   gap: var(--pad-2);
   width: 100%;
   text-align: left;
-  padding: var(--pad-1) var(--pad-2);
+  padding: var(--pad-1) var(--pad-2) var(--pad-1) var(--pad-3);
   border-radius: var(--radius);
   color: var(--moss);
   font-size: var(--text-xs);
   line-height: 1.4;
-  border-left: 2px solid transparent;
+  position: relative;
 }
 
 .prompt-nav-item:hover {
@@ -538,9 +566,19 @@ button:disabled {
 }
 
 .prompt-nav-on {
-  border-left-color: var(--firefly);
   background: var(--pine-2);
   color: var(--moon);
+}
+
+.prompt-nav-on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--firefly);
 }
 
 .prompt-nav-num {
@@ -1040,6 +1078,46 @@ button:disabled {
   color: var(--ember);
 }
 
+/* ---------- agent settings ---------- */
+
+.agent-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-size: var(--text-xs);
+  color: var(--moss);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: 3px var(--pad-3);
+  flex-shrink: 0;
+}
+
+.agent-settings:hover {
+  border-color: var(--moss-dim);
+  color: var(--moon);
+  background: var(--pine-1);
+}
+
+.agent-settings-icon {
+  color: var(--moss-dim);
+}
+
+.agent-settings-summary {
+  font-family: var(--font-mono);
+}
+
+.agent-settings-danger {
+  border-color: var(--ember-dim);
+}
+
+.agent-settings-warn {
+  color: var(--ember);
+}
+
+.field-hint-danger {
+  color: var(--ember);
+}
+
 /* ---------- permission toggle ---------- */
 
 .permtoggle {
@@ -1260,7 +1338,18 @@ button:disabled {
 
 .git-file-on {
   background: var(--pine-2);
-  box-shadow: inset 2px 0 0 var(--firefly);
+  position: relative;
+}
+
+.git-file-on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--firefly);
 }
 
 .git-file-name {

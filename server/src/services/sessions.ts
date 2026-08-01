@@ -277,14 +277,18 @@ export class SessionManager {
   }
 
   /**
-   * Permission mode is fixed when the SDK query starts, so changing it tears
-   * the session down. The next prompt reopens it — resuming by SDK session id,
-   * so the conversation carries over.
+   * Model, effort and permission mode are all fixed when the SDK query starts,
+   * so changing any of them tears the session down. The next prompt reopens it
+   * — resuming by SDK session id, so the conversation carries over.
    */
   async setPrefs(worktreeId: string, prefs: WorktreePrefs): Promise<WorktreePrefs> {
     const current = this.store.prefsFor(worktreeId);
     await this.store.setPrefs(worktreeId, prefs);
-    if (current.bypassPermissions !== prefs.bypassPermissions) {
+    const changed =
+      current.bypassPermissions !== prefs.bypassPermissions ||
+      current.model !== prefs.model ||
+      current.effort !== prefs.effort;
+    if (changed) {
       const session = this.activeByWorktree(worktreeId);
       if (session) {
         if (session.q) await session.q.interrupt().catch(() => {});
@@ -340,6 +344,14 @@ export class SessionManager {
     this.sessions.set(info.id, session);
     this.byWorktree.set(worktreeId, info.id);
 
+    // Unset model/effort are omitted rather than sent as null, so Claude Code's
+    // own defaults apply.
+    const tuning = {
+      ...(prefs.model ? { model: prefs.model } : {}),
+      ...(prefs.effort ? { effort: prefs.effort } : {}),
+      ...(info.sdkSessionId ? { resume: info.sdkSessionId } : {}),
+    };
+
     // Bypass mode skips every check, so there is nothing for canUseTool to ask
     // about; wiring it up anyway would imply approvals that never happen.
     const options: Options = prefs.bypassPermissions
@@ -347,13 +359,13 @@ export class SessionManager {
           cwd: worktree.path,
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
-          ...(info.sdkSessionId ? { resume: info.sdkSessionId } : {}),
+          ...tuning,
         }
       : {
           cwd: worktree.path,
           permissionMode: "acceptEdits",
           canUseTool: this.makeCanUseTool(session),
-          ...(info.sdkSessionId ? { resume: info.sdkSessionId } : {}),
+          ...tuning,
         };
 
     session.q = query({ prompt: session.input, options });
