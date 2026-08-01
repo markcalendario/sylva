@@ -1,0 +1,46 @@
+import { useState } from "react";
+import {
+  applyScale,
+  DEFAULT_SCALE,
+  loadScale,
+  MAX_SCALE,
+  MIN_SCALE,
+  STEP,
+} from "../lib/textScale";
+
+/** Text size stepper. Persists across reloads; click the percentage to reset. */
+export function TextSize() {
+  const [scale, setScale] = useState(loadScale);
+
+  const set = (next: number) => setScale(applyScale(next));
+
+  return (
+    <div className="textsize" role="group" aria-label="Text size">
+      <button
+        className="textsize-btn"
+        onClick={() => set(scale - STEP)}
+        disabled={scale <= MIN_SCALE}
+        title="Smaller text"
+        aria-label="Smaller text"
+      >
+        A
+      </button>
+      <button
+        className="textsize-value"
+        onClick={() => set(DEFAULT_SCALE)}
+        title="Reset text size"
+      >
+        {Math.round(scale * 100)}%
+      </button>
+      <button
+        className="textsize-btn textsize-btn-lg"
+        onClick={() => set(scale + STEP)}
+        disabled={scale >= MAX_SCALE}
+        title="Larger text"
+        aria-label="Larger text"
+      >
+        A
+      </button>
+    </div>
+  );
+}

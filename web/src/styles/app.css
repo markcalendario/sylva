@@ -35,12 +35,62 @@
   color: var(--firefly);
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-4);
+}
+
 .conn {
   display: flex;
   align-items: center;
   gap: var(--pad-2);
   font-size: var(--text-xs);
   color: var(--moss);
+}
+
+/* ---------- text size control ---------- */
+
+.textsize {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pad-1);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: 1px var(--pad-1);
+}
+
+.textsize-btn {
+  color: var(--moss-dim);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px var(--pad-1);
+  border-radius: 4px;
+}
+
+.textsize-btn-lg {
+  font-size: 15px;
+}
+
+.textsize-btn:hover:not(:disabled) {
+  color: var(--firefly);
+  background: var(--pine-2);
+}
+
+.textsize-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--moss-dim);
+  min-width: 4ch;
+  text-align: center;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.textsize-value:hover {
+  color: var(--moon);
+  background: var(--pine-2);
 }
 
 .conn-dot {
@@ -124,7 +174,7 @@
 
 .repo-missing {
   font-family: var(--font-pixel);
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--ember);
 }
 
@@ -205,7 +255,7 @@
 .wt-main-tag {
   display: block;
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: var(--text-xs);
   color: var(--moss-dim);
 }
 
@@ -491,7 +541,7 @@ button:disabled {
 }
 
 .md h2 {
-  font-size: 15px;
+  font-size: calc(14px * var(--text-scale));
 }
 
 .md h3,
@@ -627,7 +677,7 @@ button:disabled {
 
 .tool-chip {
   font-family: var(--font-pixel);
-  font-size: 9px;
+  font-size: var(--text-xxs);
   color: var(--stream);
   opacity: 0.75;
   flex-shrink: 0;
@@ -688,7 +738,7 @@ button:disabled {
 .turn-result {
   align-self: center;
   font-family: var(--font-pixel);
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 1px;
   color: var(--moss-dim);
   padding: var(--pad-1) 0;
@@ -775,7 +825,7 @@ button:disabled {
 
 .pixel-label {
   font-family: var(--font-pixel);
-  font-size: 10px;
+  font-size: var(--text-xs);
   letter-spacing: 1px;
   color: var(--firefly);
   text-transform: lowercase;

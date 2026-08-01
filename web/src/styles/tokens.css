@@ -25,11 +25,16 @@
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --font-pixel: "Silkscreen", monospace;
 
-  --text-xs: 11px;
-  --text-sm: 12.5px;
-  --text-md: 14px;
-  --text-lg: 16px;
-  --text-xl: 20px;
+  /* Every text size derives from --text-scale, which the Text size control in
+     the top bar sets on :root and persists. Adjust base values here; the
+     control multiplies them. */
+  --text-scale: 1;
+  --text-xxs: calc(9px * var(--text-scale));
+  --text-xs: calc(10px * var(--text-scale));
+  --text-sm: calc(11.5px * var(--text-scale));
+  --text-md: calc(13px * var(--text-scale));
+  --text-lg: calc(15px * var(--text-scale));
+  --text-xl: calc(18px * var(--text-scale));
 
   /* rhythm */
   --pad-1: 4px;
