@@ -90,6 +90,7 @@ export function GitPanel({
     initialDiffPath ? { path: initialDiffPath, staged: false } : null,
   );
   const [message, setMessage] = useState("");
+  const [view, setView] = useState<"changes" | "history">("changes");
   const [drafting, setDrafting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -172,14 +173,36 @@ export function GitPanel({
           <CreatePrButton worktreeId={worktreeId} branch={status.branch} />
         </div>
 
-        <CommitGraph worktreeId={worktreeId} />
+        {/* Two different questions — "what have I changed" and "where does this
+            branch sit" — so they get a tab each rather than one long column.
+            Changes leads because that is what you came here to do. */}
+        <div className="seg git-seg" role="group" aria-label="Git view">
+          <button
+            className={view === "changes" ? "seg-on" : ""}
+            onClick={() => setView("changes")}
+            data-tip="Stage, unstage and commit what you've changed"
+          >
+            Changes
+          </button>
+          <button
+            className={view === "history" ? "seg-on" : ""}
+            onClick={() => setView("history")}
+            data-tip="This branch against its base — ahead, behind, and where they met"
+          >
+            History
+          </button>
+        </div>
 
-        {clean && (
+        {view === "history" && <CommitGraph worktreeId={worktreeId} />}
+
+        {view === "changes" && clean && (
           <div className="git-clean" data-tip="Nothing has changed since the last commit">
             Clean canopy — nothing to commit.
           </div>
         )}
 
+        {view === "changes" && (
+          <>
         <FileList
           title="Staged"
           tip="Changes that will go into the next commit"
@@ -250,6 +273,9 @@ export function GitPanel({
               </button>
             </div>
           </form>
+        )}
+
+          </>
         )}
 
         {feedback && (

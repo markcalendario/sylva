@@ -1,7 +1,69 @@
 import { useState } from "react";
-import { OPEN_TARGETS, type AppPreferences, type SavedPrompt } from "sylva-shared";
+import {
+  EDITOR_TARGETS,
+  TERMINAL_TARGETS,
+  type AppPreferences,
+  type OpenChoice,
+  type SavedPrompt,
+} from "sylva-shared";
 
-/** Where the Open button sends a worktree. */
+/** One "open with" chooser, plus its command box when set to custom. */
+function TargetField({
+  title,
+  choices,
+  target,
+  command,
+  onTarget,
+  onCommand,
+}: {
+  title: string;
+  choices: OpenChoice[];
+  target: AppPreferences["editorTarget"];
+  command: string;
+  onTarget: (next: AppPreferences["editorTarget"]) => void;
+  onCommand: (next: string) => void;
+}) {
+  return (
+    <>
+      <div className="field">
+        <span data-tip={`Which application the ${title.toLowerCase()} button opens`}>{title}</span>
+        <div className="settings-control">
+          <select
+            value={target}
+            onChange={(e) => onTarget(e.target.value as AppPreferences["editorTarget"])}
+            data-tip={`Pick what the ${title.toLowerCase()} button launches`}
+          >
+            {choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span className="field-hint">{choices.find((c) => c.id === target)?.note}</span>
+      </div>
+
+      {target === "custom" && (
+        <label className="field">
+          Command
+          <input
+            className="mono-input"
+            value={command}
+            placeholder="code {path}"
+            onChange={(e) => onCommand(e.target.value)}
+            data-tip="{path} is replaced with the worktree directory"
+          />
+          <span className="field-hint">
+            Run directly, never through a shell — so it can launch one program with arguments, and
+            nothing else. <code>{"{path}"}</code> becomes the worktree directory.
+          </span>
+        </label>
+      )}
+    </>
+  );
+}
+
+/** Where the two Open buttons send a worktree. */
 export function OpenTargetField({
   value,
   onChange,
@@ -11,44 +73,22 @@ export function OpenTargetField({
 }) {
   return (
     <>
-      <div className="field">
-        <span data-tip="Which application the Open button hands a worktree to">Open with</span>
-        <div className="settings-control">
-          <select
-            value={value.openTarget}
-            onChange={(e) =>
-              onChange({ ...value, openTarget: e.target.value as AppPreferences["openTarget"] })
-            }
-            data-tip="Pick the editor, terminal or file manager to open worktrees in"
-          >
-            {OPEN_TARGETS.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <span className="field-hint">
-          {OPEN_TARGETS.find((t) => t.id === value.openTarget)?.note}
-        </span>
-      </div>
-
-      {value.openTarget === "custom" && (
-        <label className="field">
-          Command
-          <input
-            className="mono-input"
-            value={value.openCommand}
-            placeholder="code {path}"
-            onChange={(e) => onChange({ ...value, openCommand: e.target.value })}
-            data-tip="{path} is replaced with the worktree directory"
-          />
-          <span className="field-hint">
-            Run directly, never through a shell — so it can launch one program with arguments, and
-            nothing else. <code>{"{path}"}</code> becomes the worktree directory.
-          </span>
-        </label>
-      )}
+      <TargetField
+        title="Open in editor"
+        choices={EDITOR_TARGETS}
+        target={value.editorTarget}
+        command={value.editorCommand}
+        onTarget={(editorTarget) => onChange({ ...value, editorTarget })}
+        onCommand={(editorCommand) => onChange({ ...value, editorCommand })}
+      />
+      <TargetField
+        title="Open in terminal"
+        choices={TERMINAL_TARGETS}
+        target={value.terminalTarget}
+        command={value.terminalCommand}
+        onTarget={(terminalTarget) => onChange({ ...value, terminalTarget })}
+        onCommand={(terminalCommand) => onChange({ ...value, terminalCommand })}
+      />
     </>
   );
 }

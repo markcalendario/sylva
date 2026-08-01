@@ -1,0 +1,204 @@
+/* The landing scene. Same night as the app itself, standing still. */
+
+.scene-wrap {
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius-lg);
+  /* The world runs past the frame rather than stopping at it. */
+  overflow: hidden;
+  background: var(--pine-0);
+  display: flex;
+  justify-content: center;
+}
+
+.scene {
+  position: relative;
+  flex: 0 0 auto;
+  /* Coldest overhead, warming very slightly toward the treeline. */
+  background:
+    radial-gradient(120% 70% at 50% 104%, #16241c 0%, transparent 62%),
+    linear-gradient(180deg, #070b0b 0%, #0b1211 52%, #101a15 100%);
+}
+
+.scene > * {
+  position: absolute;
+}
+
+.scene-ground {
+  left: 0;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+}
+
+.scene-prop {
+  pointer-events: none;
+}
+
+.scene-star {
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ---------- meteors ----------
+   A gradient streak with the bright end leading. Rotated 145°, so translating
+   along its own x axis carries it down and to the left with the tail behind. */
+
+.scene-meteor {
+  width: 84px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgb(233 240 228 / 0.75));
+  transform: rotate(145deg) translateX(0);
+  transform-origin: right center;
+  opacity: 0;
+  pointer-events: none;
+  animation-name: scene-meteor;
+  animation-timing-function: cubic-bezier(0.3, 0, 0.7, 1);
+  animation-iteration-count: infinite;
+}
+
+.scene-meteor::after {
+  /* The head, a touch brighter than its trail. */
+  content: "";
+  position: absolute;
+  right: 0;
+  top: -1px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--moon);
+  box-shadow: 0 0 8px 2px rgb(233 240 228 / 0.55);
+}
+
+@keyframes scene-meteor {
+  0% {
+    transform: rotate(145deg) translateX(0);
+    opacity: 0;
+  }
+  6% {
+    opacity: 0.95;
+  }
+  /* Most of the cycle is the wait between meteors, not the meteor. */
+  34% {
+    transform: rotate(145deg) translateX(360px);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(145deg) translateX(360px);
+    opacity: 0;
+  }
+}
+
+/* ---------- light ---------- */
+
+.scene-glow {
+  border-radius: 50%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.scene-glow-fire {
+  background: radial-gradient(circle, rgb(255 150 60 / 0.4), rgb(255 120 40 / 0.1) 55%, transparent 72%);
+  animation: scene-breathe 2.9s ease-in-out infinite;
+}
+
+.scene-glow-lamp {
+  background: radial-gradient(circle, rgb(255 210 140 / 0.24), transparent 68%);
+  animation: scene-breathe 5.4s ease-in-out infinite;
+}
+
+@keyframes scene-breathe {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+/* ---------- dryads and signs ---------- */
+
+.scene-dryad {
+  pointer-events: none;
+}
+
+.scene-dryad-working {
+  animation: scene-step 560ms steps(2, end) infinite;
+}
+
+@keyframes scene-step {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.scene-dryad-success {
+  animation: scene-cheer 900ms cubic-bezier(0.3, 0.8, 0.4, 1) infinite;
+}
+
+@keyframes scene-cheer {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-8px);
+  }
+  40% {
+    transform: translateY(-3px);
+  }
+}
+
+.scene-dryad-idle {
+  animation: scene-doze 4.5s ease-in-out infinite;
+}
+
+@keyframes scene-doze {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+
+.scene-sign {
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: rgb(12 17 16 / 0.78);
+  border: 1px solid var(--pine-3);
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  color: var(--moss-dim);
+  pointer-events: none;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.scene-sign-alert {
+  color: var(--ember);
+  border-color: var(--ember-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-glow,
+  .scene-dryad {
+    animation: none;
+  }
+
+  /* A streak crossing the sky with nothing anchoring it is the worst of these. */
+  .scene-meteor {
+    display: none;
+  }
+}

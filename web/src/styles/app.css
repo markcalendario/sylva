@@ -2469,29 +2469,39 @@ button:disabled {
 
 /* ── Open externally ───────────────────────────────────────────────────── */
 
-.wt-open {
+/* The header is a flex row; without this the buttons stretch to fill it.
+   Named "launch" rather than "open" because .wt-open is already the sidebar's
+   worktree row, and reusing it silently restyled the whole sidebar. */
+.wt-launch-group {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  flex: 0 0 auto;
+}
+
+.wt-launch {
   font-size: var(--text-xs);
   padding: 3px var(--pad-3);
-  /* The header is a flex row; without this the button stretches to fill it. */
-  flex: 0 0 auto;
-  align-self: center;
   white-space: nowrap;
 }
 
-.wt-open-error {
+.wt-launch-error {
   color: var(--ember);
   font-size: var(--text-xs);
   max-width: 34ch;
+}
+
+.git-seg {
+  margin-bottom: var(--pad-3);
 }
 
 /* ── Commit graph ──────────────────────────────────────────────────────────
    Two lanes that meet at the merge base. That is the whole shape of a topic
    branch, so the diagram draws that and stops. */
 
+/* Its own tab now, so it needs no divider to separate it from the file lists. */
 .graph {
-  border-top: 1px solid var(--pine-3);
-  margin-top: var(--pad-3);
-  padding-top: var(--pad-3);
+  margin-top: 0;
 }
 
 .graph-head {

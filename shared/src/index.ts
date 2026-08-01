@@ -188,17 +188,39 @@ export const GLOBAL_DEFAULTS: AgentSettings = {
   effort: null,
 };
 
-/** Which external application the Open button hands a worktree to. */
-export type OpenTarget = "vscode" | "cursor" | "zed" | "terminal" | "finder" | "custom" | "none";
+/** What an Open button hands the worktree to. */
+export type OpenKind = "editor" | "terminal";
 
-export const OPEN_TARGETS: Array<{ id: OpenTarget; label: string; note: string }> = [
+export type OpenTarget =
+  | "vscode"
+  | "cursor"
+  | "zed"
+  | "terminal"
+  | "iterm"
+  | "warp"
+  | "custom"
+  | "none";
+
+export interface OpenChoice {
+  id: OpenTarget;
+  label: string;
+  note: string;
+}
+
+export const EDITOR_TARGETS: OpenChoice[] = [
   { id: "vscode", label: "VS Code", note: "needs the `code` command on your PATH" },
   { id: "cursor", label: "Cursor", note: "needs the `cursor` command on your PATH" },
   { id: "zed", label: "Zed", note: "needs the `zed` command on your PATH" },
-  { id: "terminal", label: "Terminal", note: "a shell in the worktree directory" },
-  { id: "finder", label: "File manager", note: "reveal the folder" },
   { id: "custom", label: "Custom command", note: "{path} is replaced by the worktree" },
-  { id: "none", label: "Off", note: "hide the Open button" },
+  { id: "none", label: "Off", note: "hide the editor button" },
+];
+
+export const TERMINAL_TARGETS: OpenChoice[] = [
+  { id: "terminal", label: "Terminal", note: "the built-in macOS terminal" },
+  { id: "iterm", label: "iTerm", note: "opens iTerm at the worktree" },
+  { id: "warp", label: "Warp", note: "opens Warp at the worktree" },
+  { id: "custom", label: "Custom command", note: "{path} is replaced by the worktree" },
+  { id: "none", label: "Off", note: "hide the terminal button" },
 ];
 
 /** A reusable prompt snippet, appended to whatever is already typed. */
@@ -214,15 +236,21 @@ export interface SavedPrompt {
  * per worktree.
  */
 export interface AppPreferences {
-  openTarget: OpenTarget;
-  /** Command template used when openTarget is "custom"; {path} is substituted. */
-  openCommand: string;
+  /** Editor the ⌥ Code button opens. */
+  editorTarget: OpenTarget;
+  /** Command template used when editorTarget is "custom"; {path} is substituted. */
+  editorCommand: string;
+  /** Terminal the ⌥ Shell button opens. */
+  terminalTarget: OpenTarget;
+  terminalCommand: string;
   savedPrompts: SavedPrompt[];
 }
 
 export const PREFERENCE_DEFAULTS: AppPreferences = {
-  openTarget: "vscode",
-  openCommand: "",
+  editorTarget: "vscode",
+  editorCommand: "",
+  terminalTarget: "terminal",
+  terminalCommand: "",
   savedPrompts: [
     {
       id: "review",

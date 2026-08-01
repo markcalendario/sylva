@@ -8,15 +8,29 @@ import { badRequest } from "../lib/errors.js";
 import { openExternal } from "../services/open.js";
 
 const promptSchema = z.object({ text: z.string().min(1) });
+const openSchema = z.object({ kind: z.enum(["editor", "terminal"]) });
 const answerSchema = z.object({
   requestId: z.string().min(1),
   answer: z.enum(["allow", "allow-always", "deny"]),
 });
 const effortSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
 
+const openTargetSchema = z.enum([
+  "vscode",
+  "cursor",
+  "zed",
+  "terminal",
+  "iterm",
+  "warp",
+  "custom",
+  "none",
+]);
+
 const preferencesSchema = z.object({
-  openTarget: z.enum(["vscode", "cursor", "zed", "terminal", "finder", "custom", "none"]),
-  openCommand: z.string().max(500),
+  editorTarget: openTargetSchema,
+  editorCommand: z.string().max(500),
+  terminalTarget: openTargetSchema,
+  terminalCommand: z.string().max(500),
   savedPrompts: z
     .array(
       z.object({
@@ -102,11 +116,12 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     return ctx.store.preferences;
   });
 
-  /** Hand the worktree directory to the configured editor, terminal or file manager. */
+  /** Hand the worktree directory to the configured editor or terminal. */
   app.post("/api/worktrees/:worktreeId/open", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
+    const { kind } = openSchema.parse(req.body ?? {});
     const { worktree } = await workspace.resolveWorktree(worktreeId);
-    return openExternal(worktree.path, ctx.store.preferences);
+    return openExternal(worktree.path, ctx.store.preferences, kind);
   });
 
   app.put("/api/settings", async (req) => {

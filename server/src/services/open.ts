@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { AppPreferences, OpenTarget } from "sylva-shared";
+import type { AppPreferences, OpenKind, OpenTarget } from "sylva-shared";
 import { badRequest } from "../lib/errors.js";
 
 const run = promisify(execFile);
@@ -11,15 +11,17 @@ const run = promisify(execFile);
  * semicolon is an argument and nothing else — there is no shell to reinterpret
  * it, and a command template can therefore only ever launch one program.
  */
+const darwin = process.platform === "darwin";
+
 const PRESETS: Record<Exclude<OpenTarget, "custom" | "none">, string[]> = {
   vscode: ["code", "{path}"],
   cursor: ["cursor", "{path}"],
   zed: ["zed", "{path}"],
-  terminal:
-    process.platform === "darwin"
-      ? ["open", "-a", "Terminal", "{path}"]
-      : ["x-terminal-emulator", "--working-directory={path}"],
-  finder: process.platform === "darwin" ? ["open", "{path}"] : ["xdg-open", "{path}"],
+  terminal: darwin
+    ? ["open", "-a", "Terminal", "{path}"]
+    : ["x-terminal-emulator", "--working-directory={path}"],
+  iterm: darwin ? ["open", "-a", "iTerm", "{path}"] : ["x-terminal-emulator"],
+  warp: darwin ? ["open", "-a", "Warp", "{path}"] : ["x-terminal-emulator"],
 };
 
 /**
@@ -37,15 +39,17 @@ export function splitCommand(template: string): string[] {
   return out;
 }
 
-/** Resolve the configured target to a concrete argv for this worktree. */
-export function resolveArgv(prefs: AppPreferences, path: string): string[] {
-  if (prefs.openTarget === "none") {
-    throw badRequest("Opening externally is switched off in Settings");
+/** Resolve the configured target for one kind into a concrete argv. */
+export function resolveArgv(prefs: AppPreferences, kind: OpenKind, path: string): string[] {
+  const target = kind === "editor" ? prefs.editorTarget : prefs.terminalTarget;
+  const custom = kind === "editor" ? prefs.editorCommand : prefs.terminalCommand;
+  const what = kind === "editor" ? "editor" : "terminal";
+  if (target === "none") {
+    throw badRequest(`Opening a ${what} is switched off in Settings`);
   }
-  const template =
-    prefs.openTarget === "custom" ? splitCommand(prefs.openCommand) : PRESETS[prefs.openTarget];
+  const template = target === "custom" ? splitCommand(custom) : PRESETS[target];
   if (!template || template.length === 0) {
-    throw badRequest("No open command is configured — pick one in Settings");
+    throw badRequest(`No ${what} command is configured — pick one in Settings`);
   }
   const argv = template.map((part) => part.replaceAll("{path}", path));
   // A template with no {path} would open the editor on nothing useful.
@@ -59,8 +63,12 @@ export interface OpenResult {
   ran: string;
 }
 
-export async function openExternal(path: string, prefs: AppPreferences): Promise<OpenResult> {
-  const [command, ...args] = resolveArgv(prefs, path);
+export async function openExternal(
+  path: string,
+  prefs: AppPreferences,
+  kind: OpenKind,
+): Promise<OpenResult> {
+  const [command, ...args] = resolveArgv(prefs, kind, path);
   if (!command) throw badRequest("No open command is configured — pick one in Settings");
   try {
     await run(command, args, { timeout: 10_000 });

@@ -35,6 +35,57 @@ describe("Store", () => {
     expect(store.sessions).toEqual([]);
   });
 
+  it("settings live in settings.json, not in the repository", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sylva-store-"));
+    const store = new Store(dir);
+    await store.init();
+    await store.setPreferences({
+      editorTarget: "cursor",
+      editorCommand: "",
+      terminalTarget: "iterm",
+      terminalCommand: "",
+      savedPrompts: [{ id: "p1", label: "Ship it", text: "Run the tests, then commit." }],
+    });
+    await store.setGlobalSettings({ bypassPermissions: false, model: "claude-opus-5", effort: null });
+
+    const { readFile } = await import("node:fs/promises");
+    const written = JSON.parse(await readFile(join(dir, "settings.json"), "utf8"));
+    expect(written.preferences.editorTarget).toBe("cursor");
+    expect(written.preferences.terminalTarget).toBe("iterm");
+    expect(written.preferences.savedPrompts[0].label).toBe("Ship it");
+    expect(written.globalSettings.model).toBe("claude-opus-5");
+
+    const reopened = new Store(dir);
+    await reopened.init();
+    expect(reopened.preferences.savedPrompts[0]?.text).toBe("Run the tests, then commit.");
+    expect(reopened.globalSettings.model).toBe("claude-opus-5");
+  });
+
+  it("carries settings over from an old registry.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sylva-store-"));
+    const { writeFile, readFile } = await import("node:fs/promises");
+    // The shape Sylva wrote before settings had their own file.
+    await writeFile(
+      join(dir, "registry.json"),
+      JSON.stringify({
+        repos: [{ id: "r1", name: "repo", path: "/x/repo" }],
+        sessions: [],
+        prefs: { w1: { model: "claude-haiku-4-5" } },
+        globalSettings: { bypassPermissions: true, model: "claude-sonnet-5", effort: "high" },
+      }),
+      "utf8",
+    );
+
+    const store = new Store(dir);
+    await store.init();
+    expect(store.repos).toEqual([{ id: "r1", name: "repo", path: "/x/repo" }]);
+    expect(store.globalSettings.model).toBe("claude-sonnet-5");
+    expect(store.overridesFor("w1")).toEqual({ model: "claude-haiku-4-5" });
+    // Migration is written out, so the next start reads the new file.
+    const migrated = JSON.parse(await readFile(join(dir, "settings.json"), "utf8"));
+    expect(migrated.globalSettings.effort).toBe("high");
+  });
+
   it("survives a corrupt registry file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "sylva-store-"));
     const a = new Store(dir);

@@ -1,4 +1,4 @@
-import { Sprite } from "../sprites/Sprite";
+import { LandingScene } from "./LandingScene";
 
 /**
  * First run: nothing is registered yet, so this is the only screen with room
@@ -7,12 +7,9 @@ import { Sprite } from "../sprites/Sprite";
 export function Landing({ onRegister, onAbout }: { onRegister: () => void; onAbout: () => void }) {
   return (
     <div className="landing">
+      <LandingScene />
+
       <div className="landing-hero">
-        <div className="landing-sprites">
-          <Sprite state="idle" scale={3} />
-          <Sprite state="working" scale={3} />
-          <Sprite state="success" scale={3} />
-        </div>
         <h1 className="landing-title">SYLVA</h1>
         <p className="landing-lede">
           A local mission control for git worktrees and Claude agents. Every worktree is a tree in

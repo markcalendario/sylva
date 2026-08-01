@@ -21,68 +21,119 @@ export interface PersistedSession {
   createdAt: string;
 }
 
+/** Machine state: what exists on this computer. */
 interface RegistryFile {
   repos: Omit<Repo, "available">[];
   sessions: PersistedSession[];
-  /** Per-worktree overrides, keyed by worktree id. */
-  prefs: Record<string, WorktreeOverrides>;
+}
+
+/**
+ * Everything a person would call a setting, kept in its own file so it can be
+ * read, edited and backed up by hand without picking through session metadata.
+ */
+interface SettingsFile {
   /** Defaults every worktree inherits unless it overrides them. */
   globalSettings: AgentSettings;
   /** App-level preferences: the Open target, saved prompts. */
   preferences: AppPreferences;
+  /** Per-worktree overrides, keyed by worktree id. */
+  prefs: Record<string, WorktreeOverrides>;
 }
 
 /**
- * A fresh empty registry. Must build new arrays and objects every call: the
+ * Fresh blanks. These must build new arrays and objects every call: the
  * defaults are module-level constants, and handing out the same array means one
  * Store pushing a repo silently edits the default every other Store falls back
  * to.
  */
-function blank(): RegistryFile {
+function blankRegistry(): RegistryFile {
+  return { repos: [], sessions: [] };
+}
+
+function blankSettings(): SettingsFile {
   return {
-    repos: [],
-    sessions: [],
-    prefs: {},
     globalSettings: { ...GLOBAL_DEFAULTS },
     preferences: { ...PREFERENCE_DEFAULTS, savedPrompts: [...PREFERENCE_DEFAULTS.savedPrompts] },
+    prefs: {},
   };
 }
 
 /**
  * Persistence for Sylva's state under ~/.sylva/ (override with SYLVA_HOME):
+ *   settings.json          agent defaults, app preferences, worktree overrides
  *   registry.json          repos + session metadata
  *   sessions/<id>.jsonl    agent transcripts
+ *
+ * None of it lives in your repository, so none of it can be committed.
  */
 export class Store {
   readonly baseDir: string;
   readonly sessionsDir: string;
   private registryPath: string;
-  private data: RegistryFile = blank();
+  private settingsPath: string;
+  private data: RegistryFile = blankRegistry();
+  private settings: SettingsFile = blankSettings();
   private writeChain: Promise<void> = Promise.resolve();
 
   constructor(baseDir?: string) {
     this.baseDir = baseDir ?? process.env.SYLVA_HOME ?? join(homedir(), ".sylva");
     this.sessionsDir = join(this.baseDir, "sessions");
     this.registryPath = join(this.baseDir, "registry.json");
+    this.settingsPath = join(this.baseDir, "settings.json");
   }
 
   async init(): Promise<void> {
     await mkdir(this.sessionsDir, { recursive: true });
+
+    let legacy: Partial<SettingsFile> & { preferences?: Partial<AppPreferences> } = {};
     try {
       const raw = await readFile(this.registryPath, "utf8");
-      const parsed = JSON.parse(raw) as Partial<RegistryFile>;
+      const parsed = JSON.parse(raw) as Partial<RegistryFile> & Partial<SettingsFile>;
       this.data = {
         repos: Array.isArray(parsed.repos) ? parsed.repos : [],
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-        prefs: parsed.prefs && typeof parsed.prefs === "object" ? parsed.prefs : {},
-        globalSettings: { ...GLOBAL_DEFAULTS, ...(parsed.globalSettings ?? {}) },
-        preferences: {
-          ...blank().preferences,
-          ...(parsed.preferences ?? {}),
-        },
+      };
+      // Settings used to live here; keep them if settings.json isn't written yet.
+      legacy = parsed;
+    } catch {
+      this.data = blankRegistry();
+    }
+
+    let stored: (Partial<SettingsFile> & { preferences?: Partial<AppPreferences> }) | null = null;
+    try {
+      stored = JSON.parse(await readFile(this.settingsPath, "utf8")) as Partial<SettingsFile> & {
+        preferences?: Partial<AppPreferences>;
       };
     } catch {
-      this.data = blank();
+      stored = null;
+    }
+
+    const source = stored ?? legacy;
+    const base = blankSettings();
+    const saved: Partial<AppPreferences> = source.preferences ?? {};
+    // Fields are picked one by one rather than spread, so a key that has been
+    // renamed or dropped since the file was written doesn't linger in it
+    // forever, quietly accumulating.
+    this.settings = {
+      globalSettings: { ...base.globalSettings, ...(source.globalSettings ?? {}) },
+      preferences: {
+        editorTarget: saved.editorTarget ?? base.preferences.editorTarget,
+        editorCommand: saved.editorCommand ?? base.preferences.editorCommand,
+        terminalTarget: saved.terminalTarget ?? base.preferences.terminalTarget,
+        terminalCommand: saved.terminalCommand ?? base.preferences.terminalCommand,
+        savedPrompts: Array.isArray(saved.savedPrompts)
+          ? saved.savedPrompts
+          : base.preferences.savedPrompts,
+      },
+      prefs: source.prefs && typeof source.prefs === "object" ? source.prefs : {},
+    };
+
+    // First run after the split: write settings.json so it exists to be edited,
+    // and rewrite registry.json without its now-stale copy of the settings, so
+    // there is exactly one place each value lives.
+    if (!stored) {
+      await this.flushSettings();
+      await this.flush();
     }
   }
 
@@ -117,37 +168,42 @@ export class Store {
     await this.flush();
   }
 
+  /** Where settings.json lives, so the UI can tell you. */
+  get settingsFile(): string {
+    return this.settingsPath;
+  }
+
   get globalSettings(): AgentSettings {
-    return this.data.globalSettings;
+    return this.settings.globalSettings;
   }
 
   async setGlobalSettings(settings: AgentSettings): Promise<void> {
-    this.data.globalSettings = settings;
-    await this.flush();
+    this.settings.globalSettings = settings;
+    await this.flushSettings();
   }
 
   get preferences(): AppPreferences {
-    return this.data.preferences;
+    return this.settings.preferences;
   }
 
   async setPreferences(preferences: AppPreferences): Promise<void> {
-    this.data.preferences = preferences;
-    await this.flush();
+    this.settings.preferences = preferences;
+    await this.flushSettings();
   }
 
   overridesFor(worktreeId: string): WorktreeOverrides {
-    return this.data.prefs[worktreeId] ?? {};
+    return this.settings.prefs[worktreeId] ?? {};
   }
 
   /** Global merged with this worktree's overrides. Present keys win. */
   effectiveFor(worktreeId: string): AgentSettings {
-    return { ...this.data.globalSettings, ...this.overridesFor(worktreeId) };
+    return { ...this.settings.globalSettings, ...this.overridesFor(worktreeId) };
   }
 
   async setOverrides(worktreeId: string, overrides: WorktreeOverrides): Promise<void> {
-    if (Object.keys(overrides).length === 0) delete this.data.prefs[worktreeId];
-    else this.data.prefs[worktreeId] = overrides;
-    await this.flush();
+    if (Object.keys(overrides).length === 0) delete this.settings.prefs[worktreeId];
+    else this.settings.prefs[worktreeId] = overrides;
+    await this.flushSettings();
   }
 
   transcriptPath(sessionId: string): string {
@@ -160,11 +216,24 @@ export class Store {
 
   /** Atomic, serialized write of registry.json. */
   private flush(): Promise<void> {
-    const snapshot = JSON.stringify(this.data, null, 2);
+    return this.write(this.registryPath, this.data);
+  }
+
+  /** Atomic, serialized write of settings.json. */
+  private flushSettings(): Promise<void> {
+    return this.write(this.settingsPath, this.settings);
+  }
+
+  /**
+   * Write via a temp file and rename. Both files share one chain so a crash
+   * mid-write can never leave a half-written file behind, whichever it was.
+   */
+  private write(path: string, value: unknown): Promise<void> {
+    const snapshot = JSON.stringify(value, null, 2);
     this.writeChain = this.writeChain.then(async () => {
-      const tmp = `${this.registryPath}.tmp`;
+      const tmp = `${path}.tmp`;
       await writeFile(tmp, snapshot, "utf8");
-      await rename(tmp, this.registryPath);
+      await rename(tmp, path);
     });
     return this.writeChain;
   }

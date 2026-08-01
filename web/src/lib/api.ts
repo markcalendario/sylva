@@ -10,6 +10,7 @@ import type {
   FileContent,
   FileDiff,
   FileEvent,
+  OpenKind,
   PullRequestResult,
   PermissionAnswer,
   PermissionRequest,
@@ -149,10 +150,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(opts),
     }),
-  openExternally: (worktreeId: string) =>
+  openExternally: (worktreeId: string, kind: OpenKind) =>
     request<{ ok: true; ran: string }>(`/api/worktrees/${worktreeId}/open`, {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify({ kind }),
     }),
 
   preferences: () => request<AppPreferences>("/api/preferences"),

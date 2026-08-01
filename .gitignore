@@ -4,3 +4,12 @@ dist/
 .DS_Store
 .env
 .env.*
+
+# Sylva's own state. It normally lives in ~/.sylva, well outside any
+# repository — these entries only matter if SYLVA_HOME is ever pointed at a
+# path inside a checkout (which is what the test harness does), so settings
+# and transcripts can never be committed by accident.
+.sylva/
+sylva-home/
+/settings.json
+/registry.json
