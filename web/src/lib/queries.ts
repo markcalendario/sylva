@@ -36,6 +36,35 @@ export function useDiff(worktreeId: string | null, path: string | null, staged: 
   });
 }
 
+/** App-level preferences: the Open target and saved prompts. */
+export function usePreferences() {
+  return useQuery({ queryKey: ["preferences"], queryFn: api.preferences, staleTime: 60_000 });
+}
+
+export function useGraph(worktreeId: string | null) {
+  return useQuery({
+    queryKey: ["graph", worktreeId],
+    queryFn: () => api.graph(worktreeId as string),
+    enabled: worktreeId !== null,
+  });
+}
+
+export function useTree(worktreeId: string | null, path: string) {
+  return useQuery({
+    queryKey: ["tree", worktreeId, path],
+    queryFn: () => api.tree(worktreeId as string, path),
+    enabled: worktreeId !== null,
+  });
+}
+
+export function useFileContent(worktreeId: string | null, path: string | null) {
+  return useQuery({
+    queryKey: ["file", worktreeId, path],
+    queryFn: () => api.fileContent(worktreeId as string, path as string),
+    enabled: worktreeId !== null && path !== null,
+  });
+}
+
 export function useInvalidate() {
   const qc = useQueryClient();
   return {

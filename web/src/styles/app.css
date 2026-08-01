@@ -61,6 +61,50 @@
   border-color: var(--moss-dim);
 }
 
+/* A blocked agent stalls without any other signal, so this is deliberately the
+   loudest thing in the top bar — and absent entirely when nothing is waiting. */
+.topbar-blocked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-size: var(--text-xs);
+  padding: 3px var(--pad-3);
+  border-radius: var(--radius);
+  color: var(--ember);
+  border: 1px solid var(--ember-dim);
+  background: rgb(255 107 91 / 0.08);
+}
+
+.topbar-blocked:hover {
+  background: rgb(255 107 91 / 0.16);
+  border-color: var(--ember);
+}
+
+.blocked-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ember);
+  box-shadow: 0 0 6px var(--ember);
+  animation: blocked-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes blocked-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blocked-dot {
+    animation: none;
+  }
+}
+
 /* ---------- landing ---------- */
 
 .main-scroll {
@@ -2421,4 +2465,421 @@ button:disabled {
 
 .permchoice-danger.permchoice-on .permchoice-hint {
   color: var(--ember);
+}
+
+/* ── Open externally ───────────────────────────────────────────────────── */
+
+.wt-open {
+  font-size: var(--text-xs);
+  padding: 3px var(--pad-3);
+  /* The header is a flex row; without this the button stretches to fill it. */
+  flex: 0 0 auto;
+  align-self: center;
+  white-space: nowrap;
+}
+
+.wt-open-error {
+  color: var(--ember);
+  font-size: var(--text-xs);
+  max-width: 34ch;
+}
+
+/* ── Commit graph ──────────────────────────────────────────────────────────
+   Two lanes that meet at the merge base. That is the whole shape of a topic
+   branch, so the diagram draws that and stops. */
+
+.graph {
+  border-top: 1px solid var(--pine-3);
+  margin-top: var(--pad-3);
+  padding-top: var(--pad-3);
+}
+
+.graph-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pad-2);
+  font-size: var(--text-xs);
+  margin-bottom: var(--pad-2);
+}
+
+.graph-lane-name {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 18ch;
+}
+
+.graph-yours {
+  color: var(--sapling);
+}
+
+.graph-theirs {
+  color: var(--stream);
+}
+
+.graph-vs {
+  color: var(--moss-dim);
+}
+
+.graph-note {
+  color: var(--moss-dim);
+  font-size: var(--text-xs);
+  margin: var(--pad-2) 0 0;
+}
+
+/* Stacked, not side by side: this lives in a ~300px column, and two lanes
+   sharing that width truncate every subject to uselessness. */
+.graph-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+}
+
+.graph-lane-caption {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  color: var(--moss-dim);
+  margin-bottom: 2px;
+}
+
+.graph-lane {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  /* The rail the dots sit on. */
+  border-left: 1px solid var(--pine-3);
+  padding-left: var(--pad-2);
+}
+
+.graph-lane-yours {
+  border-left-color: var(--sapling-dim);
+}
+
+.graph-lane-theirs {
+  border-left-color: var(--stream);
+}
+
+.graph-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pad-2);
+  font-size: var(--text-xs);
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.graph-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: -12px;
+  background: var(--moss-dim);
+}
+
+.graph-dot-yours {
+  background: var(--sapling);
+}
+
+.graph-dot-theirs {
+  background: var(--stream);
+}
+
+.graph-dot-base {
+  background: var(--firefly);
+}
+
+.graph-dot-common {
+  background: var(--pine-3);
+  border: 1px solid var(--moss-dim);
+}
+
+.graph-sha {
+  font-family: var(--font-mono);
+  color: var(--moss-dim);
+  flex-shrink: 0;
+}
+
+.graph-subject {
+  color: var(--moon);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.graph-when {
+  color: var(--moss-dim);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.graph-empty {
+  color: var(--moss-dim);
+  font-size: var(--text-xs);
+  padding: 2px 0;
+}
+
+.graph-join {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-size: var(--text-xs);
+  color: var(--moss);
+  margin: var(--pad-2) 0;
+  padding-left: var(--pad-2);
+}
+
+.graph-join-rail {
+  flex-shrink: 0;
+  width: 0;
+}
+
+.graph-join-label code {
+  font-family: var(--font-mono);
+  color: var(--firefly);
+}
+
+.graph-common {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--pad-2);
+  border-left: 1px solid var(--pine-3);
+  opacity: 0.72;
+}
+
+/* ── File tree ─────────────────────────────────────────────────────────── */
+
+.files-seg {
+  margin: var(--pad-3) var(--pad-3) var(--pad-2);
+}
+
+.tree-panel {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) 1fr;
+  gap: var(--pad-3);
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 0 var(--pad-3) var(--pad-3);
+}
+
+.tree-side {
+  overflow: auto;
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-0);
+  padding: var(--pad-1);
+}
+
+.tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree-node {
+  margin: 0;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  width: 100%;
+  padding: 2px var(--pad-2);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--moss);
+  text-align: left;
+  min-width: 0;
+}
+
+.tree-row:hover {
+  background: var(--pine-2);
+  color: var(--moon);
+}
+
+.tree-row-on {
+  background: var(--pine-2);
+  color: var(--moon);
+}
+
+.tree-glyph {
+  color: var(--moss-dim);
+  flex-shrink: 0;
+  width: 1ch;
+}
+
+.tree-glyph-dir {
+  color: var(--firefly);
+}
+
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-view {
+  overflow: auto;
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-0);
+  min-width: 0;
+}
+
+.tree-empty,
+.tree-note {
+  color: var(--moss-dim);
+  font-size: var(--text-sm);
+  padding: var(--pad-3);
+}
+
+.tree-file-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--pad-3);
+  padding: var(--pad-2) var(--pad-3);
+  border-bottom: 1px solid var(--pine-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--moss);
+  position: sticky;
+  top: 0;
+  background: var(--pine-1);
+}
+
+.tree-file-size {
+  color: var(--moss-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.tree-file-body {
+  margin: 0;
+  padding: var(--pad-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--moon);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ── Saved prompts ─────────────────────────────────────────────────────── */
+
+.saved-wrap {
+  position: relative;
+  display: flex;
+}
+
+.saved-menu {
+  position: absolute;
+  bottom: calc(100% + var(--pad-2));
+  left: 0;
+  z-index: 60;
+  min-width: 300px;
+  max-width: 400px;
+  max-height: 340px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: var(--pad-1);
+  background: var(--pine-1);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raise);
+}
+
+.saved-menu-head,
+.saved-menu-foot {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  color: var(--moss-dim);
+  padding: var(--pad-1) var(--pad-2);
+}
+
+.saved-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: var(--pad-2);
+  border-radius: var(--radius);
+}
+
+.saved-item:hover {
+  background: var(--pine-2);
+}
+
+.saved-label {
+  font-size: var(--text-sm);
+  color: var(--moon);
+}
+
+.saved-preview {
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-editor {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-1);
+}
+
+.saved-editor-row {
+  display: grid;
+  grid-template-columns: minmax(6ch, 14ch) 1fr auto;
+  align-items: baseline;
+  gap: var(--pad-2);
+  font-size: var(--text-xs);
+  padding: 2px var(--pad-2);
+  border-radius: var(--radius);
+  background: var(--pine-0);
+}
+
+.saved-editor-label {
+  color: var(--moon);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-editor-text {
+  color: var(--moss-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-editor-new {
+  display: grid;
+  grid-template-columns: minmax(8ch, 16ch) 1fr auto;
+  gap: var(--pad-2);
+  align-items: start;
+  margin-top: var(--pad-2);
+}
+
+.saved-editor-new textarea {
+  resize: vertical;
+}
+
+/* ── Pull request dialog ───────────────────────────────────────────────── */
+
+.dialog a {
+  color: var(--stream);
+  word-break: break-all;
 }

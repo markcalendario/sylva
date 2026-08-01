@@ -1,16 +1,22 @@
-import { stat } from "node:fs/promises";
+import { open, readdir, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 import type {
   BaseDivergence,
   BranchInfo,
+  CommitGraph,
   FileChangeKind,
+  FileContent,
   FileDiff,
   FileEvent,
+  GraphCommit,
+  TreeEntry,
+  TreeListing,
   WorktreeStatus,
 } from "sylva-shared";
 import { badRequest, conflict, GitError } from "../lib/errors.js";
 import { parseBranches, parseDiff, parseStatusV2 } from "../lib/parse.js";
 import type { GitService } from "./git.js";
+import { isIgnored } from "./watcher.js";
 import type { Workspace } from "./workspace.js";
 
 /** Everyday git operations on a worktree. All mutations go through the exclusive queue. */
@@ -217,5 +223,163 @@ export class GitOps {
     const { worktree } = await this.workspace.resolveWorktree(worktreeId);
     const { stderr, stdout } = await this.git.runExclusive(worktree.path, ["pull", "--ff-only"]);
     return { output: (stdout + stderr).trim() };
+  }
+
+  /**
+   * This branch drawn against its base. Two ranges plus the merge base is all
+   * the shape there is to a topic branch, and it answers the question the
+   * ahead/behind counters only hint at: *what* am I ahead by?
+   */
+  async graph(worktreeId: string, cap = 25): Promise<CommitGraph> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const status = await this.status(worktreeId);
+    const base = await this.resolveBaseRef(worktree.path);
+
+    const sameBranch =
+      base !== null &&
+      status.branch !== null &&
+      (base === status.branch || base === `origin/${status.branch}`);
+
+    if (!base || sameBranch) {
+      // On the base branch itself there is nothing to diverge from; show the
+      // recent history so the panel still says something useful.
+      const common = await this.log(worktree.path, ["-n", String(cap), "HEAD"]);
+      return {
+        branch: status.branch,
+        base: sameBranch ? base : null,
+        mergeBase: null,
+        ahead: [],
+        behind: [],
+        common,
+        truncated: common.length >= cap,
+      };
+    }
+
+    let mergeBaseSha: string | null = null;
+    try {
+      const { stdout } = await this.git.run(worktree.path, ["merge-base", "HEAD", base]);
+      mergeBaseSha = stdout.trim() || null;
+    } catch {
+      mergeBaseSha = null;
+    }
+
+    const [ahead, behind] = await Promise.all([
+      this.log(worktree.path, ["-n", String(cap + 1), `${base}..HEAD`]),
+      this.log(worktree.path, ["-n", String(cap + 1), `HEAD..${base}`]),
+    ]);
+    const mergeBase = mergeBaseSha
+      ? ((await this.log(worktree.path, ["-n", "1", mergeBaseSha]))[0] ?? null)
+      : null;
+    const common = mergeBaseSha
+      ? (await this.log(worktree.path, ["-n", "4", mergeBaseSha])).slice(1)
+      : [];
+
+    return {
+      branch: status.branch,
+      base,
+      mergeBase,
+      ahead: ahead.slice(0, cap),
+      behind: behind.slice(0, cap),
+      common,
+      truncated: ahead.length > cap || behind.length > cap,
+    };
+  }
+
+  /** git log with a record format that survives subjects containing anything. */
+  private async log(cwd: string, args: string[]): Promise<GraphCommit[]> {
+    const FIELD = "\x1f";
+    const RECORD = "\x1e";
+    try {
+      const { stdout } = await this.git.run(cwd, [
+        "log",
+        `--format=%H${FIELD}%h${FIELD}%s${FIELD}%an${FIELD}%ar${RECORD}`,
+        ...args,
+      ]);
+      return stdout
+        .split(RECORD)
+        .map((record) => record.replace(/^\n/, ""))
+        .filter((record) => record.trim().length > 0)
+        .map((record) => {
+          const [sha, short, subject, author, relative] = record.split(FIELD);
+          return {
+            sha: sha ?? "",
+            short: short ?? "",
+            subject: subject ?? "",
+            author: author ?? "",
+            relative: relative ?? "",
+          };
+        });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * One directory of the worktree. The Files feed only ever shows what changed;
+   * this is for looking at what's there.
+   */
+  async tree(worktreeId: string, relPath: string): Promise<TreeListing> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const rel = relPath ? this.safeRelPath(relPath) : "";
+    const dir = rel ? join(worktree.path, rel) : worktree.path;
+
+    const dirents = await readdir(dir, { withFileTypes: true });
+    const entries: TreeEntry[] = [];
+    for (const dirent of dirents) {
+      const childRel = rel ? `${rel}/${dirent.name}` : dirent.name;
+      if (isIgnored(childRel)) continue;
+      if (dirent.isDirectory()) {
+        entries.push({ name: dirent.name, path: childRel, kind: "dir" });
+      } else if (dirent.isFile()) {
+        let size: number | undefined;
+        try {
+          size = (await stat(join(dir, dirent.name))).size;
+        } catch {
+          size = undefined;
+        }
+        entries.push({
+          name: dirent.name,
+          path: childRel,
+          kind: "file",
+          ...(size === undefined ? {} : { size }),
+        });
+      }
+    }
+    // Directories first, then files, each alphabetically — the order every
+    // file tree uses, so nobody has to learn this one.
+    entries.sort((a, b) =>
+      a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "dir" ? -1 : 1,
+    );
+    return { path: rel, entries };
+  }
+
+  /** A file's text, capped, with binaries reported rather than streamed. */
+  async fileContent(worktreeId: string, relPath: string, cap = 256 * 1024): Promise<FileContent> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const rel = this.safeRelPath(relPath);
+    const full = join(worktree.path, rel);
+
+    const info = await stat(full);
+    if (!info.isFile()) throw badRequest(`${rel} is not a file`);
+
+    const handle = await open(full, "r");
+    try {
+      const buffer = Buffer.alloc(Math.min(info.size, cap));
+      await handle.read(buffer, 0, buffer.byteLength, 0);
+      // A NUL byte anywhere in the sampled region means this isn't text; no
+      // encoding guessing beyond that.
+      if (buffer.includes(0)) {
+        return { path: rel, content: "", truncated: false, binary: true, size: info.size };
+      }
+      return {
+        path: rel,
+        content: buffer.toString("utf8"),
+        truncated: info.size > cap,
+        binary: false,
+        size: info.size,
+      };
+    } finally {
+      await handle.close();
+    }
   }
 }

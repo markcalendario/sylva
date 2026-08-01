@@ -53,6 +53,65 @@ export interface BaseDivergence {
   behind: number;
 }
 
+/** One commit in the branch diagram. */
+export interface GraphCommit {
+  sha: string;
+  short: string;
+  subject: string;
+  author: string;
+  /** Relative age, e.g. "2 hours ago" — formatted by git, not by us. */
+  relative: string;
+}
+
+/**
+ * This branch drawn against its base: what each has that the other doesn't,
+ * and the commit where they last agreed.
+ */
+export interface CommitGraph {
+  branch: string | null;
+  base: string | null;
+  mergeBase: GraphCommit | null;
+  /** Commits here but not on base, newest first. */
+  ahead: GraphCommit[];
+  /** Commits on base but not here, newest first. */
+  behind: GraphCommit[];
+  /** Shared history below the merge base, for context. */
+  common: GraphCommit[];
+  /** True when either side was capped, so the UI can say so. */
+  truncated: boolean;
+}
+
+export interface TreeEntry {
+  name: string;
+  /** Worktree-relative path. */
+  path: string;
+  kind: "dir" | "file";
+  size?: number;
+}
+
+export interface TreeListing {
+  /** Worktree-relative directory, "" for the root. */
+  path: string;
+  entries: TreeEntry[];
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  /** True when the file was cut off at the size cap. */
+  truncated: boolean;
+  /** True when the file isn't text; content is then empty. */
+  binary: boolean;
+  size: number;
+}
+
+export interface PullRequestResult {
+  url: string;
+  /** "gh" when the PR was created, "compare" when we could only open a form. */
+  via: "gh" | "compare";
+  draft: boolean;
+}
+
 export interface DiffLine {
   type: "context" | "add" | "del";
   content: string;
@@ -129,6 +188,60 @@ export const GLOBAL_DEFAULTS: AgentSettings = {
   effort: null,
 };
 
+/** Which external application the Open button hands a worktree to. */
+export type OpenTarget = "vscode" | "cursor" | "zed" | "terminal" | "finder" | "custom" | "none";
+
+export const OPEN_TARGETS: Array<{ id: OpenTarget; label: string; note: string }> = [
+  { id: "vscode", label: "VS Code", note: "needs the `code` command on your PATH" },
+  { id: "cursor", label: "Cursor", note: "needs the `cursor` command on your PATH" },
+  { id: "zed", label: "Zed", note: "needs the `zed` command on your PATH" },
+  { id: "terminal", label: "Terminal", note: "a shell in the worktree directory" },
+  { id: "finder", label: "File manager", note: "reveal the folder" },
+  { id: "custom", label: "Custom command", note: "{path} is replaced by the worktree" },
+  { id: "none", label: "Off", note: "hide the Open button" },
+];
+
+/** A reusable prompt snippet, appended to whatever is already typed. */
+export interface SavedPrompt {
+  id: string;
+  label: string;
+  text: string;
+}
+
+/**
+ * App-level preferences. Separate from AgentSettings because these describe
+ * Sylva itself rather than how an agent runs, and nothing overrides them
+ * per worktree.
+ */
+export interface AppPreferences {
+  openTarget: OpenTarget;
+  /** Command template used when openTarget is "custom"; {path} is substituted. */
+  openCommand: string;
+  savedPrompts: SavedPrompt[];
+}
+
+export const PREFERENCE_DEFAULTS: AppPreferences = {
+  openTarget: "vscode",
+  openCommand: "",
+  savedPrompts: [
+    {
+      id: "review",
+      label: "Review my changes",
+      text: "Review the staged and unstaged changes in this worktree. Flag anything that looks wrong before I commit.",
+    },
+    {
+      id: "tests",
+      label: "Run the tests",
+      text: "Run the test suite and fix whatever fails. Show me the failures before you change anything.",
+    },
+    {
+      id: "explain",
+      label: "Explain this code",
+      text: "Explain how this part of the codebase works, and point out anything surprising.",
+    },
+  ],
+};
+
 export interface WorktreeSettings {
   overrides: WorktreeOverrides;
   /** Global merged with overrides — what the session actually runs with. */
@@ -166,6 +279,12 @@ export interface Attachment {
 export interface SessionInfo {
   id: string;
   worktreeId: string;
+  /**
+   * Branch the session is running on. Carried here so anything that has to
+   * name a worktree — notifications, the blocked-agent list — can do it
+   * without waiting on a separate worktree fetch.
+   */
+  branch: string | null;
   status: SessionStatus;
   /** The resolved settings this session is actually running under. */
   settings: AgentSettings;

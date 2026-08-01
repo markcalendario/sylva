@@ -1,7 +1,14 @@
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { GLOBAL_DEFAULTS, type AgentSettings, type Repo, type WorktreeOverrides } from "sylva-shared";
+import {
+  GLOBAL_DEFAULTS,
+  PREFERENCE_DEFAULTS,
+  type AgentSettings,
+  type AppPreferences,
+  type Repo,
+  type WorktreeOverrides,
+} from "sylva-shared";
 
 export interface PersistedSession {
   id: string;
@@ -21,14 +28,25 @@ interface RegistryFile {
   prefs: Record<string, WorktreeOverrides>;
   /** Defaults every worktree inherits unless it overrides them. */
   globalSettings: AgentSettings;
+  /** App-level preferences: the Open target, saved prompts. */
+  preferences: AppPreferences;
 }
 
-const EMPTY: RegistryFile = {
-  repos: [],
-  sessions: [],
-  prefs: {},
-  globalSettings: GLOBAL_DEFAULTS,
-};
+/**
+ * A fresh empty registry. Must build new arrays and objects every call: the
+ * defaults are module-level constants, and handing out the same array means one
+ * Store pushing a repo silently edits the default every other Store falls back
+ * to.
+ */
+function blank(): RegistryFile {
+  return {
+    repos: [],
+    sessions: [],
+    prefs: {},
+    globalSettings: { ...GLOBAL_DEFAULTS },
+    preferences: { ...PREFERENCE_DEFAULTS, savedPrompts: [...PREFERENCE_DEFAULTS.savedPrompts] },
+  };
+}
 
 /**
  * Persistence for Sylva's state under ~/.sylva/ (override with SYLVA_HOME):
@@ -39,7 +57,7 @@ export class Store {
   readonly baseDir: string;
   readonly sessionsDir: string;
   private registryPath: string;
-  private data: RegistryFile = EMPTY;
+  private data: RegistryFile = blank();
   private writeChain: Promise<void> = Promise.resolve();
 
   constructor(baseDir?: string) {
@@ -58,9 +76,13 @@ export class Store {
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
         prefs: parsed.prefs && typeof parsed.prefs === "object" ? parsed.prefs : {},
         globalSettings: { ...GLOBAL_DEFAULTS, ...(parsed.globalSettings ?? {}) },
+        preferences: {
+          ...blank().preferences,
+          ...(parsed.preferences ?? {}),
+        },
       };
     } catch {
-      this.data = { repos: [], sessions: [], prefs: {}, globalSettings: GLOBAL_DEFAULTS };
+      this.data = blank();
     }
   }
 
@@ -101,6 +123,15 @@ export class Store {
 
   async setGlobalSettings(settings: AgentSettings): Promise<void> {
     this.data.globalSettings = settings;
+    await this.flush();
+  }
+
+  get preferences(): AppPreferences {
+    return this.data.preferences;
+  }
+
+  async setPreferences(preferences: AppPreferences): Promise<void> {
+    this.data.preferences = preferences;
     await this.flush();
   }
 

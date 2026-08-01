@@ -9,6 +9,7 @@ import { ForestView } from "./ForestView";
 import { Landing } from "./Landing";
 import { GitPanel } from "./GitPanel";
 import { AgentSettingsButton } from "./AgentSettingsButton";
+import { OpenExternallyButton } from "./OpenExternallyButton";
 
 type Tab = "agent" | "files" | "git";
 
@@ -119,6 +120,7 @@ export function MainPanel({
             </span>
           </div>
         </div>
+        <OpenExternallyButton worktreeId={worktreeId} />
         {tab === "agent" && <AgentSettingsButton worktreeId={worktreeId} />}
         <nav className="tabs">
           {(["agent", "files", "git"] as Tab[]).map((t) => (

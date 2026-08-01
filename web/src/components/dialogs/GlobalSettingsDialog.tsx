@@ -1,18 +1,23 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import type { AgentSettings } from "sylva-shared";
+import type { AgentSettings, AppPreferences } from "sylva-shared";
 import { api, ApiFailure } from "../../lib/api";
 import { AudioControls } from "../AudioControls";
 import { Dialog } from "../Dialog";
 import { TextSize } from "../TextSize";
 import { BypassWarning, EffortField, ModelField, PermissionField } from "./settingsFields";
+import { OpenTargetField, SavedPromptsField } from "./PreferenceFields";
 
 /** Defaults every worktree inherits unless it overrides them. */
 export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [saved, setSaved] = useState<AgentSettings | null>(null);
+  const [prefs, setPrefs] = useState<AppPreferences | null>(null);
+  const [savedPrefs, setSavedPrefs] = useState<AppPreferences | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (!open) return;
@@ -21,9 +26,13 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
       setSettings(s);
       setSaved(s);
     });
+    void api.preferences().then((p) => {
+      setPrefs(p);
+      setSavedPrefs(p);
+    });
   }, [open]);
 
-  if (!settings || !saved) {
+  if (!settings || !saved || !prefs || !savedPrefs) {
     return (
       <Dialog title="Settings" open={open} onClose={onClose}>
         <p className="dialog-hint">Loading…</p>
@@ -34,15 +43,23 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
   const dirty =
     settings.model !== saved.model ||
     settings.effort !== saved.effort ||
-    settings.bypassPermissions !== saved.bypassPermissions;
+    settings.bypassPermissions !== saved.bypassPermissions ||
+    JSON.stringify(prefs) !== JSON.stringify(savedPrefs);
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.setGlobalSettings(settings);
+      const [next, nextPrefs] = await Promise.all([
+        api.setGlobalSettings(settings),
+        api.setPreferences(prefs),
+      ]);
       setSettings(next);
       setSaved(next);
+      setPrefs(nextPrefs);
+      setSavedPrefs(nextPrefs);
+      // The Open button and the saved-prompts menu read this query.
+      void qc.invalidateQueries({ queryKey: ["preferences"] });
       onClose();
     } catch (e) {
       setError(e instanceof ApiFailure ? (e.detail ?? e.message) : "Couldn't save settings");
@@ -85,6 +102,14 @@ export function GlobalSettingsDialog({ open, onClose }: { open: boolean; onClose
             cricket.
           </span>
         </div>
+      </section>
+
+      <section className="settings-section">
+        <h3 className="settings-heading" data-tip="How Sylva connects to the rest of your tools">
+          Workflow
+        </h3>
+        <OpenTargetField value={prefs} onChange={setPrefs} />
+        <SavedPromptsField value={prefs} onChange={setPrefs} />
       </section>
 
       <section className="settings-section">

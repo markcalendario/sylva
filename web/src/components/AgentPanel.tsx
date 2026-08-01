@@ -3,6 +3,7 @@ import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { ensureNotifyPermission } from "../lib/notify";
+import { SavedPromptsButton } from "./SavedPromptsButton";
 import { EMPTY_DRAFT, NO_EVENTS, useSylva } from "../state/store";
 import { Markdown } from "./Markdown";
 import { PromptNav, type PromptMark } from "./PromptNav";
@@ -430,6 +431,11 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           >
             ＋
           </button>
+          <SavedPromptsButton
+            onInsert={(snippet) =>
+              setText(text.trim().length > 0 ? `${text.trimEnd()}\n\n${snippet}` : snippet)
+            }
+          />
           <input
             ref={fileInputRef}
             type="file"

@@ -4,6 +4,8 @@ import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { useDiff, useInvalidate, useStatusQuery } from "../lib/queries";
 import { useSylva } from "../state/store";
+import { CommitGraph } from "./CommitGraph";
+import { CreatePrButton } from "./CreatePrButton";
 import { DiffView } from "./DiffView";
 
 function FileList({
@@ -167,7 +169,10 @@ export function GitPanel({
               Stage all
             </button>
           )}
+          <CreatePrButton worktreeId={worktreeId} branch={status.branch} />
         </div>
+
+        <CommitGraph worktreeId={worktreeId} />
 
         {clean && (
           <div className="git-clean" data-tip="Nothing has changed since the last commit">

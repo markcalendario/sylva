@@ -9,13 +9,51 @@ export function ensureNotifyPermission(): void {
   }
 }
 
-/** Browser notification when an agent finishes somewhere the user isn't looking. */
-export function notifyAgentEvent(event: ServerEvent): void {
-  if (event.type !== "agent.event" || event.event.kind !== "result") return;
-  const { focusedWorktreeId } = useSylva.getState();
-  const backgrounded = event.worktreeId !== focusedWorktreeId || document.hidden;
-  if (!backgrounded) return;
+/**
+ * What to call a worktree in a notification. The session carries its branch,
+ * and anything worth notifying about has a session; the id is a last resort.
+ */
+function label(worktreeId: string): string {
+  const branch = useSylva.getState().sessions[worktreeId]?.branch;
+  return branch ?? `worktree ${worktreeId.slice(0, 8)}`;
+}
+
+function show(worktreeId: string, title: string, body: string): void {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const n = new Notification(`Sylva — ${title}`, { body, tag: `sylva-${worktreeId}` });
+  n.onclick = () => {
+    window.focus();
+    void api.setFocus(worktreeId);
+    n.close();
+  };
+}
+
+/** True when the user isn't already looking at this worktree. */
+function backgrounded(worktreeId: string): boolean {
+  const { focusedWorktreeId } = useSylva.getState();
+  return worktreeId !== focusedWorktreeId || document.hidden;
+}
+
+/**
+ * Notifications for the two things worth interrupting someone over: an agent
+ * that finished, and an agent stuck waiting on a decision. The second matters
+ * more — a finished agent costs nothing to notice late, a blocked one is
+ * burning your afternoon — so it is the one that must never be silent.
+ */
+export function notifyAgentEvent(event: ServerEvent): void {
+  if (event.type === "permission.request") {
+    const { worktreeId, tool } = event.request;
+    if (!backgrounded(worktreeId)) return;
+    show(
+      worktreeId,
+      "A dryad needs your decision",
+      `${label(worktreeId)} · ${tool} · click to answer`,
+    );
+    return;
+  }
+
+  if (event.type !== "agent.event" || event.event.kind !== "result") return;
+  if (!backgrounded(event.worktreeId)) return;
 
   const outcome = event.event.outcome;
   const title =
@@ -24,13 +62,5 @@ export function notifyAgentEvent(event: ServerEvent): void {
       : outcome === "interrupted"
         ? "Agent interrupted"
         : "Agent hit an error";
-  const n = new Notification(`Sylva — ${title}`, {
-    body: `Worktree ${event.worktreeId.slice(0, 8)} · click to open`,
-    tag: `sylva-${event.worktreeId}`,
-  });
-  n.onclick = () => {
-    window.focus();
-    void api.setFocus(event.worktreeId);
-    n.close();
-  };
+  show(event.worktreeId, title, `${label(event.worktreeId)} · click to open`);
 }

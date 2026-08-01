@@ -1,6 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
+import { badRequest } from "../lib/errors.js";
+import { createPullRequest } from "../services/pr.js";
+
+const treeQuerySchema = z.object({ path: z.string().max(1000).optional() });
+const fileQuerySchema = z.object({ path: z.string().min(1).max(1000) });
+const prSchema = z
+  .object({
+    draft: z.boolean().default(false),
+    title: z.string().max(200).default(""),
+    body: z.string().max(20_000).default(""),
+  })
+  .default({ draft: false, title: "", body: "" });
 
 const pathsSchema = z.union([
   z.object({ all: z.literal(true) }),
@@ -88,5 +100,50 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     const result = await gitOps.pull(worktreeId);
     await broadcastStatus(worktreeId);
     return result;
+  });
+
+  app.get("/api/worktrees/:worktreeId/graph", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    return gitOps.graph(worktreeId);
+  });
+
+  app.get("/api/worktrees/:worktreeId/tree", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { path } = treeQuerySchema.parse(req.query);
+    return gitOps.tree(worktreeId, path ?? "");
+  });
+
+  app.get("/api/worktrees/:worktreeId/file", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { path } = fileQuerySchema.parse(req.query);
+    return gitOps.fileContent(worktreeId, path);
+  });
+
+  /**
+   * Open a pull request. Pushes first when the branch has no upstream, since a
+   * PR for commits GitHub has never seen is not a PR.
+   */
+  app.post("/api/worktrees/:worktreeId/pr", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const body = prSchema.parse(req.body ?? {});
+    const { worktree } = await ctx.workspace.resolveWorktree(worktreeId);
+    const status = await gitOps.status(worktreeId);
+    if (!status.branch) throw badRequest("Cannot open a pull request from a detached HEAD");
+    if (!status.base) {
+      throw badRequest("Couldn't work out which branch to merge into — no base branch found");
+    }
+    if (!status.upstream) {
+      await gitOps.push(worktreeId, true);
+      await broadcastStatus(worktreeId);
+    }
+    // The base arrives as "origin/main"; GitHub wants the branch name alone.
+    const base = status.base.branch.replace(/^origin\//, "");
+    return createPullRequest(worktree.path, {
+      draft: body.draft,
+      title: body.title || status.branch,
+      body: body.body,
+      base,
+      head: status.branch,
+    });
   });
 }

@@ -13,6 +13,13 @@ export function TopBar({
 }) {
   const connection = useSylva((s) => s.connection);
   const focused = useSylva((s) => s.focusedWorktreeId);
+  // Select the map itself, never a derived array: a fresh array each call
+  // changes the snapshot identity on every render and spins the loop.
+  const pendingPermissions = useSylva((s) => s.pendingPermissions);
+
+  const blocked = Object.entries(pendingPermissions)
+    .filter(([, reqs]) => reqs.length > 0)
+    .map(([worktreeId]) => worktreeId);
 
   const connTip =
     connection === "connected"
@@ -38,6 +45,22 @@ export function TopBar({
         )}
       </div>
       <div className="topbar-right">
+        {/* An agent waiting on a decision is the one thing that stalls silently,
+            so it gets a standing seat in the chrome rather than a toast. */}
+        {blocked.length > 0 && (
+          <button
+            className="topbar-blocked"
+            onClick={() => blocked[0] && void api.setFocus(blocked[0])}
+            data-tip={
+              blocked.length === 1
+                ? "A dryad is waiting for a permission decision — click to answer"
+                : `${blocked.length} dryads are waiting for permission decisions — click to answer the first`
+            }
+          >
+            <span className="blocked-dot" />
+            {blocked.length} waiting
+          </button>
+        )}
         <AudioControls compact />
         <button
           className="topbar-settings"

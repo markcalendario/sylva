@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { Attachment } from "sylva-shared";
 import type { AppContext } from "../context.js";
 import { badRequest } from "../lib/errors.js";
+import { openExternal } from "../services/open.js";
 
 const promptSchema = z.object({ text: z.string().min(1) });
 const answerSchema = z.object({
@@ -12,6 +13,20 @@ const answerSchema = z.object({
   answer: z.enum(["allow", "allow-always", "deny"]),
 });
 const effortSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
+
+const preferencesSchema = z.object({
+  openTarget: z.enum(["vscode", "cursor", "zed", "terminal", "finder", "custom", "none"]),
+  openCommand: z.string().max(500),
+  savedPrompts: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64),
+        label: z.string().min(1).max(80),
+        text: z.string().min(1).max(4000),
+      }),
+    )
+    .max(50),
+});
 
 const globalSettingsSchema = z.object({
   bypassPermissions: z.boolean(),
@@ -38,6 +53,8 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
   app.get("/api/agent/availability", async () => sessions.getAvailability());
 
   app.get("/api/sessions", async () => sessions.listSessions());
+
+  app.get("/api/permissions", async () => sessions.allPendingPermissions());
 
   app.get("/api/worktrees/:worktreeId/session", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
@@ -76,6 +93,21 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
   });
 
   app.get("/api/settings", async () => ctx.store.globalSettings);
+
+  app.get("/api/preferences", async () => ctx.store.preferences);
+
+  app.put("/api/preferences", async (req) => {
+    const body = preferencesSchema.parse(req.body);
+    await ctx.store.setPreferences(body);
+    return ctx.store.preferences;
+  });
+
+  /** Hand the worktree directory to the configured editor, terminal or file manager. */
+  app.post("/api/worktrees/:worktreeId/open", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { worktree } = await workspace.resolveWorktree(worktreeId);
+    return openExternal(worktree.path, ctx.store.preferences);
+  });
 
   app.put("/api/settings", async (req) => {
     const body = globalSettingsSchema.parse(req.body);

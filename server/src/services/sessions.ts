@@ -280,6 +280,18 @@ export class SessionManager {
     return [...session.pendingPermissions.values()].map((p) => p.request);
   }
 
+  /**
+   * Every request waiting on an answer, across all sessions. The web app asks
+   * for this on connect: permission.request events only arrive while the page
+   * is open, so a reload would otherwise lose track of an agent that is
+   * already blocked and show it as merrily working.
+   */
+  allPendingPermissions(): PermissionRequest[] {
+    return [...this.sessions.values()].flatMap((s) =>
+      [...s.pendingPermissions.values()].map((p) => p.request),
+    );
+  }
+
   getSettings(worktreeId: string): WorktreeSettings {
     return {
       overrides: this.store.overridesFor(worktreeId),
@@ -351,6 +363,7 @@ export class SessionManager {
     const info: SessionInfo = {
       id: persisted?.id ?? freshId(),
       worktreeId,
+      branch: worktree.branch,
       status: "idle",
       settings: prefs,
       sdkSessionId: persisted?.sdkSessionId ?? null,

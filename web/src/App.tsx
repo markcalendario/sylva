@@ -35,6 +35,17 @@ function Shell() {
       void api.listSessions().then((sessions) => {
         for (const s of sessions) useSylva.getState().setSession(s.worktreeId, s);
       });
+      // Permission requests only arrive as live events, so a reload leaves an
+      // already-blocked agent looking like it is working. Rebuild them here.
+      void api.listPermissions().then((requests) => {
+        const byWorktree = new Map<string, typeof requests>();
+        for (const r of requests) {
+          byWorktree.set(r.worktreeId, [...(byWorktree.get(r.worktreeId) ?? []), r]);
+        }
+        for (const [worktreeId, list] of byWorktree) {
+          useSylva.getState().setPermissions(worktreeId, list);
+        }
+      });
     });
   }, [qc]);
 

@@ -2,15 +2,20 @@ import type {
   AgentAvailability,
   AgentEvent,
   AgentSettings,
+  AppPreferences,
   Attachment,
   BranchInfo,
+  CommitGraph,
   DirListing,
+  FileContent,
   FileDiff,
   FileEvent,
+  PullRequestResult,
   PermissionAnswer,
   PermissionRequest,
   Repo,
   SessionInfo,
+  TreeListing,
   Worktree,
   WorktreeOverrides,
   WorktreeSettings,
@@ -110,6 +115,9 @@ export const api = {
       availability: AgentAvailability;
     }>(`/api/worktrees/${worktreeId}/session`),
   listSessions: () => request<SessionInfo[]>("/api/sessions"),
+
+  /** Every request waiting on an answer, for rebuilding state after a reload. */
+  listPermissions: () => request<PermissionRequest[]>("/api/permissions"),
   transcript: (worktreeId: string) =>
     request<AgentEvent[]>(`/api/worktrees/${worktreeId}/session/transcript`),
   prompt: (worktreeId: string, text: string) =>
@@ -131,6 +139,26 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ requestId, answer }),
     }),
+  graph: (worktreeId: string) => request<CommitGraph>(`/api/worktrees/${worktreeId}/graph`),
+  tree: (worktreeId: string, path = "") =>
+    request<TreeListing>(`/api/worktrees/${worktreeId}/tree?path=${encodeURIComponent(path)}`),
+  fileContent: (worktreeId: string, path: string) =>
+    request<FileContent>(`/api/worktrees/${worktreeId}/file?path=${encodeURIComponent(path)}`),
+  createPr: (worktreeId: string, opts: { draft: boolean; title?: string; body?: string }) =>
+    request<PullRequestResult>(`/api/worktrees/${worktreeId}/pr`, {
+      method: "POST",
+      body: JSON.stringify(opts),
+    }),
+  openExternally: (worktreeId: string) =>
+    request<{ ok: true; ran: string }>(`/api/worktrees/${worktreeId}/open`, {
+      method: "POST",
+      body: "{}",
+    }),
+
+  preferences: () => request<AppPreferences>("/api/preferences"),
+  setPreferences: (prefs: AppPreferences) =>
+    request<AppPreferences>("/api/preferences", { method: "PUT", body: JSON.stringify(prefs) }),
+
   globalSettings: () => request<AgentSettings>("/api/settings"),
   setGlobalSettings: (settings: AgentSettings) =>
     request<AgentSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) }),
