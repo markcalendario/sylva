@@ -42,6 +42,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   app.addHook("onClose", async () => {
     ctx.hub.close();
+    await ctx.watchers.closeAll();
   });
 
   return app;

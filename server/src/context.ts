@@ -1,6 +1,7 @@
 import { GitService } from "./services/git.js";
 import { GitOps } from "./services/gitOps.js";
 import { Store } from "./services/store.js";
+import { WatcherManager } from "./services/watcher.js";
 import { Workspace } from "./services/workspace.js";
 import { WsHub } from "./ws/hub.js";
 
@@ -11,6 +12,7 @@ export interface AppContext {
   hub: WsHub;
   workspace: Workspace;
   gitOps: GitOps;
+  watchers: WatcherManager;
 }
 
 export async function createContext(baseDir?: string): Promise<AppContext> {
@@ -20,5 +22,17 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
   const hub = new WsHub();
   const workspace = new Workspace(store, git);
   const gitOps = new GitOps(git, workspace);
-  return { store, git, hub, workspace, gitOps };
+  const watchers = new WatcherManager(hub, gitOps);
+
+  workspace.onFocusChange = (worktreeId) => {
+    if (!worktreeId) {
+      watchers.setFocused(null, null);
+      return;
+    }
+    void workspace.tryResolveWorktree(worktreeId).then((resolved) => {
+      watchers.setFocused(worktreeId, resolved?.worktree.path ?? null);
+    });
+  };
+
+  return { store, git, hub, workspace, gitOps, watchers };
 }
