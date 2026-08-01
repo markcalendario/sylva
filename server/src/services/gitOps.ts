@@ -1,5 +1,5 @@
 import { isAbsolute, normalize } from "node:path";
-import type { BranchInfo, FileDiff, WorktreeStatus } from "sylva-shared";
+import type { BaseDivergence, BranchInfo, FileDiff, WorktreeStatus } from "sylva-shared";
 import { badRequest, conflict, GitError } from "../lib/errors.js";
 import { parseBranches, parseDiff, parseStatusV2 } from "../lib/parse.js";
 import type { GitService } from "./git.js";
@@ -27,7 +27,55 @@ export class GitOps {
       "--porcelain=v2",
       "--branch",
     ]);
-    return parseStatusV2(stdout, worktreeId);
+    const status = parseStatusV2(stdout, worktreeId);
+    status.base = await this.baseDivergence(worktree.path, status.branch);
+    return status;
+  }
+
+  /**
+   * How far this worktree has drifted from the repository's base branch.
+   * Prefers the remote's default branch, then a local main/master.
+   */
+  private async baseDivergence(
+    cwd: string,
+    branch: string | null,
+  ): Promise<BaseDivergence | null> {
+    const base = await this.resolveBaseRef(cwd);
+    if (!base) return null;
+    // Comparing a branch against itself is noise, not information.
+    if (branch && (base === branch || base === `origin/${branch}`)) return null;
+    try {
+      const { stdout } = await this.git.run(cwd, [
+        "rev-list",
+        "--left-right",
+        "--count",
+        `${base}...HEAD`,
+      ]);
+      const [behind, ahead] = stdout.trim().split(/\s+/).map(Number);
+      if (!Number.isFinite(behind) || !Number.isFinite(ahead)) return null;
+      return { branch: base, ahead: ahead ?? 0, behind: behind ?? 0 };
+    } catch {
+      return null;
+    }
+  }
+
+  private async resolveBaseRef(cwd: string): Promise<string | null> {
+    try {
+      const { stdout } = await this.git.run(cwd, ["symbolic-ref", "refs/remotes/origin/HEAD"]);
+      const ref = stdout.trim().replace("refs/remotes/", "");
+      if (ref) return ref;
+    } catch {
+      // No origin/HEAD configured; fall through to conventional names.
+    }
+    for (const candidate of ["origin/main", "origin/master", "main", "master"]) {
+      try {
+        await this.git.run(cwd, ["rev-parse", "--verify", "--quiet", candidate]);
+        return candidate;
+      } catch {
+        continue;
+      }
+    }
+    return null;
   }
 
   async diff(worktreeId: string, filePath: string, staged: boolean): Promise<FileDiff> {

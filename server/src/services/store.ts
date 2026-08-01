@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Repo } from "sylva-shared";
+import type { Repo, WorktreePrefs } from "sylva-shared";
 
 export interface PersistedSession {
   id: string;
@@ -17,9 +17,13 @@ export interface PersistedSession {
 interface RegistryFile {
   repos: Omit<Repo, "available">[];
   sessions: PersistedSession[];
+  /** Per-worktree settings, keyed by worktree id. */
+  prefs: Record<string, WorktreePrefs>;
 }
 
-const EMPTY: RegistryFile = { repos: [], sessions: [] };
+const EMPTY: RegistryFile = { repos: [], sessions: [], prefs: {} };
+
+export const DEFAULT_PREFS: WorktreePrefs = { bypassPermissions: false };
 
 /**
  * Persistence for Sylva's state under ~/.sylva/ (override with SYLVA_HOME):
@@ -47,9 +51,10 @@ export class Store {
       this.data = {
         repos: Array.isArray(parsed.repos) ? parsed.repos : [],
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+        prefs: parsed.prefs && typeof parsed.prefs === "object" ? parsed.prefs : {},
       };
     } catch {
-      this.data = { repos: [], sessions: [] };
+      this.data = { repos: [], sessions: [], prefs: {} };
     }
   }
 
@@ -84,8 +89,21 @@ export class Store {
     await this.flush();
   }
 
+  prefsFor(worktreeId: string): WorktreePrefs {
+    return { ...DEFAULT_PREFS, ...this.data.prefs[worktreeId] };
+  }
+
+  async setPrefs(worktreeId: string, prefs: WorktreePrefs): Promise<void> {
+    this.data.prefs[worktreeId] = prefs;
+    await this.flush();
+  }
+
   transcriptPath(sessionId: string): string {
     return join(this.sessionsDir, `${sessionId}.jsonl`);
+  }
+
+  attachmentsDir(worktreeId: string): string {
+    return join(this.baseDir, "attachments", worktreeId);
   }
 
   /** Atomic, serialized write of registry.json. */

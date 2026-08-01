@@ -5,6 +5,7 @@ import { Sprite } from "../sprites/Sprite";
 import { AgentPanel } from "./AgentPanel";
 import { FilesPanel } from "./FilesPanel";
 import { GitPanel } from "./GitPanel";
+import { PermissionToggle } from "./PermissionToggle";
 
 type Tab = "agent" | "files" | "git";
 
@@ -56,15 +57,31 @@ export function MainPanel() {
         <div className="wt-header-text">
           <div className="wt-header-branch">{status?.branch ?? "…"}</div>
           <div className="wt-header-sub">
-            {session?.status === "running"
-              ? "dryad is working"
-              : session?.status === "errored"
-                ? "dryad hit trouble"
-                : spriteState === "success"
-                  ? "task complete"
-                  : "resting"}
+            {status?.base ? (
+              <span className="divergence" title={`Compared with ${status.base.branch}`}>
+                <span className={status.base.ahead ? "div-ahead" : "div-zero"}>
+                  ↑{status.base.ahead}
+                </span>
+                <span className={status.base.behind ? "div-behind" : "div-zero"}>
+                  ↓{status.base.behind}
+                </span>
+                <span className="div-base">{status.base.branch}</span>
+              </span>
+            ) : (
+              <span className="div-zero">no base branch to compare</span>
+            )}
+            <span className="wt-header-state">
+              {session?.status === "running"
+                ? "dryad is working"
+                : session?.status === "errored"
+                  ? "dryad hit trouble"
+                  : spriteState === "success"
+                    ? "task complete"
+                    : "resting"}
+            </span>
           </div>
         </div>
+        {tab === "agent" && <PermissionToggle worktreeId={worktreeId} />}
         <nav className="tabs">
           {(["agent", "files", "git"] as Tab[]).map((t) => (
             <button key={t} className={`tab ${tab === t ? "tab-on" : ""}`} onClick={() => setTab(t)}>

@@ -62,6 +62,7 @@ export function parseStatusV2(output: string, worktreeId: string): WorktreeStatu
     staged: [],
     unstaged: [],
     untracked: [],
+    base: null,
   };
 
   for (const line of output.split("\n")) {

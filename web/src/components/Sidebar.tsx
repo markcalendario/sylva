@@ -4,7 +4,6 @@ import { api } from "../lib/api";
 import { useInvalidate, useRepos, useWorktrees } from "../lib/queries";
 import { spriteStateFor, useSylva } from "../state/store";
 import { Sprite } from "../sprites/Sprite";
-import { NewTaskDialog } from "./dialogs/NewTaskDialog";
 import { NewWorktreeDialog } from "./dialogs/NewWorktreeDialog";
 import { RegisterRepoDialog } from "./dialogs/RegisterRepoDialog";
 import { RemoveWorktreeDialog } from "./dialogs/RemoveWorktreeDialog";
@@ -119,7 +118,7 @@ function RepoGroup({ repo }: { repo: Repo }) {
 export function Sidebar() {
   const repos = useRepos();
   const [showRegister, setShowRegister] = useState(false);
-  const [showNewTask, setShowNewTask] = useState(false);
+  const [showNewWorktree, setShowNewWorktree] = useState(false);
   const invalidate = useInvalidate();
 
   return (
@@ -132,8 +131,8 @@ export function Sidebar() {
         )}
       </div>
       <div className="sidebar-foot">
-        <button className="btn-primary" onClick={() => setShowNewTask(true)}>
-          ✦ New task
+        <button className="btn-primary" onClick={() => setShowNewWorktree(true)}>
+          ✦ New worktree
         </button>
         <button className="btn-quiet" onClick={() => setShowRegister(true)}>
           + Register repo
@@ -146,7 +145,13 @@ export function Sidebar() {
           invalidate.repos();
         }}
       />
-      <NewTaskDialog open={showNewTask} onClose={() => setShowNewTask(false)} />
+      <NewWorktreeDialog
+        open={showNewWorktree}
+        onClose={() => {
+          setShowNewWorktree(false);
+          invalidate.worktrees();
+        }}
+      />
     </aside>
   );
 }

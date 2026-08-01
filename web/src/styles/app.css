@@ -578,13 +578,16 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+/* Wrap long lines instead of hiding them behind an invisible scrollbar —
+   a clipped code line reads as data loss in a chat. */
 .md pre {
   margin: 0 0 var(--pad-3);
   padding: var(--pad-3);
   background: var(--pine-0);
   border: 1px solid var(--pine-3);
   border-radius: var(--radius);
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .md pre code {
@@ -863,16 +866,169 @@ button:disabled {
 /* prompt bar */
 .prompt-bar {
   display: flex;
+  flex-direction: column;
   gap: var(--pad-2);
   padding: var(--pad-3) var(--pad-4);
   border-top: 1px solid var(--pine-3);
   background: var(--pine-1);
 }
 
+.prompt-bar-drop {
+  background: var(--pine-2);
+  box-shadow: inset 0 0 0 1px var(--firefly);
+}
+
+.prompt-row {
+  display: flex;
+  gap: var(--pad-2);
+  align-items: stretch;
+}
+
 .prompt-bar textarea {
   flex: 1;
   resize: none;
   background: var(--pine-0);
+}
+
+.attach-btn {
+  align-self: stretch;
+  padding: 0 var(--pad-3);
+  border: 1px dashed var(--pine-3);
+  border-radius: var(--radius);
+  color: var(--moss-dim);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.attach-btn:hover {
+  color: var(--firefly);
+  border-color: var(--firefly-dim);
+  background: var(--pine-2);
+}
+
+.attach-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pad-2);
+  align-items: center;
+}
+
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-1);
+  background: var(--pine-2);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: 1px var(--pad-1) 1px var(--pad-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--moon);
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attach-pending {
+  font-size: var(--text-xs);
+  color: var(--firefly);
+}
+
+.attach-error {
+  font-size: var(--text-xs);
+  color: var(--ember);
+}
+
+/* ---------- permission toggle ---------- */
+
+.permtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-size: var(--text-xs);
+  color: var(--moss);
+  border: 1px solid var(--pine-3);
+  border-radius: 999px;
+  padding: 2px var(--pad-3) 2px var(--pad-2);
+  flex-shrink: 0;
+}
+
+.permtoggle:hover {
+  border-color: var(--moss-dim);
+  color: var(--moon);
+}
+
+.permtoggle-track {
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--pine-3);
+  position: relative;
+  transition: background 140ms;
+  flex-shrink: 0;
+}
+
+.permtoggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--moss);
+  transition: transform 140ms, background 140ms;
+}
+
+.permtoggle-on {
+  color: var(--ember);
+  border-color: var(--ember-dim);
+  background: rgb(255 107 91 / 0.08);
+}
+
+.permtoggle-on .permtoggle-track {
+  background: var(--ember-dim);
+}
+
+.permtoggle-on .permtoggle-thumb {
+  background: var(--ember);
+  transform: translateX(12px);
+}
+
+/* ---------- header divergence ---------- */
+
+.wt-header-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-3);
+}
+
+.divergence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-1);
+  font-family: var(--font-mono);
+}
+
+.div-ahead {
+  color: var(--sapling);
+}
+
+.div-behind {
+  color: var(--firefly);
+}
+
+.div-zero {
+  color: var(--moss-dim);
+}
+
+.div-base {
+  color: var(--moss-dim);
+  margin-left: 2px;
+}
+
+.wt-header-state {
+  color: var(--moss);
 }
 
 .prompt-actions {

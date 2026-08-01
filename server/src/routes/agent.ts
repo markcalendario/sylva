@@ -1,28 +1,22 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { QuickStartResult } from "sylva-shared";
+import type { Attachment } from "sylva-shared";
 import type { AppContext } from "../context.js";
+import { badRequest } from "../lib/errors.js";
 
 const promptSchema = z.object({ text: z.string().min(1) });
 const answerSchema = z.object({
   requestId: z.string().min(1),
   answer: z.enum(["allow", "allow-always", "deny"]),
 });
-const quickStartSchema = z.object({
-  repoId: z.string().min(1),
-  taskName: z.string().min(1),
-  prompt: z.string().min(1),
-  baseRef: z.string().min(1).optional(),
-});
+const prefsSchema = z.object({ bypassPermissions: z.boolean() });
 
-/** Turn a task name into a git-friendly branch name. */
-function branchNameFor(taskName: string): string {
-  const slug = taskName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-  return slug || "task";
+/** Keep uploaded names to a safe leaf; never let one escape the directory. */
+function safeFileName(name: string): string {
+  const leaf = basename(name).replace(/[/\\]/g, "_").trim();
+  return leaf && leaf !== "." && leaf !== ".." ? leaf.slice(0, 120) : "attachment";
 }
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -68,29 +62,39 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     return { ok: true };
   });
 
-  app.post("/api/quickstart", async (req, reply) => {
-    const body = quickStartSchema.parse(req.body);
-    const result: QuickStartResult = { worktree: null, session: null, errors: [] };
+  app.get("/api/worktrees/:worktreeId/prefs", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    return sessions.getPrefs(worktreeId);
+  });
 
-    try {
-      result.worktree = await workspace.createWorktree(body.repoId, {
-        branch: branchNameFor(body.taskName),
-        baseRef: body.baseRef ?? "HEAD",
-      });
-    } catch (err) {
-      result.errors.push(`Worktree creation failed: ${err instanceof Error ? err.message : String(err)}`);
-      reply.code(422);
-      return result;
-    }
+  app.put("/api/worktrees/:worktreeId/prefs", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    await workspace.resolveWorktree(worktreeId);
+    const body = prefsSchema.parse(req.body);
+    return sessions.setPrefs(worktreeId, body);
+  });
 
-    workspace.setFocus(result.worktree.id);
+  /**
+   * Files dropped on the prompt are written outside the repository, and the
+   * agent is handed the path — it reads them with its own tools, so binaries
+   * and large files cost nothing in the prompt.
+   */
+  app.post("/api/worktrees/:worktreeId/attachments", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    await workspace.resolveWorktree(worktreeId);
 
-    try {
-      result.session = await sessions.prompt(result.worktree.id, body.prompt);
-    } catch (err) {
-      result.errors.push(`Agent session failed to start: ${err instanceof Error ? err.message : String(err)}`);
-      reply.code(207);
-    }
-    return result;
+    const file = await req.file();
+    if (!file) throw badRequest("No file uploaded");
+
+    const dir = ctx.store.attachmentsDir(worktreeId);
+    await mkdir(dir, { recursive: true });
+
+    const buffer = await file.toBuffer();
+    const name = safeFileName(file.filename);
+    const target = join(dir, `${Date.now()}-${name}`);
+    await writeFile(target, buffer);
+
+    const attachment: Attachment = { name, path: target, size: buffer.byteLength };
+    return attachment;
   });
 }

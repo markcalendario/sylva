@@ -16,6 +16,7 @@ import type {
   PermissionRequest,
   QueuedPrompt,
   SessionInfo,
+  WorktreePrefs,
 } from "sylva-shared";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { freshId, now } from "../lib/id.js";
@@ -271,6 +272,28 @@ export class SessionManager {
     return [...session.pendingPermissions.values()].map((p) => p.request);
   }
 
+  getPrefs(worktreeId: string): WorktreePrefs {
+    return this.store.prefsFor(worktreeId);
+  }
+
+  /**
+   * Permission mode is fixed when the SDK query starts, so changing it tears
+   * the session down. The next prompt reopens it — resuming by SDK session id,
+   * so the conversation carries over.
+   */
+  async setPrefs(worktreeId: string, prefs: WorktreePrefs): Promise<WorktreePrefs> {
+    const current = this.store.prefsFor(worktreeId);
+    await this.store.setPrefs(worktreeId, prefs);
+    if (current.bypassPermissions !== prefs.bypassPermissions) {
+      const session = this.activeByWorktree(worktreeId);
+      if (session) {
+        if (session.q) await session.q.interrupt().catch(() => {});
+        session.input.end();
+      }
+    }
+    return prefs;
+  }
+
   // ---------- internals ----------
 
   private activeByWorktree(worktreeId: string): ActiveSession | null {
@@ -291,10 +314,12 @@ export class SessionManager {
     const { repo, worktree } = await this.workspace.resolveWorktree(worktreeId);
     const persisted = this.store.sessions.find((s) => s.worktreeId === worktreeId);
 
+    const prefs = this.store.prefsFor(worktreeId);
     const info: SessionInfo = {
       id: persisted?.id ?? freshId(),
       worktreeId,
       status: "idle",
+      bypassPermissions: prefs.bypassPermissions,
       sdkSessionId: persisted?.sdkSessionId ?? null,
       totalCostUsd: persisted?.totalCostUsd ?? 0,
       totalTokens: persisted?.totalTokens ?? 0,
@@ -315,12 +340,21 @@ export class SessionManager {
     this.sessions.set(info.id, session);
     this.byWorktree.set(worktreeId, info.id);
 
-    const options: Options = {
-      cwd: worktree.path,
-      permissionMode: "acceptEdits",
-      canUseTool: this.makeCanUseTool(session),
-      ...(info.sdkSessionId ? { resume: info.sdkSessionId } : {}),
-    };
+    // Bypass mode skips every check, so there is nothing for canUseTool to ask
+    // about; wiring it up anyway would imply approvals that never happen.
+    const options: Options = prefs.bypassPermissions
+      ? {
+          cwd: worktree.path,
+          permissionMode: "bypassPermissions",
+          allowDangerouslySkipPermissions: true,
+          ...(info.sdkSessionId ? { resume: info.sdkSessionId } : {}),
+        }
+      : {
+          cwd: worktree.path,
+          permissionMode: "acceptEdits",
+          canUseTool: this.makeCanUseTool(session),
+          ...(info.sdkSessionId ? { resume: info.sdkSessionId } : {}),
+        };
 
     session.q = query({ prompt: session.input, options });
     session.loopDone = this.runLoop(session).catch(() => {});

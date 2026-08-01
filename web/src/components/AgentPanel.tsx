@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AgentEvent, PermissionRequest } from "sylva-shared";
-import { api } from "../lib/api";
+import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
+import { api, ApiFailure } from "../lib/api";
 import { ensureNotifyPermission } from "../lib/notify";
 import { NO_EVENTS, useSylva } from "../state/store";
 import { Markdown } from "./Markdown";
@@ -152,7 +152,12 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   const permissions = useSylva((s) => s.pendingPermissions[worktreeId] ?? NO_EVENTS);
   const availability = useSylva((s) => s.availability);
   const [text, setText] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const stickToBottom = useRef(true);
 
   const blocks = useMemo(() => toBlocks(transcript), [transcript]);
@@ -164,12 +169,36 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
 
   const running = session?.status === "running";
 
+  const upload = async (files: FileList | File[]) => {
+    setUploadError(null);
+    for (const file of Array.from(files)) {
+      setUploading((n) => n + 1);
+      try {
+        const attachment = await api.attach(worktreeId, file);
+        setAttachments((list) => [...list, attachment]);
+      } catch (e) {
+        setUploadError(
+          e instanceof ApiFailure ? (e.detail ?? e.message) : `Couldn't attach ${file.name}`,
+        );
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  };
+
   const send = () => {
     const prompt = text.trim();
-    if (!prompt) return;
+    if (!prompt && attachments.length === 0) return;
     ensureNotifyPermission();
+    // The agent reads attachments off disk, so the prompt carries paths only.
+    const attachmentNote = attachments.length
+      ? `\n\nAttached files (read them from these paths):\n${attachments
+          .map((a) => `- ${a.path}`)
+          .join("\n")}`
+      : "";
     setText("");
-    void api.prompt(worktreeId, prompt);
+    setAttachments([]);
+    void api.prompt(worktreeId, `${prompt}${attachmentNote}`.trim());
   };
 
   if (!availability.available) {
@@ -236,42 +265,113 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
       )}
 
       <form
-        className="prompt-bar"
+        className={`prompt-bar ${dragging ? "prompt-bar-drop" : ""}`}
         onSubmit={(e) => {
           e.preventDefault();
           send();
         }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) {
+            e.preventDefault();
+            setDragging(true);
+          }
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          if (!e.dataTransfer.files.length) return;
+          e.preventDefault();
+          setDragging(false);
+          void upload(e.dataTransfer.files);
+        }}
       >
-        <textarea
-          rows={2}
-          placeholder={running ? "Queue a follow-up…" : "Tell the dryad what to do…"}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-        {running ? (
-          <div className="prompt-actions">
-            <button type="submit" className="btn-quiet" disabled={!text.trim()}>
-              Queue
-            </button>
-            <button
-              type="button"
-              className="btn-danger"
-              onClick={() => void api.interrupt(worktreeId)}
-            >
-              Stop
-            </button>
+        {(attachments.length > 0 || uploading > 0 || uploadError) && (
+          <div className="attach-list">
+            {attachments.map((a) => (
+              <span key={a.path} className="attach-chip" title={a.path}>
+                {a.name}
+                <button
+                  type="button"
+                  className="ghost"
+                  aria-label={`Remove ${a.name}`}
+                  onClick={() => setAttachments((l) => l.filter((x) => x.path !== a.path))}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            {uploading > 0 && <span className="attach-pending">attaching {uploading}…</span>}
+            {uploadError && <span className="attach-error">{uploadError}</span>}
           </div>
-        ) : (
-          <button type="submit" className="btn-primary" disabled={!text.trim()}>
-            Send
-          </button>
         )}
+
+        <div className="prompt-row">
+          <button
+            type="button"
+            className="attach-btn"
+            title="Attach a file"
+            aria-label="Attach a file"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            ＋
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              if (e.target.files?.length) void upload(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <textarea
+            rows={2}
+            placeholder={
+              dragging
+                ? "Drop to attach"
+                : running
+                  ? "Queue a follow-up…"
+                  : "Tell the dryad what to do…"
+            }
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const files = Array.from(e.clipboardData.files);
+              if (files.length) {
+                e.preventDefault();
+                void upload(files);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+          />
+          {running ? (
+            <div className="prompt-actions">
+              <button type="submit" className="btn-quiet" disabled={!text.trim()}>
+                Queue
+              </button>
+              <button
+                type="button"
+                className="btn-danger"
+                onClick={() => void api.interrupt(worktreeId)}
+              >
+                Stop
+              </button>
+            </div>
+          ) : (
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={!text.trim() && attachments.length === 0}
+            >
+              Send
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );

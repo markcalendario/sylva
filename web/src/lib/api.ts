@@ -1,14 +1,15 @@
 import type {
   AgentAvailability,
   AgentEvent,
+  Attachment,
   BranchInfo,
   FileDiff,
   PermissionAnswer,
   PermissionRequest,
-  QuickStartResult,
   Repo,
   SessionInfo,
   Worktree,
+  WorktreePrefs,
   WorktreeStatus,
 } from "sylva-shared";
 
@@ -118,6 +119,28 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ requestId, answer }),
     }),
-  quickStart: (body: { repoId: string; taskName: string; prompt: string; baseRef?: string }) =>
-    request<QuickStartResult>("/api/quickstart", { method: "POST", body: JSON.stringify(body) }),
+  prefs: (worktreeId: string) => request<WorktreePrefs>(`/api/worktrees/${worktreeId}/prefs`),
+  setPrefs: (worktreeId: string, prefs: WorktreePrefs) =>
+    request<WorktreePrefs>(`/api/worktrees/${worktreeId}/prefs`, {
+      method: "PUT",
+      body: JSON.stringify(prefs),
+    }),
+
+  async attach(worktreeId: string, file: File): Promise<Attachment> {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const res = await fetch(`/api/worktrees/${worktreeId}/attachments`, {
+      method: "POST",
+      body: form,
+    });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      throw new ApiFailure(
+        res.status,
+        typeof body.error === "string" ? body.error : "Upload failed",
+        typeof body.detail === "string" ? body.detail : undefined,
+      );
+    }
+    return body as unknown as Attachment;
+  },
 };

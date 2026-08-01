@@ -40,6 +40,17 @@ export interface WorktreeStatus {
   staged: StatusEntry[];
   unstaged: StatusEntry[];
   untracked: StatusEntry[];
+  /** Divergence from the repository's base branch (main/master). */
+  base: BaseDivergence | null;
+}
+
+export interface BaseDivergence {
+  /** The branch compared against, e.g. "main" or "origin/main". */
+  branch: string;
+  /** Commits on this worktree that the base doesn't have. */
+  ahead: number;
+  /** Commits on the base that this worktree doesn't have. */
+  behind: number;
 }
 
 export interface DiffLine {
@@ -73,10 +84,27 @@ export interface BranchInfo {
 
 export type SessionStatus = "idle" | "running" | "interrupted" | "errored";
 
+export interface WorktreePrefs {
+  /**
+   * Run the agent with every permission check bypassed. Dangerous: the agent
+   * can run any command without asking.
+   */
+  bypassPermissions: boolean;
+}
+
+export interface Attachment {
+  name: string;
+  /** Absolute path on this machine, handed to the agent so it can read the file. */
+  path: string;
+  size: number;
+}
+
 export interface SessionInfo {
   id: string;
   worktreeId: string;
   status: SessionStatus;
+  /** Permission mode this session is actually running under. */
+  bypassPermissions: boolean;
   /** SDK session id, present after the first init message. */
   sdkSessionId: string | null;
   totalCostUsd: number;
@@ -190,17 +218,8 @@ export interface PermissionAnswerRequest {
   answer: PermissionAnswer;
 }
 
-export interface QuickStartRequest {
-  repoId: string;
-  taskName: string;
-  prompt: string;
-  baseRef?: string;
-}
-
-export interface QuickStartResult {
-  worktree: Worktree | null;
-  session: SessionInfo | null;
-  errors: string[];
+export interface SetPrefsRequest {
+  bypassPermissions: boolean;
 }
 
 export interface ApiError {
