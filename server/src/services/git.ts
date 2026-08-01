@@ -51,6 +51,7 @@ export class GitService {
                 exitCode,
                 stderr,
                 args,
+                stdout,
               ),
             );
           } else {

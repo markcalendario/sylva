@@ -15,6 +15,7 @@ export class GitError extends Error {
     public exitCode: number,
     public stderr: string,
     public args: string[],
+    public stdout = "",
   ) {
     super(message);
     this.name = "GitError";

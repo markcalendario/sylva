@@ -3,6 +3,7 @@ import websocket from "@fastify/websocket";
 import { ZodError } from "zod";
 import type { AppContext } from "./context.js";
 import { GitError, HttpError } from "./lib/errors.js";
+import { registerGitRoutes } from "./routes/git.js";
 import { registerRepoRoutes } from "./routes/repos.js";
 import { originGuard } from "./security.js";
 
@@ -33,6 +34,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   app.get("/api/health", async () => ({ ok: true, name: "sylva" }));
 
   registerRepoRoutes(app, ctx);
+  registerGitRoutes(app, ctx);
 
   app.get("/ws", { websocket: true }, (socket) => {
     ctx.hub.add(socket);

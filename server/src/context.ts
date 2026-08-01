@@ -1,4 +1,5 @@
 import { GitService } from "./services/git.js";
+import { GitOps } from "./services/gitOps.js";
 import { Store } from "./services/store.js";
 import { Workspace } from "./services/workspace.js";
 import { WsHub } from "./ws/hub.js";
@@ -9,6 +10,7 @@ export interface AppContext {
   git: GitService;
   hub: WsHub;
   workspace: Workspace;
+  gitOps: GitOps;
 }
 
 export async function createContext(baseDir?: string): Promise<AppContext> {
@@ -17,5 +19,6 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
   const git = new GitService();
   const hub = new WsHub();
   const workspace = new Workspace(store, git);
-  return { store, git, hub, workspace };
+  const gitOps = new GitOps(git, workspace);
+  return { store, git, hub, workspace, gitOps };
 }
