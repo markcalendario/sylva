@@ -12,7 +12,7 @@ const removeWorktreeSchema = z.object({ force: z.boolean().optional() }).default
 const focusSchema = z.object({ worktreeId: z.string().nullable() });
 
 export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const { workspace, hub } = ctx;
+  const { workspace } = ctx;
 
   app.get("/api/repos", async () => workspace.listRepos());
 
@@ -55,7 +55,6 @@ export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void 
     const body = focusSchema.parse(req.body);
     if (body.worktreeId) await workspace.resolveWorktree(body.worktreeId);
     workspace.setFocus(body.worktreeId);
-    hub.broadcast({ type: "focus.changed", worktreeId: body.worktreeId });
     return { worktreeId: workspace.focused };
   });
 }

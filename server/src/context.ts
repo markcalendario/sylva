@@ -27,6 +27,9 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
   const watchers = new WatcherManager(hub, gitOps);
 
   workspace.onFocusChange = (worktreeId) => {
+    // Announce every focus change here, whatever caused it — an explicit
+    // switch, a quick-start, or the focused worktree being removed.
+    hub.broadcast({ type: "focus.changed", worktreeId });
     if (!worktreeId) {
       watchers.setFocused(null, null);
       return;

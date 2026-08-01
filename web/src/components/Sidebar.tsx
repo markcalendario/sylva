@@ -7,8 +7,15 @@ import { Sprite } from "../sprites/Sprite";
 import { NewTaskDialog } from "./dialogs/NewTaskDialog";
 import { NewWorktreeDialog } from "./dialogs/NewWorktreeDialog";
 import { RegisterRepoDialog } from "./dialogs/RegisterRepoDialog";
+import { RemoveWorktreeDialog } from "./dialogs/RemoveWorktreeDialog";
 
-function WorktreeRow({ worktree }: { worktree: Worktree }) {
+function WorktreeRow({
+  worktree,
+  onRemove,
+}: {
+  worktree: Worktree;
+  onRemove: (worktree: Worktree) => void;
+}) {
   const focused = useSylva((s) => s.focusedWorktreeId) === worktree.id;
   const spriteState = useSylva((s) => spriteStateFor(s, worktree.id));
   const unseen = useSylva((s) => s.unseenActivity[worktree.id] ?? false);
@@ -18,26 +25,36 @@ function WorktreeRow({ worktree }: { worktree: Worktree }) {
   });
 
   return (
-    <button
-      className={`wt-row ${focused ? "focused" : ""}`}
-      onClick={() => void api.setFocus(worktree.id)}
-    >
-      <Sprite state={spriteState} scale={2} title={worktree.branch ?? "detached"} />
-      <span className="wt-name">
-        {worktree.branch ?? `${worktree.head.slice(0, 7)} (detached)`}
-        {worktree.isMain && <span className="wt-main-tag">main worktree</span>}
-      </span>
+    <div className={`wt-row ${focused ? "focused" : ""}`}>
+      <button className="wt-open" onClick={() => void api.setFocus(worktree.id)}>
+        <Sprite state={spriteState} scale={2} title={worktree.branch ?? "detached"} />
+        <span className="wt-name">
+          {worktree.branch ?? `${worktree.head.slice(0, 7)} (detached)`}
+          {worktree.isMain && <span className="wt-main-tag">main worktree</span>}
+        </span>
+      </button>
       <span className="wt-meta">
         {unseen && !focused && <span className="unseen-dot" title="New activity" />}
         {dirtyCount > 0 && <span className="dirty-count">{dirtyCount}</span>}
       </span>
-    </button>
+      {!worktree.isMain && (
+        <button
+          className="ghost wt-remove"
+          title="Remove worktree"
+          aria-label={`Remove worktree ${worktree.branch ?? worktree.path}`}
+          onClick={() => onRemove(worktree)}
+        >
+          ✕
+        </button>
+      )}
+    </div>
   );
 }
 
 function RepoGroup({ repo }: { repo: Repo }) {
   const [expanded, setExpanded] = useState(true);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
+  const [removing, setRemoving] = useState<Worktree | null>(null);
   const worktrees = useWorktrees(repo.id);
   const invalidate = useInvalidate();
 
@@ -74,7 +91,9 @@ function RepoGroup({ repo }: { repo: Repo }) {
       </div>
       {expanded && repo.available && (
         <div className="wt-list">
-          {worktrees.data?.map((wt) => <WorktreeRow key={wt.id} worktree={wt} />)}
+          {worktrees.data?.map((wt) => (
+            <WorktreeRow key={wt.id} worktree={wt} onRemove={setRemoving} />
+          ))}
           {worktrees.isError && <div className="side-note">Couldn't list worktrees</div>}
         </div>
       )}
@@ -86,6 +105,13 @@ function RepoGroup({ repo }: { repo: Repo }) {
           invalidate.worktrees(repo.id);
         }}
       />
+      {removing && (
+        <RemoveWorktreeDialog
+          key={removing.id}
+          worktree={removing}
+          onClose={() => setRemoving(null)}
+        />
+      )}
     </div>
   );
 }

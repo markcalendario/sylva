@@ -153,9 +153,33 @@
   gap: var(--pad-2);
   padding: var(--pad-1) var(--pad-2);
   border-radius: var(--radius);
-  text-align: left;
   color: var(--moon);
   min-width: 0;
+}
+
+.wt-open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  min-width: 0;
+  text-align: left;
+  color: inherit;
+}
+
+.wt-remove {
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.wt-row:hover .wt-remove,
+.wt-row:focus-within .wt-remove {
+  opacity: 1;
+}
+
+.wt-remove:hover {
+  color: var(--ember);
+  background: var(--ember-dim);
 }
 
 .wt-row:hover {
@@ -170,6 +194,7 @@
 .wt-name {
   flex: 1;
   min-width: 0;
+  color: var(--moon);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -557,6 +582,23 @@ button:disabled {
   display: flex;
   gap: var(--pad-2);
   flex-wrap: wrap;
+}
+
+.force-warning {
+  border: 1px solid var(--ember-dim);
+  border-radius: var(--radius);
+  padding: var(--pad-2) var(--pad-3);
+  background: rgb(255 107 91 / 0.06);
+}
+
+.force-warning .pixel-label {
+  color: var(--ember);
+}
+
+.force-warning p {
+  margin: var(--pad-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--moss);
 }
 
 .pixel-label {

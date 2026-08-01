@@ -26,7 +26,7 @@ function branchNameFor(taskName: string): string {
 }
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const { sessions, workspace, hub } = ctx;
+  const { sessions, workspace } = ctx;
 
   app.get("/api/agent/availability", async () => sessions.getAvailability());
 
@@ -84,7 +84,6 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     }
 
     workspace.setFocus(result.worktree.id);
-    hub.broadcast({ type: "focus.changed", worktreeId: result.worktree.id });
 
     try {
       result.session = await sessions.prompt(result.worktree.id, body.prompt);
