@@ -1,5 +1,7 @@
-import { watch, type FSWatcher } from "chokidar";
-import { relative, sep } from "node:path";
+import { watch as chokidarWatch, type FSWatcher as ChokidarWatcher } from "chokidar";
+import { watch as fsWatch, type FSWatcher as NodeWatcher } from "node:fs";
+import { stat } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import type { FileEvent } from "sylva-shared";
 import { now } from "../lib/id.js";
 import type { GitOps } from "./gitOps.js";
@@ -22,8 +24,13 @@ const IGNORED_SEGMENTS = new Set([
   "target",
 ]);
 
+export function isIgnored(relPath: string): boolean {
+  if (!relPath || relPath.startsWith("..")) return true;
+  return relPath.split(sep).some((seg) => IGNORED_SEGMENTS.has(seg));
+}
+
 interface Watched {
-  watcher: FSWatcher;
+  close: () => void;
   reasons: Set<"focus" | "session">;
   pending: Map<string, FileEvent>;
   dropped: number;
@@ -33,6 +40,13 @@ interface Watched {
 /**
  * Watches the focused worktree plus any worktree with an active agent session.
  * Events are debounced/batched; each flush also refreshes git status.
+ *
+ * Uses Node's recursive fs.watch, which is backed by FSEvents on macOS and
+ * costs one descriptor per worktree. Watching per-file (chokidar's default on
+ * platforms without native recursion) exhausts the process descriptor table on
+ * large repos and makes child_process.spawn fail with EBADF, which breaks every
+ * git call in the app. Chokidar remains the fallback where recursion is
+ * unsupported; there we accept its cost rather than lose watching entirely.
  */
 export class WatcherManager {
   private watched = new Map<string, Watched>(); // worktreeId -> state
@@ -64,16 +78,9 @@ export class WatcherManager {
       existing.reasons.add(reason);
       return;
     }
-    const watcher = watch(worktreePath, {
-      ignoreInitial: true,
-      ignored: (path: string) => {
-        const rel = relative(worktreePath, path);
-        if (rel.startsWith("..")) return false;
-        return rel.split(sep).some((seg) => IGNORED_SEGMENTS.has(seg));
-      },
-    });
+
     const state: Watched = {
-      watcher,
+      close: () => {},
       reasons: new Set([reason]),
       pending: new Map(),
       dropped: 0,
@@ -81,22 +88,58 @@ export class WatcherManager {
     };
     this.watched.set(worktreeId, state);
 
-    const record = (change: FileEvent["change"]) => (absPath: string) => {
-      const rel = relative(worktreePath, absPath);
-      if (!rel || rel.startsWith("..")) return;
-      if (state.pending.size >= MAX_EVENTS_PER_BATCH && !state.pending.has(rel)) {
+    const record = (relPath: string, change: FileEvent["change"]) => {
+      if (isIgnored(relPath)) return;
+      if (state.pending.size >= MAX_EVENTS_PER_BATCH && !state.pending.has(relPath)) {
         state.dropped++;
       } else {
-        state.pending.set(rel, { worktreeId, path: rel, change, at: now() });
+        state.pending.set(relPath, { worktreeId, path: relPath, change, at: now() });
       }
       if (state.timer) clearTimeout(state.timer);
       state.timer = setTimeout(() => void this.flush(worktreeId), DEBOUNCE_MS);
     };
 
-    watcher.on("add", record("added"));
-    watcher.on("change", record("changed"));
-    watcher.on("unlink", record("deleted"));
-    watcher.on("error", () => {});
+    state.close = this.startWatching(worktreePath, record);
+  }
+
+  /** Native recursive watch, falling back to chokidar where unsupported. */
+  private startWatching(
+    root: string,
+    record: (relPath: string, change: FileEvent["change"]) => void,
+  ): () => void {
+    try {
+      const watcher: NodeWatcher = fsWatch(root, { recursive: true, persistent: true });
+      watcher.on("change", (_event, filename) => {
+        if (!filename) return;
+        const relPath = filename.toString();
+        if (isIgnored(relPath)) return;
+        // fs.watch reports 'rename' for both creation and deletion; ask the
+        // filesystem which one actually happened.
+        void stat(join(root, relPath)).then(
+          (st) => {
+            if (st.isDirectory()) return; // directory churn is noise in the feed
+            // fs.watch can't tell create from modify, so treat a file born
+            // within the last couple of seconds as newly added.
+            const justBorn = Date.now() - st.birthtimeMs < 2000;
+            record(relPath, justBorn ? "added" : "changed");
+          },
+          () => record(relPath, "deleted"),
+        );
+      });
+      watcher.on("error", () => {});
+      return () => watcher.close();
+    } catch {
+      const watcher: ChokidarWatcher = chokidarWatch(root, {
+        ignoreInitial: true,
+        ignored: (path: string) => isIgnored(relative(root, path)),
+      });
+      const rel = (abs: string) => relative(root, abs);
+      watcher.on("add", (p) => record(rel(p), "added"));
+      watcher.on("change", (p) => record(rel(p), "changed"));
+      watcher.on("unlink", (p) => record(rel(p), "deleted"));
+      watcher.on("error", () => {});
+      return () => void watcher.close();
+    }
   }
 
   private dropReason(worktreeId: string, reason: "focus" | "session"): void {
@@ -105,7 +148,7 @@ export class WatcherManager {
     state.reasons.delete(reason);
     if (state.reasons.size === 0) {
       if (state.timer) clearTimeout(state.timer);
-      void state.watcher.close();
+      state.close();
       this.watched.delete(worktreeId);
     }
   }
@@ -131,7 +174,7 @@ export class WatcherManager {
   async closeAll(): Promise<void> {
     for (const [id, state] of this.watched) {
       if (state.timer) clearTimeout(state.timer);
-      await state.watcher.close();
+      state.close();
       this.watched.delete(id);
     }
   }
