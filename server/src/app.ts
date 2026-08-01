@@ -9,6 +9,7 @@ import { ZodError } from "zod";
 import type { AppContext } from "./context.js";
 import { GitError, HttpError } from "./lib/errors.js";
 import { registerAgentRoutes } from "./routes/agent.js";
+import { registerBrowseRoutes } from "./routes/browse.js";
 import { registerGitRoutes } from "./routes/git.js";
 import { registerRepoRoutes } from "./routes/repos.js";
 import { originGuard } from "./security.js";
@@ -43,6 +44,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerRepoRoutes(app, ctx);
   registerGitRoutes(app, ctx);
   registerAgentRoutes(app, ctx);
+  registerBrowseRoutes(app, ctx);
 
   // Production: serve the built frontend from this same port.
   const webDist = join(dirname(fileURLToPath(import.meta.url)), "../../web/dist");

@@ -103,16 +103,57 @@ export const MODEL_CHOICES: ModelChoice[] = [
   { id: "claude-haiku-4-5", label: "Haiku 4.5", note: "Fastest, for simple tasks" },
 ];
 
-export interface WorktreePrefs {
+/** A complete, resolved set of agent settings. */
+export interface AgentSettings {
   /**
    * Run the agent with every permission check bypassed. Dangerous: the agent
    * can run any command without asking.
    */
   bypassPermissions: boolean;
-  /** Model id, or null to inherit the Claude Code default. */
+  /** Model id, or null for the Claude Code default. */
   model: string | null;
-  /** Reasoning effort, or null to inherit the default. */
+  /** Reasoning effort, or null for the Claude Code default. */
   effort: EffortLevel | null;
+}
+
+/**
+ * Per-worktree overrides. An absent key inherits the global setting; a present
+ * key wins — including an explicit null, which means "use the Claude Code
+ * default here even though global names something".
+ */
+export type WorktreeOverrides = Partial<AgentSettings>;
+
+export const GLOBAL_DEFAULTS: AgentSettings = {
+  bypassPermissions: false,
+  model: null,
+  effort: null,
+};
+
+export interface WorktreeSettings {
+  overrides: WorktreeOverrides;
+  /** Global merged with overrides — what the session actually runs with. */
+  effective: AgentSettings;
+  global: AgentSettings;
+}
+
+// ---------- filesystem browsing (for the repo picker) ----------
+
+export interface DirEntry {
+  name: string;
+  path: string;
+  /** True when the directory is itself a git repository. */
+  isRepo: boolean;
+  /** True when the name starts with a dot. */
+  hidden: boolean;
+}
+
+export interface DirListing {
+  path: string;
+  /** Parent directory, or null at the filesystem root. */
+  parent: string | null;
+  /** True when this directory is a git repository. */
+  isRepo: boolean;
+  entries: DirEntry[];
 }
 
 export interface Attachment {
@@ -126,8 +167,8 @@ export interface SessionInfo {
   id: string;
   worktreeId: string;
   status: SessionStatus;
-  /** Permission mode this session is actually running under. */
-  bypassPermissions: boolean;
+  /** The resolved settings this session is actually running under. */
+  settings: AgentSettings;
   /** SDK session id, present after the first init message. */
   sdkSessionId: string | null;
   totalCostUsd: number;
@@ -241,7 +282,8 @@ export interface PermissionAnswerRequest {
   answer: PermissionAnswer;
 }
 
-export type SetPrefsRequest = WorktreePrefs;
+export type SetGlobalSettingsRequest = AgentSettings;
+export type SetWorktreeOverridesRequest = WorktreeOverrides;
 
 export interface ApiError {
   error: string;

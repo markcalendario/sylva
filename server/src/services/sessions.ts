@@ -14,9 +14,11 @@ import type {
   AgentEvent,
   PermissionAnswer,
   PermissionRequest,
+  AgentSettings,
   QueuedPrompt,
   SessionInfo,
-  WorktreePrefs,
+  WorktreeOverrides,
+  WorktreeSettings,
 } from "sylva-shared";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { freshId, now } from "../lib/id.js";
@@ -166,6 +168,12 @@ export function describeTool(
   }
 }
 
+function differs(a: AgentSettings, b: AgentSettings): boolean {
+  return (
+    a.bypassPermissions !== b.bypassPermissions || a.model !== b.model || a.effort !== b.effort
+  );
+}
+
 function contentToText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -272,8 +280,12 @@ export class SessionManager {
     return [...session.pendingPermissions.values()].map((p) => p.request);
   }
 
-  getPrefs(worktreeId: string): WorktreePrefs {
-    return this.store.prefsFor(worktreeId);
+  getSettings(worktreeId: string): WorktreeSettings {
+    return {
+      overrides: this.store.overridesFor(worktreeId),
+      effective: this.store.effectiveFor(worktreeId),
+      global: this.store.globalSettings,
+    };
   }
 
   /**
@@ -281,21 +293,38 @@ export class SessionManager {
    * so changing any of them tears the session down. The next prompt reopens it
    * — resuming by SDK session id, so the conversation carries over.
    */
-  async setPrefs(worktreeId: string, prefs: WorktreePrefs): Promise<WorktreePrefs> {
-    const current = this.store.prefsFor(worktreeId);
-    await this.store.setPrefs(worktreeId, prefs);
-    const changed =
-      current.bypassPermissions !== prefs.bypassPermissions ||
-      current.model !== prefs.model ||
-      current.effort !== prefs.effort;
-    if (changed) {
-      const session = this.activeByWorktree(worktreeId);
-      if (session) {
-        if (session.q) await session.q.interrupt().catch(() => {});
-        session.input.end();
+  async setOverrides(
+    worktreeId: string,
+    overrides: WorktreeOverrides,
+  ): Promise<WorktreeSettings> {
+    const before = this.store.effectiveFor(worktreeId);
+    await this.store.setOverrides(worktreeId, overrides);
+    if (differs(before, this.store.effectiveFor(worktreeId))) {
+      await this.restart(worktreeId);
+    }
+    return this.getSettings(worktreeId);
+  }
+
+  /** Global changes touch every worktree that hasn't overridden the field. */
+  async setGlobalSettings(settings: AgentSettings): Promise<AgentSettings> {
+    const before = new Map(
+      [...this.byWorktree.keys()].map((id) => [id, this.store.effectiveFor(id)]),
+    );
+    await this.store.setGlobalSettings(settings);
+    for (const [worktreeId, previous] of before) {
+      if (differs(previous, this.store.effectiveFor(worktreeId))) {
+        await this.restart(worktreeId);
       }
     }
-    return prefs;
+    return settings;
+  }
+
+  /** End the SDK query so the next prompt reopens it with current settings. */
+  private async restart(worktreeId: string): Promise<void> {
+    const session = this.activeByWorktree(worktreeId);
+    if (!session) return;
+    if (session.q) await session.q.interrupt().catch(() => {});
+    session.input.end();
   }
 
   // ---------- internals ----------
@@ -318,12 +347,12 @@ export class SessionManager {
     const { repo, worktree } = await this.workspace.resolveWorktree(worktreeId);
     const persisted = this.store.sessions.find((s) => s.worktreeId === worktreeId);
 
-    const prefs = this.store.prefsFor(worktreeId);
+    const prefs = this.store.effectiveFor(worktreeId);
     const info: SessionInfo = {
       id: persisted?.id ?? freshId(),
       worktreeId,
       status: "idle",
-      bypassPermissions: prefs.bypassPermissions,
+      settings: prefs,
       sdkSessionId: persisted?.sdkSessionId ?? null,
       totalCostUsd: persisted?.totalCostUsd ?? 0,
       totalTokens: persisted?.totalTokens ?? 0,

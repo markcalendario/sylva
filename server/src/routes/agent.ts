@@ -11,10 +11,19 @@ const answerSchema = z.object({
   requestId: z.string().min(1),
   answer: z.enum(["allow", "allow-always", "deny"]),
 });
-const prefsSchema = z.object({
+const effortSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
+
+const globalSettingsSchema = z.object({
   bypassPermissions: z.boolean(),
   model: z.string().min(1).nullable(),
-  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).nullable(),
+  effort: effortSchema.nullable(),
+});
+
+/** Absent keys inherit global; present keys (including null) override it. */
+const overridesSchema = z.object({
+  bypassPermissions: z.boolean().optional(),
+  model: z.string().min(1).nullable().optional(),
+  effort: effortSchema.nullable().optional(),
 });
 
 /** Keep uploaded names to a safe leaf; never let one escape the directory. */
@@ -66,16 +75,23 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     return { ok: true };
   });
 
-  app.get("/api/worktrees/:worktreeId/prefs", async (req) => {
-    const { worktreeId } = req.params as { worktreeId: string };
-    return sessions.getPrefs(worktreeId);
+  app.get("/api/settings", async () => ctx.store.globalSettings);
+
+  app.put("/api/settings", async (req) => {
+    const body = globalSettingsSchema.parse(req.body);
+    return sessions.setGlobalSettings(body);
   });
 
-  app.put("/api/worktrees/:worktreeId/prefs", async (req) => {
+  app.get("/api/worktrees/:worktreeId/settings", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    return sessions.getSettings(worktreeId);
+  });
+
+  app.put("/api/worktrees/:worktreeId/settings", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     await workspace.resolveWorktree(worktreeId);
-    const body = prefsSchema.parse(req.body);
-    return sessions.setPrefs(worktreeId, body);
+    const body = overridesSchema.parse(req.body);
+    return sessions.setOverrides(worktreeId, body);
   });
 
   /**

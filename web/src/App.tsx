@@ -1,5 +1,8 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { AboutDialog } from "./components/dialogs/AboutDialog";
+import { GlobalSettingsDialog } from "./components/dialogs/GlobalSettingsDialog";
+import { RegisterRepoDialog } from "./components/dialogs/RegisterRepoDialog";
 import { api } from "./lib/api";
 import { startWs } from "./lib/ws";
 import { useSylva } from "./state/store";
@@ -17,6 +20,9 @@ const queryClient = new QueryClient({
 
 function Shell() {
   const qc = useQueryClient();
+  const [showAbout, setShowAbout] = useState(false);
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
 
   useEffect(() => {
     startWs(() => {
@@ -31,12 +37,28 @@ function Shell() {
 
   return (
     <div className="shell">
-      <TopBar />
+      <TopBar onAbout={() => setShowAbout(true)} onGlobalSettings={() => setShowGlobalSettings(true)} />
       <div className="shell-body">
         <Sidebar />
-        <MainPanel />
+        <MainPanel
+          onRegister={() => setShowRegister(true)}
+          onAbout={() => setShowAbout(true)}
+        />
       </div>
       <StatusStrip />
+
+      <AboutDialog open={showAbout} onClose={() => setShowAbout(false)} />
+      <GlobalSettingsDialog
+        open={showGlobalSettings}
+        onClose={() => setShowGlobalSettings(false)}
+      />
+      <RegisterRepoDialog
+        open={showRegister}
+        onClose={() => {
+          setShowRegister(false);
+          void qc.invalidateQueries({ queryKey: ["repos"] });
+        }}
+      />
     </div>
   );
 }

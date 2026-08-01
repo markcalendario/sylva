@@ -1,0 +1,50 @@
+import { Sprite } from "../../sprites/Sprite";
+import { Dialog } from "../Dialog";
+
+export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return (
+    <Dialog title="About Sylva" open={open} onClose={onClose}>
+      <div className="about-sprites">
+        <Sprite state="idle" scale={2} />
+        <Sprite state="working" scale={2} />
+        <Sprite state="success" scale={2} />
+        <Sprite state="error" scale={2} />
+      </div>
+
+      <p className="dialog-hint">
+        A local mission control for git worktrees and Claude agents. Every worktree is a tree in
+        your forest, tended by a dryad you can put to work — and watch.
+      </p>
+
+      <div className="credits">
+        <div className="pixel-label">built by</div>
+        <div className="credits-name">Mark Kenneth Calendario</div>
+        <div className="credits-role">Full-stack web developer · Caloocan, Philippines</div>
+        <div className="credits-tagline">Design ▸ Build ▸ Ship</div>
+        <div className="credits-links">
+          <a href="https://markcalendario.vercel.app/" target="_blank" rel="noreferrer">
+            Portfolio
+          </a>
+          <a href="https://github.com/markcalendario" target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+          <a href="https://www.linkedin.com/in/markcalendario" target="_blank" rel="noreferrer">
+            LinkedIn
+          </a>
+          <a href="mailto:markcalendario@gmail.com">Email</a>
+        </div>
+      </div>
+
+      <p className="credits-colophon">
+        Built with Claude Code. Sprites, sounds, and type are generated in the browser — no image
+        or audio files ship with the app.
+      </p>
+
+      <div className="dialog-actions">
+        <button type="button" className="btn-primary" onClick={onClose}>
+          Back to the forest
+        </button>
+      </div>
+    </Dialog>
+  );
+}

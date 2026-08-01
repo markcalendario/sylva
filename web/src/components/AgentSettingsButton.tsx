@@ -1,36 +1,44 @@
 import { useEffect, useState } from "react";
-import type { WorktreePrefs } from "sylva-shared";
+import type { WorktreeSettings } from "sylva-shared";
 import { api } from "../lib/api";
 import { AgentSettingsDialog } from "./dialogs/AgentSettingsDialog";
+import { summarize } from "./dialogs/settingsFields";
 
 /**
  * Compact summary of this worktree's agent settings, and the way in to change
  * them. Shows what's actually in effect rather than a generic gear.
  */
 export function AgentSettingsButton({ worktreeId }: { worktreeId: string }) {
-  const [prefs, setPrefs] = useState<WorktreePrefs | null>(null);
+  const [settings, setSettings] = useState<WorktreeSettings | null>(null);
   const [open, setOpen] = useState(false);
 
   const load = () => {
-    void api.prefs(worktreeId).then(setPrefs);
+    void api.worktreeSettings(worktreeId).then(setSettings);
   };
 
   useEffect(load, [worktreeId]);
 
-  const model = prefs?.model?.replace(/^claude-/, "") ?? "default";
-  const effort = prefs?.effort ?? "default";
+  const effective = settings?.effective;
+  const overridden = Object.keys(settings?.overrides ?? {}).length > 0;
 
   return (
     <>
       <button
-        className={`agent-settings ${prefs?.bypassPermissions ? "agent-settings-danger" : ""}`}
+        className={`agent-settings ${effective?.bypassPermissions ? "agent-settings-danger" : ""}`}
         onClick={() => setOpen(true)}
-        title="Agent settings for this worktree"
+        title={
+          overridden
+            ? "Agent settings — this worktree overrides the global defaults"
+            : "Agent settings — inheriting the global defaults"
+        }
       >
         <span className="agent-settings-icon">⚙</span>
         <span className="agent-settings-summary">
-          {model} · {effort}
-          {prefs?.bypassPermissions && <span className="agent-settings-warn"> · unrestricted</span>}
+          {effective ? summarize(effective) : "…"}
+          {overridden && <span className="agent-settings-override"> ·</span>}
+          {effective?.bypassPermissions && (
+            <span className="agent-settings-warn"> · unrestricted</span>
+          )}
         </span>
       </button>
       <AgentSettingsDialog

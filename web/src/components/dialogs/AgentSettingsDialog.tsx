@@ -1,20 +1,19 @@
 import { useEffect, useState } from "react";
-import { EFFORT_LEVELS, MODEL_CHOICES, type WorktreePrefs } from "sylva-shared";
+import type { EffortLevel, WorktreeOverrides, WorktreeSettings } from "sylva-shared";
 import { api, ApiFailure } from "../../lib/api";
 import { Dialog } from "../Dialog";
-
-const EFFORT_NOTES: Record<string, string> = {
-  low: "Fast and cheap; fine for scoped edits",
-  medium: "Balanced",
-  high: "Deep reasoning (Claude Code's default)",
-  xhigh: "Best for hard coding and agentic work",
-  max: "Maximum effort; slowest and priciest",
-};
+import {
+  BypassWarning,
+  EffortField,
+  INHERIT,
+  ModelField,
+  PermissionField,
+  modelLabel,
+} from "./settingsFields";
 
 /**
- * Per-worktree agent settings. Every field here is fixed when the SDK session
- * starts, so saving a change restarts the session — the dialog says so, and the
- * conversation is preserved by resuming on the SDK session id.
+ * Per-worktree overrides. Each field defaults to inheriting the global value;
+ * choosing anything else pins it for this worktree alone.
  */
 export function AgentSettingsDialog({
   worktreeId,
@@ -25,43 +24,38 @@ export function AgentSettingsDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const [prefs, setPrefs] = useState<WorktreePrefs | null>(null);
-  const [saved, setSaved] = useState<WorktreePrefs | null>(null);
+  const [settings, setSettings] = useState<WorktreeSettings | null>(null);
+  const [draft, setDraft] = useState<WorktreeOverrides>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmingBypass, setConfirmingBypass] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setError(null);
-    void api.prefs(worktreeId).then((p) => {
-      setPrefs(p);
-      setSaved(p);
+    void api.worktreeSettings(worktreeId).then((s) => {
+      setSettings(s);
+      setDraft(s.overrides);
     });
   }, [open, worktreeId]);
 
-  if (!prefs || !saved) {
+  if (!settings) {
     return (
-      <Dialog title="Agent settings" open={open} onClose={onClose}>
+      <Dialog title="Worktree settings" open={open} onClose={onClose}>
         <p className="dialog-hint">Loading…</p>
       </Dialog>
     );
   }
 
-  // Every field here is baked into the SDK query at start, so any change
-  // restarts the session — there is no subset that applies in place.
-  const dirty =
-    prefs.model !== saved.model ||
-    prefs.effort !== saved.effort ||
-    prefs.bypassPermissions !== saved.bypassPermissions;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(settings.overrides);
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      const next = await api.setPrefs(worktreeId, prefs);
-      setPrefs(next);
-      setSaved(next);
+      const next = await api.setWorktreeOverrides(worktreeId, draft);
+      setSettings(next);
+      setDraft(next.overrides);
       onClose();
     } catch (e) {
       setError(e instanceof ApiFailure ? (e.detail ?? e.message) : "Couldn't save settings");
@@ -70,96 +64,50 @@ export function AgentSettingsDialog({
     }
   };
 
+  const setKey = <K extends keyof WorktreeOverrides>(
+    key: K,
+    value: WorktreeOverrides[K] | typeof INHERIT,
+  ) => {
+    const next = { ...draft };
+    if (value === INHERIT) delete next[key];
+    else next[key] = value;
+    setDraft(next);
+  };
+
   return (
-    <Dialog title="Agent settings" open={open} onClose={onClose}>
+    <Dialog title="Worktree settings" open={open} onClose={onClose}>
       <p className="dialog-hint">
-        Applies to the dryad in this worktree only. Other trees keep their own settings.
+        Applies to this worktree only. Anything left on “inherit” follows the global settings.
       </p>
 
-      <label className="field">
-        Model
-        <select
-          value={prefs.model ?? ""}
-          onChange={(e) => setPrefs({ ...prefs, model: e.target.value || null })}
-        >
-          <option value="">Claude Code default</option>
-          {MODEL_CHOICES.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label} — {m.note}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ModelField
+        value={"model" in draft ? (draft.model ?? null) : INHERIT}
+        onChange={(v) => setKey("model", v as string | null | typeof INHERIT)}
+        inheritLabel={`Inherit global — ${modelLabel(settings.global.model)}`}
+      />
+      <EffortField
+        value={"effort" in draft ? (draft.effort ?? null) : INHERIT}
+        onChange={(v) => setKey("effort", v as EffortLevel | null | typeof INHERIT)}
+        inheritLabel={`Inherit global — ${settings.global.effort ?? "Claude Code default"}`}
+      />
+      <PermissionField
+        value={"bypassPermissions" in draft ? Boolean(draft.bypassPermissions) : INHERIT}
+        onChange={(v) => setKey("bypassPermissions", v as boolean | typeof INHERIT)}
+        onRequestBypass={() => setConfirming(true)}
+        inheritLabel={`Inherit global — ${
+          settings.global.bypassPermissions ? "skipping permissions" : "asks permission"
+        }`}
+      />
 
-      <label className="field">
-        Effort
-        <select
-          value={prefs.effort ?? ""}
-          onChange={(e) =>
-            setPrefs({ ...prefs, effort: (e.target.value || null) as WorktreePrefs["effort"] })
-          }
-        >
-          <option value="">Claude Code default</option>
-          {EFFORT_LEVELS.map((level) => (
-            <option key={level} value={level}>
-              {level} — {EFFORT_NOTES[level]}
-            </option>
-          ))}
-        </select>
-        <span className="field-hint">
-          How much thinking the dryad does before acting. Higher costs more and takes longer.
-        </span>
-      </label>
-
-      <div className="field">
-        Permissions
-        <button
-          type="button"
-          className={`permtoggle ${prefs.bypassPermissions ? "permtoggle-on" : ""}`}
-          role="switch"
-          aria-checked={prefs.bypassPermissions}
-          onClick={() => {
-            if (prefs.bypassPermissions) setPrefs({ ...prefs, bypassPermissions: false });
-            else setConfirmingBypass(true);
+      {confirming && (
+        <BypassWarning
+          scope="in this worktree"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setKey("bypassPermissions", true);
+            setConfirming(false);
           }}
-        >
-          <span className="permtoggle-track">
-            <span className="permtoggle-thumb" />
-          </span>
-          {prefs.bypassPermissions ? "skipping permissions" : "asks permission"}
-        </button>
-        {prefs.bypassPermissions && (
-          <span className="field-hint field-hint-danger">
-            The dryad runs any command — deletes, history rewrites, pushes — without asking.
-          </span>
-        )}
-      </div>
-
-      {confirmingBypass && (
-        <div className="force-warning">
-          <span className="pixel-label">skip all permission checks?</span>
-          <p>
-            The dryad stops asking before it acts in this worktree. It will run any command it
-            decides on, including deleting files and pushing to your remote. Nothing outside this
-            worktree is protected either — the shell can reach your whole machine. Only worth it in
-            a worktree you'd be comfortable throwing away.
-          </p>
-          <div className="dialog-actions">
-            <button type="button" className="btn-quiet" onClick={() => setConfirmingBypass(false)}>
-              Keep asking
-            </button>
-            <button
-              type="button"
-              className="btn-danger"
-              onClick={() => {
-                setPrefs({ ...prefs, bypassPermissions: true });
-                setConfirmingBypass(false);
-              }}
-            >
-              Skip permissions
-            </button>
-          </div>
-        </div>
+        />
       )}
 
       {error && <div className="form-error">{error}</div>}

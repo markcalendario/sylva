@@ -1,32 +1,26 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { useRepos } from "../lib/queries";
 import { spriteStateFor, useSylva } from "../state/store";
 import { Sprite } from "../sprites/Sprite";
 import { AgentPanel } from "./AgentPanel";
 import { FilesPanel } from "./FilesPanel";
+import { ForestView } from "./ForestView";
+import { Landing } from "./Landing";
 import { GitPanel } from "./GitPanel";
 import { AgentSettingsButton } from "./AgentSettingsButton";
 
 type Tab = "agent" | "files" | "git";
 
-function Welcome() {
-  return (
-    <div className="welcome">
-      <div className="welcome-sprites">
-        <Sprite state="idle" scale={3} />
-        <Sprite state="working" scale={3} />
-        <Sprite state="success" scale={3} />
-      </div>
-      <h1 className="welcome-title">Welcome to the forest</h1>
-      <p className="welcome-copy">
-        Each worktree is a tree; each tree has a dryad. Register a repository, pick a worktree in
-        the sidebar, or start a task and watch a dryad get to work.
-      </p>
-    </div>
-  );
-}
 
-export function MainPanel() {
+export function MainPanel({
+  onRegister,
+  onAbout,
+}: {
+  onRegister: () => void;
+  onAbout: () => void;
+}) {
+  const repos = useRepos();
   const worktreeId = useSylva((s) => s.focusedWorktreeId);
   const spriteState = useSylva((s) => (worktreeId ? spriteStateFor(s, worktreeId) : "idle"));
   const status = useSylva((s) => (worktreeId ? s.statuses[worktreeId] : undefined));
@@ -48,7 +42,19 @@ export function MainPanel() {
     void api.status(worktreeId).then((st) => useSylva.getState().setStatus(st));
   }, [worktreeId]);
 
-  if (!worktreeId) return <main className="main"><Welcome /></main>;
+  // Nothing focused: first run gets the landing page, otherwise the overview.
+  if (!worktreeId) {
+    const hasRepos = (repos.data?.length ?? 0) > 0;
+    return (
+      <main className="main main-scroll">
+        {hasRepos ? (
+          <ForestView />
+        ) : (
+          <Landing onRegister={onRegister} onAbout={onAbout} />
+        )}
+      </main>
+    );
+  }
 
   return (
     <main className="main">

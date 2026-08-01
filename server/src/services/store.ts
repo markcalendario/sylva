@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Repo, WorktreePrefs } from "sylva-shared";
+import { GLOBAL_DEFAULTS, type AgentSettings, type Repo, type WorktreeOverrides } from "sylva-shared";
 
 export interface PersistedSession {
   id: string;
@@ -17,16 +17,17 @@ export interface PersistedSession {
 interface RegistryFile {
   repos: Omit<Repo, "available">[];
   sessions: PersistedSession[];
-  /** Per-worktree settings, keyed by worktree id. */
-  prefs: Record<string, WorktreePrefs>;
+  /** Per-worktree overrides, keyed by worktree id. */
+  prefs: Record<string, WorktreeOverrides>;
+  /** Defaults every worktree inherits unless it overrides them. */
+  globalSettings: AgentSettings;
 }
 
-const EMPTY: RegistryFile = { repos: [], sessions: [], prefs: {} };
-
-export const DEFAULT_PREFS: WorktreePrefs = {
-  bypassPermissions: false,
-  model: null,
-  effort: null,
+const EMPTY: RegistryFile = {
+  repos: [],
+  sessions: [],
+  prefs: {},
+  globalSettings: GLOBAL_DEFAULTS,
 };
 
 /**
@@ -56,9 +57,10 @@ export class Store {
         repos: Array.isArray(parsed.repos) ? parsed.repos : [],
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
         prefs: parsed.prefs && typeof parsed.prefs === "object" ? parsed.prefs : {},
+        globalSettings: { ...GLOBAL_DEFAULTS, ...(parsed.globalSettings ?? {}) },
       };
     } catch {
-      this.data = { repos: [], sessions: [], prefs: {} };
+      this.data = { repos: [], sessions: [], prefs: {}, globalSettings: GLOBAL_DEFAULTS };
     }
   }
 
@@ -93,12 +95,27 @@ export class Store {
     await this.flush();
   }
 
-  prefsFor(worktreeId: string): WorktreePrefs {
-    return { ...DEFAULT_PREFS, ...this.data.prefs[worktreeId] };
+  get globalSettings(): AgentSettings {
+    return this.data.globalSettings;
   }
 
-  async setPrefs(worktreeId: string, prefs: WorktreePrefs): Promise<void> {
-    this.data.prefs[worktreeId] = prefs;
+  async setGlobalSettings(settings: AgentSettings): Promise<void> {
+    this.data.globalSettings = settings;
+    await this.flush();
+  }
+
+  overridesFor(worktreeId: string): WorktreeOverrides {
+    return this.data.prefs[worktreeId] ?? {};
+  }
+
+  /** Global merged with this worktree's overrides. Present keys win. */
+  effectiveFor(worktreeId: string): AgentSettings {
+    return { ...this.data.globalSettings, ...this.overridesFor(worktreeId) };
+  }
+
+  async setOverrides(worktreeId: string, overrides: WorktreeOverrides): Promise<void> {
+    if (Object.keys(overrides).length === 0) delete this.data.prefs[worktreeId];
+    else this.data.prefs[worktreeId] = overrides;
     await this.flush();
   }
 

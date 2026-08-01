@@ -1,15 +1,18 @@
 import type {
   AgentAvailability,
   AgentEvent,
+  AgentSettings,
   Attachment,
   BranchInfo,
+  DirListing,
   FileDiff,
   PermissionAnswer,
   PermissionRequest,
   Repo,
   SessionInfo,
   Worktree,
-  WorktreePrefs,
+  WorktreeOverrides,
+  WorktreeSettings,
   WorktreeStatus,
 } from "sylva-shared";
 
@@ -119,12 +122,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ requestId, answer }),
     }),
-  prefs: (worktreeId: string) => request<WorktreePrefs>(`/api/worktrees/${worktreeId}/prefs`),
-  setPrefs: (worktreeId: string, prefs: WorktreePrefs) =>
-    request<WorktreePrefs>(`/api/worktrees/${worktreeId}/prefs`, {
+  globalSettings: () => request<AgentSettings>("/api/settings"),
+  setGlobalSettings: (settings: AgentSettings) =>
+    request<AgentSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) }),
+
+  worktreeSettings: (worktreeId: string) =>
+    request<WorktreeSettings>(`/api/worktrees/${worktreeId}/settings`),
+  setWorktreeOverrides: (worktreeId: string, overrides: WorktreeOverrides) =>
+    request<WorktreeSettings>(`/api/worktrees/${worktreeId}/settings`, {
       method: "PUT",
-      body: JSON.stringify(prefs),
+      body: JSON.stringify(overrides),
     }),
+
+  browse: (path?: string) =>
+    request<DirListing>(`/api/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`),
 
   async attach(worktreeId: string, file: File): Promise<Attachment> {
     const form = new FormData();
