@@ -95,7 +95,17 @@ export interface QueuedPrompt {
 export type AgentEvent =
   | { kind: "user-prompt"; text: string; at: string }
   | { kind: "assistant-text"; text: string; at: string }
-  | { kind: "tool-use"; toolUseId: string; tool: string; summary: string; input?: unknown; at: string }
+  | {
+      kind: "tool-use";
+      toolUseId: string;
+      tool: string;
+      /** One-line, worktree-relative label for the chat row. */
+      summary: string;
+      /** Full text behind a truncated summary, when there's more to see. */
+      detail?: string;
+      input?: unknown;
+      at: string;
+    }
   | { kind: "tool-result"; toolUseId: string; isError: boolean; summary: string; at: string }
   | {
       kind: "result";

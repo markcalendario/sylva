@@ -16,6 +16,8 @@
     "@tanstack/react-query": "^5.101.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "sylva-shared": "^0.1.0",
     "zustand": "^5.0.14"
   },

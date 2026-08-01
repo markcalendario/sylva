@@ -453,55 +453,222 @@ button:disabled {
   background: var(--pine-1);
   border: 1px solid var(--pine-3);
   border-bottom-left-radius: 2px;
+  white-space: normal;
+  padding: var(--pad-3);
 }
 
-.tool-call {
-  align-self: flex-start;
-  max-width: 72ch;
+/* ---------- markdown ---------- */
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p {
+  margin: 0 0 var(--pad-3);
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: var(--pad-4) 0 var(--pad-2);
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+/* Model headings live inside a chat bubble — keep them close to body size. */
+.md h1 {
+  font-size: var(--text-lg);
+}
+
+.md h2 {
+  font-size: 15px;
+}
+
+.md h3,
+.md h4 {
+  font-size: var(--text-md);
+  color: var(--moss);
+}
+
+.md strong {
+  color: var(--moon);
+  font-weight: 600;
+}
+
+.md ul,
+.md ol {
+  margin: 0 0 var(--pad-3);
+  padding-left: var(--pad-5);
+}
+
+.md li {
+  margin: 2px 0;
+}
+
+.md li::marker {
+  color: var(--moss-dim);
+}
+
+.md code {
+  background: var(--pine-0);
+  border: 1px solid var(--pine-3);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.md pre {
+  margin: 0 0 var(--pad-3);
+  padding: var(--pad-3);
+  background: var(--pine-0);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.md pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: var(--text-sm);
+}
+
+.md blockquote {
+  margin: 0 0 var(--pad-3);
+  padding-left: var(--pad-3);
+  border-left: 2px solid var(--pine-3);
+  color: var(--moss);
+}
+
+.md hr {
+  border: none;
+  border-top: 1px solid var(--pine-3);
+  margin: var(--pad-4) 0;
+}
+
+.md a {
+  color: var(--stream);
+  overflow-wrap: anywhere;
+}
+
+/* Tables scroll inside the bubble rather than widening it. */
+.md table {
+  display: block;
   width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0 0 var(--pad-3);
+  font-size: var(--text-sm);
 }
 
-.tool-head {
+.md th,
+.md td {
+  border: 1px solid var(--pine-3);
+  padding: var(--pad-1) var(--pad-2);
+  text-align: left;
+}
+
+.md th {
+  background: var(--pine-2);
+  font-weight: 600;
+}
+
+/* A run of tool calls: one quiet block, indented under the conversation. */
+.tool-group {
+  align-self: flex-start;
+  max-width: 76ch;
+  width: 100%;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: var(--pad-2);
+  border-left: 1px solid var(--pine-3);
+}
+
+.tool-line {
+  display: flex;
+  align-items: baseline;
   gap: var(--pad-2);
+  width: 100%;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--moss);
-  padding: 2px var(--pad-2);
+  padding: 1px var(--pad-2);
   border-radius: var(--radius);
+  text-align: left;
+  min-width: 0;
 }
 
-.tool-head:hover {
-  background: var(--pine-2);
+.tool-line:hover {
+  background: var(--pine-1);
+  color: var(--moon);
+}
+
+.tool-line-static {
+  cursor: default;
+}
+
+.tool-line-static:hover {
+  background: none;
+  color: var(--moss);
 }
 
 .tool-chip {
   font-family: var(--font-pixel);
-  font-size: 10px;
+  font-size: 9px;
   color: var(--stream);
-  border: 1px solid var(--pine-3);
-  border-radius: 4px;
-  padding: 0 5px;
+  opacity: 0.75;
   flex-shrink: 0;
+  width: 6ch;
+  text-align: right;
+  text-transform: lowercase;
 }
 
 .tool-summary {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 56ch;
+  min-width: 0;
+}
+
+.tool-more {
+  align-self: flex-start;
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  padding: 1px var(--pad-2);
+  margin-left: calc(6ch + var(--pad-2) + var(--pad-2));
+  border-radius: var(--radius);
+}
+
+.tool-more:hover {
+  color: var(--firefly);
 }
 
 .tool-detail {
-  margin: var(--pad-1) 0 0;
+  margin: var(--pad-1) 0 var(--pad-2);
   padding: var(--pad-2) var(--pad-3);
   background: var(--pine-1);
   border: 1px solid var(--pine-3);
   border-radius: var(--radius);
   font-size: var(--text-xs);
   overflow-x: auto;
-  max-width: 72ch;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-row-error {
+  color: var(--ember);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 2px var(--pad-2) 2px calc(6ch + var(--pad-2) + var(--pad-2));
+  overflow-wrap: anywhere;
 }
 
 .tool-result-error {

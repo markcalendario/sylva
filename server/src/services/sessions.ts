@@ -1,4 +1,5 @@
 import { appendFile, readFile } from "node:fs/promises";
+import { relative } from "node:path";
 import {
   query,
   type CanUseTool,
@@ -85,17 +86,83 @@ interface ActiveSession {
   loopDone: Promise<void> | null;
 }
 
-function summarizeToolInput(tool: string, input: Record<string, unknown>): string {
-  const cand =
-    (typeof input.command === "string" && input.command) ||
-    (typeof input.file_path === "string" && input.file_path) ||
-    (typeof input.path === "string" && input.path) ||
-    (typeof input.pattern === "string" && input.pattern) ||
-    (typeof input.url === "string" && input.url) ||
-    (typeof input.prompt === "string" && input.prompt) ||
-    "";
-  const text = cand || JSON.stringify(input);
-  return text.length > 160 ? `${text.slice(0, 157)}…` : text;
+/** Agents habitually prefix commands with `cd "<worktree>" &&`; that's noise here. */
+const CD_PREFIX = /^\s*cd\s+(?:"[^"]*"|'[^']*'|[^\s&|;]+)\s*&&\s*/;
+
+function stripCdPrefixes(command: string): string {
+  let out = command;
+  while (CD_PREFIX.test(out)) out = out.replace(CD_PREFIX, "");
+  return out.replace(/\s*\n\s*/g, " ").trim();
+}
+
+/** Absolute paths inside the worktree read better as repo-relative ones. */
+function relativize(path: string, root: string): string {
+  if (!path || !root) return path;
+  const rel = relative(root, path);
+  return rel && !rel.startsWith("..") ? rel : path;
+}
+
+/** Commands read from the front; paths read from the end. */
+function clampHead(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function clampTail(text: string, max: number): string {
+  return text.length <= max ? text : `…${text.slice(text.length - max + 1)}`;
+}
+
+interface ToolLabel {
+  summary: string;
+  detail?: string;
+}
+
+/** Build the one-line label shown for a tool call in the chat. */
+export function describeTool(
+  tool: string,
+  input: Record<string, unknown>,
+  root: string,
+): ToolLabel {
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const filePath = str(input.file_path) || str(input.path);
+
+  switch (tool) {
+    case "Bash": {
+      const command = stripCdPrefixes(str(input.command));
+      if (!command) return { summary: "(empty command)" };
+      return { summary: clampHead(command, 120), detail: command };
+    }
+    case "Read":
+    case "Write":
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit": {
+      const rel = relativize(filePath, root);
+      return { summary: clampTail(rel, 80), detail: filePath };
+    }
+    case "Glob":
+      return { summary: clampHead(str(input.pattern), 80) };
+    case "Grep": {
+      const where = filePath ? ` in ${clampTail(relativize(filePath, root), 40)}` : "";
+      return { summary: clampHead(`${str(input.pattern)}${where}`, 100) };
+    }
+    case "WebFetch":
+      return { summary: clampHead(str(input.url), 90), detail: str(input.url) };
+    case "WebSearch":
+      return { summary: clampHead(str(input.query), 90) };
+    case "Task":
+    case "Agent": {
+      const text = str(input.description) || str(input.prompt);
+      return { summary: clampHead(text, 100), detail: text };
+    }
+    case "TodoWrite":
+      return { summary: "updated the task list" };
+    default: {
+      const candidate =
+        str(input.command) || filePath || str(input.pattern) || str(input.url) || str(input.prompt);
+      const text = candidate || JSON.stringify(input);
+      return { summary: clampHead(text, 100), detail: text };
+    }
+  }
 }
 
 function contentToText(content: unknown): string {
@@ -317,11 +384,17 @@ export class SessionManager {
           if (block.type === "text" && block.text.trim()) {
             this.appendEvent(session, { kind: "assistant-text", text: block.text, at: now() });
           } else if (block.type === "tool_use") {
+            const label = describeTool(
+              block.name,
+              (block.input ?? {}) as Record<string, unknown>,
+              session.worktreePath,
+            );
             this.appendEvent(session, {
               kind: "tool-use",
               toolUseId: block.id,
               tool: block.name,
-              summary: summarizeToolInput(block.name, (block.input ?? {}) as Record<string, unknown>),
+              summary: label.summary,
+              ...(label.detail && label.detail !== label.summary ? { detail: label.detail } : {}),
               at: now(),
             });
           }
@@ -390,7 +463,7 @@ export class SessionManager {
         sessionId: session.info.id,
         worktreeId: session.info.worktreeId,
         tool: toolName,
-        summary: title ?? `${toolName}: ${summarizeToolInput(toolName, input)}`,
+        summary: title ?? `${toolName}: ${describeTool(toolName, input, session.worktreePath).summary}`,
         input,
         requestedAt: now(),
       };
