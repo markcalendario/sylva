@@ -3,6 +3,7 @@ import websocket from "@fastify/websocket";
 import { ZodError } from "zod";
 import type { AppContext } from "./context.js";
 import { GitError, HttpError } from "./lib/errors.js";
+import { registerRepoRoutes } from "./routes/repos.js";
 import { originGuard } from "./security.js";
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
@@ -30,6 +31,8 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(websocket);
 
   app.get("/api/health", async () => ({ ok: true, name: "sylva" }));
+
+  registerRepoRoutes(app, ctx);
 
   app.get("/ws", { websocket: true }, (socket) => {
     ctx.hub.add(socket);
