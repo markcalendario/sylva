@@ -82,7 +82,58 @@ export function ForestView() {
       )}
 
       {plots.length > 0 && (
-        <ForestScene plots={plots} onOpen={(id) => void api.setFocus(id)} />
+        <>
+          <ForestScene plots={plots} onOpen={(id) => void api.setFocus(id)} />
+
+          {/* The facts live here rather than on the map, so the plane stays a
+              scene and the numbers stay scannable. */}
+          <div className="ow-roster">
+            {plots.map((plot) => {
+              const dirty = plot.status
+                ? plot.status.staged.length +
+                  plot.status.unstaged.length +
+                  plot.status.untracked.length
+                : 0;
+              const stateWord =
+                plot.state === "idle"
+                  ? "resting"
+                  : plot.state === "working"
+                    ? "working"
+                    : plot.state === "success"
+                      ? "done"
+                      : "needs you";
+              return (
+                <button
+                  key={plot.worktree.id}
+                  className={`ow-chip ${plot.focused ? "ow-chip-focused" : ""}`}
+                  onClick={() => void api.setFocus(plot.worktree.id)}
+                  data-tip={`${plot.repo.name} · ${plot.worktree.path}`}
+                >
+                  <span className="ow-chip-name">
+                    {plot.worktree.branch ?? plot.worktree.head.slice(0, 7)}
+                  </span>
+                  <span className={`ow-chip-state ow-state-${plot.state}`}>{stateWord}</span>
+                  {plot.status?.base && (
+                    <span className="tabular">
+                      <span className={plot.status.base.ahead ? "div-ahead" : "div-zero"}>
+                        ↑{plot.status.base.ahead}
+                      </span>{" "}
+                      <span className={plot.status.base.behind ? "div-behind" : "div-zero"}>
+                        ↓{plot.status.base.behind}
+                      </span>
+                    </span>
+                  )}
+                  <span className={`tabular ${dirty ? "" : "div-zero"}`}>
+                    {dirty === 0 ? "clean" : `${dirty} dirty`}
+                  </span>
+                  {plot.cost !== undefined && plot.cost > 0 && (
+                    <span className="ow-chip-cost tabular">${plot.cost.toFixed(2)}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

@@ -8,7 +8,8 @@ export const PROP_PALETTE: Record<string, string> = {
   l: "#8a6238", // lit edge
   r: "#7d5a36", // stump rings
   a: "#ffb454", // lamp glow
-  k: "#1b2a1c",
+  k: "#1b2a1c", // pinned notes
+  p: "#ff6b5b", // the urgent pin
 };
 
 export const BENCH_W = 18;
@@ -43,6 +44,29 @@ export const BENCH_FRAMES: string[][] = [
     "..b..........b..b.",
     "..b..........b..b.",
     "..O..........O..O.",
+  ],
+];
+
+export const BOARD_W = 16;
+export const BOARD_H = 14;
+
+/** The notice board a stuck dryad waits at — the "needs you" station. */
+export const BOARD_FRAMES: string[][] = [
+  [
+    "..OOOOOOOOOOOO..",
+    ".OllllllllllllO.",
+    ".ObkkbbbbkkbbbO.",
+    ".ObbbbpbbbbbbbO.",
+    ".ObkbbbbbkkbbbO.",
+    ".ObbbkkbbbbbbbO.",
+    ".OllllllllllllO.",
+    "..OOOOOOOOOOOO..",
+    ".....b....b.....",
+    ".....b....b.....",
+    ".....b....b.....",
+    ".....d....d.....",
+    ".....d....d.....",
+    "....OO....OO....",
   ],
 ];
 
