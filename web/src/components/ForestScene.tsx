@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Repo, Worktree, WorktreeStatus } from "sylva-shared";
 import type { SpriteState } from "../sprites/frames";
+import { playNoise, type Noise } from "../lib/audio";
 import { PixelArt } from "../sprites/pixel";
 import { Sprite } from "../sprites/Sprite";
 import {
@@ -19,8 +20,10 @@ import { TREE_FRAMES, TREE_FRAMES_FRUITING, TREE_H, TREE_PALETTE, TREE_W } from 
 import {
   computeLayout,
   renderPlane,
+  RISE,
   ROW,
   SCALE,
+  SKY,
   type Layout,
   type StationKey,
 } from "../sprites/tilemap";
@@ -37,12 +40,24 @@ import {
   MOTH_FRAMES,
   MOTH_H,
   MOTH_W,
+  FROG_FRAMES,
+  FROG_H,
+  FROG_W,
+  OWL_FRAMES,
+  OWL_H,
+  OWL_W,
   RABBIT_FRAMES,
   RABBIT_H,
   RABBIT_W,
+  GATE_FRAMES,
+  GATE_H,
+  GATE_W,
   SHED_FRAMES,
   SHED_H,
   SHED_W,
+  SHRINE_FRAMES,
+  SHRINE_H,
+  SHRINE_W,
   TENT_FRAMES,
   TENT_H,
   TENT_W,
@@ -73,6 +88,106 @@ const STATE_WORD: Record<SpriteState, string> = {
   success: "celebrating in the grove",
   error: "waiting at the notice board",
 };
+
+/**
+ * What a dryad might be thinking, by what it is doing. Short, lowercase and
+ * wordless where possible — these are atmosphere, not status text, and the
+ * nameplate above them is already doing the reporting.
+ */
+const THOUGHTS: Record<SpriteState, string[]> = {
+  idle: ["zzz", "…", "*yawn*", "hm?"],
+  working: ["hmm", "aha", "*tap tap*", "nearly", "…"],
+  success: ["done!", "✓", "♪", "at last"],
+  error: ["?", "psst", "hey!", "waiting…"],
+};
+
+/** Sounds the world makes on its own, and the animals living in it. */
+const NOISES = {
+  tree: ["rustle", "~", "creak"],
+  fire: ["crackle", "pop", "✦"],
+  water: ["plip", "~", "burble"],
+  forge: ["clink", "tink"],
+  owl: ["hoo", "hoo…", "who?"],
+  frog: ["ribbit", "*croak*"],
+  cricket: ["chirp", "chrr", "♪"],
+} as const;
+
+interface Bubble {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  thought: boolean;
+}
+
+interface BubbleSource {
+  x: number;
+  y: number;
+  phrases: readonly string[];
+  thought: boolean;
+  /** Scenery sound to play with the bubble, if this source makes one. */
+  sound?: Noise;
+}
+
+/**
+ * One bubble at a time, from a pool of everything that could make a sound.
+ * Driven by a timer rather than per-source CSS so the world stays quiet most
+ * of the time and never falls into a rhythm you can predict — and it reads the
+ * sources through a ref, so a dryad moving doesn't restart the whole cycle.
+ */
+function useBubbles(sources: React.RefObject<BubbleSource[]>): Bubble[] {
+  const [bubbles, setBubbles] = useState<Bubble[]>([]);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let nextId = 0;
+    const timers = new Set<number>();
+
+    // Ten seconds apart at the least, with jitter on top. Ambience that
+    // arrives on a countable beat stops being ambience.
+    let tick = 0;
+    const schedule = (): void => {
+      tick = window.setTimeout(() => {
+        emit();
+        schedule();
+      }, 10_000 + Math.random() * 7000);
+    };
+
+    const emit = (): void => {
+      const pool = sources.current ?? [];
+      if (pool.length === 0) return;
+      const source = pool[Math.floor(Math.random() * pool.length)];
+      if (!source) return;
+      const text = source.phrases[Math.floor(Math.random() * source.phrases.length)];
+      if (!text) return;
+      const bubble: Bubble = {
+        id: (nextId += 1),
+        x: source.x,
+        y: source.y,
+        text,
+        thought: source.thought,
+      };
+      // The bubble is the picture of the sound, so they go together.
+      if (source.sound) playNoise(source.sound);
+      // Keep at most three in the air; more reads as chatter, not ambience.
+      setBubbles((current) => [...current.slice(-2), bubble]);
+      const clear = window.setTimeout(() => {
+        setBubbles((current) => current.filter((b) => b.id !== bubble.id));
+        timers.delete(clear);
+      }, 3800);
+      timers.add(clear);
+    };
+
+    schedule();
+
+    return () => {
+      window.clearTimeout(tick);
+      for (const t of timers) window.clearTimeout(t);
+    };
+  }, [sources]);
+
+  return bubbles;
+}
 
 /** Labels float over the world; ambience floats over the labels. */
 const Z_SIGN = 900;
@@ -134,6 +249,29 @@ function Plane({
   const plane = useMemo(() => renderPlane(layout), [layout]);
   const { stations } = layout;
 
+  // A deterministic night: the same stars every time the forest is opened, so
+  // it reads as one place rather than a fresh random sky on each visit.
+  const sky = useMemo(() => {
+    let seed = 0x51_1a;
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) & 0xffffffff;
+      return ((seed >>> 8) & 0xffff) / 0xffff;
+    };
+    const stars = Array.from({ length: 34 }, () => ({
+      x: Math.round(rand() * layout.width * SCALE),
+      y: Math.round(rand() * (SKY * SCALE - 14)),
+      warm: rand() < 0.18,
+      dim: 0.16 + rand() * 0.4,
+    }));
+    const meteors = Array.from({ length: 4 }, (_, i) => ({
+      left: 20 + i * 20,
+      top: 4 + ((i * 9) % 22),
+      delay: i * 5.3 + 2,
+      dur: 7 + (i % 3),
+    }));
+    return { stars, meteors };
+  }, [layout.width]);
+
   // Dryads pack into their station's slots in worktree order, filling from the
   // first. Indexing by position in the whole roster looks stabler but isn't:
   // states cycle, so roster index and station membership fall into step and
@@ -186,6 +324,9 @@ function Plane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destinations]);
 
+  const sources = useRef<BubbleSource[]>([]);
+  const bubbles = useBubbles(sources);
+
   const taken = new Map<StationKey, number>();
   const placed = [...plots]
     .sort((a, b) => a.worktree.id.localeCompare(b.worktree.id))
@@ -197,18 +338,141 @@ function Plane({
       const next = taken.get(key) ?? 0;
       taken.set(key, next + 1);
       const slot = station.slots[next % station.slots.length] ?? station;
-      return { plot, x: slot.x, y: slot.y };
+      // Which leg goes first depends on the destination. The camp and workshop
+      // sit on the east-west road, the grove and board on the north-south one,
+      // so heading for a central station means "along, then up"; heading for a
+      // lateral one means "down, then along". Either way it is a right angle.
+      const alongFirst = key === "grove" || key === "board";
+      return { plot, x: slot.x, y: slot.y, alongFirst };
     });
+
+  // Everything in the world that could make a sound, plus everyone in it who
+  // could have a thought. Rebuilt each render, read by the timer through a ref.
+  sources.current = [
+    ...placed.map((p) => ({
+      x: p.x,
+      y: p.y - 34,
+      phrases: THOUGHTS[p.plot.state],
+      thought: true,
+    })),
+    ...layout.trees.map((t) => ({
+      x: t.x,
+      y: t.y - 30,
+      phrases: NOISES.tree,
+      thought: false,
+      sound: "rustle" as const,
+    })),
+    {
+      x: layout.campfire.x,
+      y: layout.campfire.y - 22,
+      phrases: NOISES.fire,
+      thought: false,
+      sound: "fire" as const,
+    },
+    {
+      x: layout.shed.x,
+      y: layout.shed.y - 40,
+      phrases: NOISES.forge,
+      thought: false,
+      sound: "forge" as const,
+    },
+    {
+      x: layout.pond.x,
+      y: layout.pond.y - 6,
+      phrases: NOISES.water,
+      thought: false,
+      sound: "water" as const,
+    },
+    {
+      x: Math.round(layout.width * 0.24),
+      y: layout.streamY - 14,
+      phrases: NOISES.water,
+      thought: false,
+      sound: "water" as const,
+    },
+    {
+      x: Math.round(layout.width * 0.76),
+      y: layout.streamY - 14,
+      phrases: NOISES.water,
+      thought: false,
+      sound: "water" as const,
+    },
+    // The animals. They call from where they actually are, so the sound and
+    // the bubble agree with the thing you can see.
+    {
+      x: layout.owl.x,
+      y: layout.owl.y - 16,
+      phrases: NOISES.owl,
+      thought: false,
+      sound: "owl" as const,
+    },
+    {
+      x: layout.frog.x,
+      y: layout.frog.y - 12,
+      phrases: NOISES.frog,
+      thought: false,
+      sound: "frog" as const,
+    },
+    {
+      x: layout.cricket.x,
+      y: layout.cricket.y - 8,
+      phrases: NOISES.cricket,
+      thought: false,
+      sound: "cricket" as const,
+    },
+    {
+      x: layout.rabbit.x + 20,
+      y: layout.rabbit.y - 12,
+      phrases: NOISES.tree,
+      thought: false,
+      sound: "rustle" as const,
+    },
+  ];
 
   return (
     <div
       className="overworld"
-      style={{
-        width: layout.width * SCALE,
-        height: layout.height * SCALE,
-        backgroundImage: `url(${plane})`,
-      }}
+      style={{ width: layout.width * SCALE, height: (layout.height + SKY) * SCALE }}
     >
+      {/* Sky first, then the ground laid over it with the treeline breaking
+          the join. Tipping the plane back this far is what makes room for it. */}
+      <div
+        className="ow-ground"
+        style={{
+          top: (SKY - RISE) * SCALE,
+          width: layout.width * SCALE,
+          height: (layout.height + RISE) * SCALE,
+          backgroundImage: `url(${plane})`,
+        }}
+      />
+      {sky.stars.map((star, i) => (
+        <span
+          key={`star${i}`}
+          className="ow-star"
+          style={{
+            left: star.x,
+            top: star.y,
+            width: star.warm ? 3 : 2,
+            height: star.warm ? 3 : 2,
+            background: star.warm ? "var(--firefly)" : "var(--moon)",
+            opacity: star.warm ? 0.8 : star.dim,
+            boxShadow: star.warm ? "0 0 8px var(--firefly)" : "none",
+          }}
+        />
+      ))}
+      {sky.meteors.map((m, i) => (
+        <span
+          key={`meteor${i}`}
+          className="ow-meteor"
+          style={{ left: `${m.left}%`, top: m.top, animationDelay: `${m.delay}s`, animationDuration: `${m.dur}s` }}
+        />
+      ))}
+      {/* Fog banked at the foot of the treeline. Soft rather than pixelated on
+          purpose: mist is the one thing in this world with no edges, and two
+          bands drifting at different speeds read as depth. */}
+      <span className="ow-fog ow-fog-far" style={{ top: (SKY - 16) * SCALE }} />
+      <span className="ow-fog ow-fog-near" style={{ top: (SKY - 4) * SCALE }} />
+
       {/* Pools of light. Under the props, over the ground. */}
       {layout.glows.map((glow, i) => (
         <span
@@ -216,7 +480,7 @@ function Plane({
           className={`ow-glow ${glow.warm ? "ow-glow-warm" : "ow-glow-cool"}`}
           style={{
             left: (glow.x - glow.r) * SCALE,
-            top: (glow.y - glow.r) * SCALE,
+            top: (glow.y - glow.r + SKY) * SCALE,
             width: glow.r * 2 * SCALE,
             height: glow.r * 2 * SCALE,
             zIndex: Math.max(0, Math.round(glow.y) - 2),
@@ -336,6 +600,32 @@ function Plane({
         </div>
       ))}
 
+      {/* The grove's shrine: somewhere for finished work to be put. */}
+      <div className="ow-prop" style={at(layout.shrine.x, layout.shrine.y, SHRINE_W, SHRINE_H)}>
+        <PixelArt
+          cacheKey="shrine"
+          frames={SHRINE_FRAMES}
+          palette={VILLAGE_PALETTE}
+          width={SHRINE_W}
+          height={SHRINE_H}
+          scale={SCALE}
+          speed={180}
+        />
+      </div>
+
+      {/* The checkpoint. Its bar is down, which is the whole point. */}
+      <div className="ow-prop" style={at(layout.gate.x, layout.gate.y, GATE_W, GATE_H)}>
+        <PixelArt
+          cacheKey="gate"
+          frames={GATE_FRAMES}
+          palette={VILLAGE_PALETTE}
+          width={GATE_W}
+          height={GATE_H}
+          scale={SCALE}
+          speed={800}
+        />
+      </div>
+
       <div
         className="ow-prop"
         style={at(layout.boardProp.x, layout.boardProp.y, BOARD_W, BOARD_H)}
@@ -370,6 +660,28 @@ function Plane({
           speed={260}
         />
       </div>
+      <div className="ow-prop ow-owl" style={at(layout.owl.x, layout.owl.y, OWL_W, OWL_H)}>
+        <PixelArt
+          cacheKey="owl"
+          frames={OWL_FRAMES}
+          palette={VILLAGE_PALETTE}
+          width={OWL_W}
+          height={OWL_H}
+          scale={SCALE}
+          speed={2600}
+        />
+      </div>
+      <div className="ow-prop ow-frog" style={at(layout.frog.x, layout.frog.y, FROG_W, FROG_H)}>
+        <PixelArt
+          cacheKey="frog"
+          frames={FROG_FRAMES}
+          palette={VILLAGE_PALETTE}
+          width={FROG_W}
+          height={FROG_H}
+          scale={SCALE}
+          speed={1400}
+        />
+      </div>
       <div className="ow-prop ow-moth" style={at(layout.moth.x, layout.moth.y, MOTH_W, MOTH_H)}>
         <PixelArt
           cacheKey="moth"
@@ -387,7 +699,7 @@ function Plane({
         className="ow-shimmer"
         style={{
           left: (layout.pond.x - layout.pond.rx + 6) * SCALE,
-          top: layout.pond.y * SCALE,
+          top: (layout.pond.y + SKY) * SCALE,
           width: (layout.pond.rx * 2 - 12) * SCALE,
           zIndex: Math.round(layout.pond.y),
         }}
@@ -396,7 +708,7 @@ function Plane({
         className="ow-shimmer ow-shimmer-slow"
         style={{
           left: 0,
-          top: (layout.streamY - 2) * SCALE,
+          top: (layout.streamY - 2 + SKY) * SCALE,
           width: layout.width * SCALE,
           zIndex: Math.round(layout.streamY),
         }}
@@ -409,7 +721,7 @@ function Plane({
           className={`ow-sign ${key === "board" ? "ow-sign-alert" : ""}`}
           style={{
             left: stations[key].x * SCALE,
-            top: (stations[key].y + (layout.rows - 1) * ROW + 18) * SCALE,
+            top: (stations[key].y + (layout.rows - 1) * ROW + 18 + SKY) * SCALE,
             zIndex: Z_SIGN,
           }}
         >
@@ -418,15 +730,27 @@ function Plane({
       ))}
 
       {/* The dryads. */}
-      {placed.map(({ plot, x, y }) => (
+      {placed.map(({ plot, x, y, alongFirst }) => (
         <Actor
           key={plot.worktree.id}
           plot={plot}
           label={labels.get(plot.worktree.id) ?? ""}
           x={x}
           y={y}
+          alongFirst={alongFirst}
           onOpen={onOpen}
         />
+      ))}
+
+      {/* Thoughts and noises. Above the props, below the signs. */}
+      {bubbles.map((b) => (
+        <span
+          key={b.id}
+          className={`ow-bubble ${b.thought ? "ow-bubble-thought" : "ow-bubble-noise"}`}
+          style={{ left: b.x * SCALE, top: (b.y + SKY) * SCALE, zIndex: Z_SIGN - 2 }}
+        >
+          {b.text}
+        </span>
       ))}
 
       {/* Ambience, over everything: fireflies at large and leaves on the wind.
@@ -440,7 +764,7 @@ function Plane({
             className="ow-wild-fly"
             style={{
               left: fly.x * SCALE,
-              top: fly.y * SCALE,
+              top: (fly.y + SKY) * SCALE,
               animationDelay: `-${fly.delay}s`,
               animationDuration: `${fly.dur}s`,
             }}
@@ -475,7 +799,7 @@ function Smoke({ x, y }: { x: number; y: number }) {
           className="ow-smoke"
           style={{
             left: x * SCALE,
-            top: y * SCALE,
+            top: (y + SKY) * SCALE,
             zIndex: Z_SIGN - 1,
             animationDelay: `${i * 1.6}s`,
           }}
@@ -485,11 +809,15 @@ function Smoke({ x, y }: { x: number; y: number }) {
   );
 }
 
-/** Places a sprite by its bottom-centre, and sorts it by how near it stands. */
+/**
+ * Places a sprite by its bottom-centre and sorts it by how near it stands.
+ * Ground coordinates start below the sky band, so every one of them is offset
+ * by SKY — there is exactly one place that happens, and this is it.
+ */
 function at(x: number, y: number, w: number, h: number): React.CSSProperties {
   return {
     left: (x - w / 2) * SCALE,
-    top: (y - h) * SCALE,
+    top: (y - h + SKY) * SCALE,
     zIndex: Math.round(y),
   };
 }
@@ -499,13 +827,35 @@ function fullName(plot: Plot): string {
   return plot.worktree.branch ?? plot.worktree.head.slice(0, 7);
 }
 
+/**
+ * Trim from the middle, not the end. Branch names carry their meaning in the
+ * tail as often as the head — "feature/overworld-map" and
+ * "feature/overworld-roads" are identical for sixteen characters — so cutting
+ * the end is the one place you cannot afford to cut.
+ *
+ * The budget is in characters and the plate is sized in pixels, so the two
+ * have to agree: 14 monospace characters at this size is what fits inside
+ * --actor-name-max, and letting CSS clip instead would put the plain
+ * end-truncation straight back.
+ */
+function shorten(name: string, budget = 14): string {
+  if (name.length <= budget) return name;
+  const head = Math.ceil((budget - 1) / 2);
+  const tail = Math.floor((budget - 1) / 2);
+  return `${name.slice(0, head)}…${name.slice(name.length - tail)}`;
+}
+
 function byLeafSegment(plots: Plot[]): Map<string, string> {
   const full = new Map(plots.map((p) => [p.worktree.id, fullName(p)]));
   const leaves = plots.map((p) => fullName(p).split("/").pop() ?? "");
   // Two branches ending in the same word would become indistinguishable, so
   // shortening is all-or-nothing across the scene.
-  if (new Set(leaves).size !== plots.length) return full;
-  return new Map(plots.map((p, i) => [p.worktree.id, leaves[i] ?? full.get(p.worktree.id) ?? ""]));
+  if (new Set(leaves).size !== plots.length) {
+    return new Map(plots.map((p) => [p.worktree.id, shorten(full.get(p.worktree.id) ?? "")]));
+  }
+  return new Map(
+    plots.map((p, i) => [p.worktree.id, shorten(leaves[i] ?? full.get(p.worktree.id) ?? "")]),
+  );
 }
 
 function Actor({
@@ -513,25 +863,36 @@ function Actor({
   label,
   x,
   y,
+  alongFirst,
   onOpen,
 }: {
   plot: Plot;
   label: string;
   x: number;
   y: number;
+  alongFirst: boolean;
   onOpen: (id: string) => void;
 }) {
   const { worktree, repo, state, unseen, focused } = plot;
   const name = fullName(plot);
 
+  // The two axes are separate elements so each can carry its own transition.
+  // Delaying one by the other's duration turns what would be a diagonal glide
+  // into a walk along the roads: east-west, then north-south, or the reverse.
   return (
     <button
-      className={`ow-actor ow-${state} ${focused ? "ow-focused" : ""}`}
-      // Position via transform so the walk is a single animatable property.
-      style={{ transform: `translate(${x * SCALE}px, ${y * SCALE}px)`, zIndex: Math.round(y) + 1 }}
+      className={`ow-actor ow-lane-${alongFirst ? "x-first" : "y-first"} ${focused ? "ow-focused" : ""}`}
+      style={{ transform: `translateX(${x * SCALE}px)`, zIndex: Math.round(y) + 1 }}
       onClick={() => onOpen(worktree.id)}
+      // No expand-on-hover: the plate is centred on the dryad, so growing it
+      // slides the name sideways under the pointer. The tooltip already has
+      // the full branch, and it doesn't move anything to show it.
       data-tip={`${name} — ${STATE_WORD[state]} · ${repo.name} · click to open`}
     >
+      <span
+        className={`ow-actor-lift ow-${state}`}
+        style={{ transform: `translateY(${(y + SKY) * SCALE}px)` }}
+      >
       <span className="actor-name">
         {label || name}
         {unseen && !focused && <span className="actor-dot" />}
@@ -553,6 +914,7 @@ function Actor({
         </>
       )}
       {state === "error" && <span className="ow-alert">!</span>}
+      </span>
     </button>
   );
 }

@@ -14,12 +14,88 @@
   justify-content: center;
 }
 
+/* The plane is tipped back far enough to show a night above the treeline.
+   The glow over the horizon needs several stops, not one: a two-stop radial
+   ends on a discontinuity, and the eye reads that as a hard diagonal edge
+   cutting across the sky. */
 .overworld {
   position: relative;
   flex: 0 0 auto;
+  background:
+    radial-gradient(
+      150% 38% at 50% 30%,
+      rgb(28 46 36 / 0.55) 0%,
+      rgb(24 40 32 / 0.34) 26%,
+      rgb(20 34 27 / 0.16) 48%,
+      rgb(16 28 22 / 0.05) 70%,
+      transparent 88%
+    ),
+    linear-gradient(180deg, #070b0b 0%, #0a1010 42%, #0c1512 72%, #101a15 100%);
+}
+
+.ow-ground {
+  position: absolute;
+  left: 0;
   background-repeat: no-repeat;
   background-size: 100% 100%;
   image-rendering: pixelated;
+  z-index: 1;
+}
+
+.ow-star {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Meteors: a gradient streak, bright end leading, rotated so translating along
+   its own axis carries it down and to the left with the tail behind. */
+.ow-meteor {
+  position: absolute;
+  width: 70px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgb(233 240 228 / 0.7));
+  transform: rotate(145deg) translateX(0);
+  transform-origin: right center;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  animation-name: ow-meteor;
+  animation-timing-function: cubic-bezier(0.3, 0, 0.7, 1);
+  animation-iteration-count: infinite;
+}
+
+.ow-meteor::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: -1px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--moon);
+  box-shadow: 0 0 8px 2px rgb(233 240 228 / 0.5);
+}
+
+@keyframes ow-meteor {
+  0% {
+    transform: rotate(145deg) translateX(0);
+    opacity: 0;
+  }
+  6% {
+    opacity: 0.9;
+  }
+  /* Most of the cycle is the wait between meteors, not the meteor. */
+  30% {
+    transform: rotate(145deg) translateX(300px);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(145deg) translateX(300px);
+    opacity: 0;
+  }
 }
 
 .ow-prop {
@@ -265,24 +341,45 @@
 
 /* ---------- actors ---------- */
 
+/* Two nested elements, one per axis. Giving each its own transition and
+   delaying one by the other's duration makes the journey a right angle along
+   the roads instead of a diagonal cut across the grass. */
 .ow-actor {
   position: absolute;
   left: 0;
   top: 0;
-  /* transform carries the position; margins centre the body on the spot. */
+  margin-left: -24px; /* half of sprite width at scale 2 */
+  cursor: pointer;
+  transition: transform 1.4s cubic-bezier(0.4, 0.08, 0.5, 1);
+}
+
+.ow-actor-lift {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-left: -24px; /* half of sprite width at scale 2 */
   margin-top: -58px; /* sprite height + nameplate, so (x,y) is the feet */
-  /* The journey between stations. Slow enough to read as walking. */
-  transition: transform 2.8s cubic-bezier(0.4, 0.08, 0.4, 1);
-  cursor: pointer;
+  transition: transform 1.4s cubic-bezier(0.4, 0.08, 0.5, 1);
+}
+
+/* Heading for a central station: along the east-west road first, then turn. */
+.ow-lane-x-first .ow-actor-lift {
+  transition-delay: 1.4s;
+}
+
+/* Heading for a lateral one: down to the road first, then along it. */
+.ow-lane-y-first {
+  transition-delay: 1.4s;
 }
 
 .ow-actor:hover,
 .ow-focused {
   z-index: 600 !important;
+}
+
+
+.ow-actor,
+.ow-actor-lift {
+  will-change: transform;
 }
 
 .ow-body {
@@ -361,8 +458,10 @@
   align-items: center;
   gap: 4px;
   /* Wider than the gap between neighbours and the labels start colliding;
-     the standing places stagger to buy back some of the difference. */
-  max-width: 92px;
+     the standing places stagger to buy back some of the difference. Fixed —
+     the plate is centred on its dryad, so any change of width slides the name
+     under the pointer. Names are trimmed to fit and the tooltip has the rest. */
+  max-width: 104px;
   margin-bottom: 3px;
   padding: 1px 6px;
   border-radius: 999px;
@@ -599,6 +698,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ow-actor,
+  .ow-actor-lift,
   .ow-body,
   .zzz,
   .ow-firefly,
@@ -615,7 +715,132 @@
   /* Drifting motion with nothing anchoring it is the worst of the lot. */
   .ow-smoke,
   .ow-leaf,
-  .ow-wild-fly {
+  .ow-wild-fly,
+  .ow-meteor {
     display: none;
+  }
+}
+
+/* ---------- thought and noise bubbles ----------
+
+   Atmosphere, not status: they rise, fade, and are gone. The nameplate above
+   a dryad is what actually reports its state, so these stay quiet enough to
+   be missed without anything being lost. */
+
+.ow-bubble {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  animation: ow-bubble 3.8s ease-out forwards;
+}
+
+.ow-bubble-thought {
+  background: rgb(233 240 228 / 0.9);
+  color: var(--pine-0);
+  /* The little tail, so it reads as coming from the dryad below it. */
+  box-shadow: -4px 9px 0 -3px rgb(233 240 228 / 0.9);
+}
+
+.ow-bubble-noise {
+  background: rgb(12 17 16 / 0.7);
+  border: 1px solid var(--pine-3);
+  color: var(--moss-dim);
+  font-style: italic;
+}
+
+@keyframes ow-bubble {
+  0% {
+    transform: translate(-50%, 6px) scale(0.8);
+    opacity: 0;
+  }
+  14% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -16px) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ---------- horizon fog ---------- */
+
+.ow-fog {
+  position: absolute;
+  left: -10%;
+  width: 120%;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(196 218 206 / 0.1) 18%,
+    transparent 34%,
+    rgb(196 218 206 / 0.13) 52%,
+    transparent 70%,
+    rgb(196 218 206 / 0.09) 86%,
+    transparent 100%
+  );
+  /* Feathered top and bottom, so it has no edge of its own. */
+  mask-image: linear-gradient(180deg, transparent, #000 45%, transparent);
+  animation: ow-fog-drift linear infinite;
+}
+
+.ow-fog-far {
+  height: 46px;
+  opacity: 0.75;
+  animation-duration: 70s;
+}
+
+.ow-fog-near {
+  height: 26px;
+  animation-duration: 44s;
+  animation-direction: reverse;
+}
+
+@keyframes ow-fog-drift {
+  from {
+    transform: translateX(-8%);
+  }
+  to {
+    transform: translateX(8%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ow-fog {
+    animation: none;
+  }
+}
+
+/* The owl turns its head; the frog just sits there being a frog. */
+.ow-owl {
+  animation: ow-owl-turn 9s steps(1, end) infinite;
+}
+
+@keyframes ow-owl-turn {
+  0%,
+  46% {
+    transform: scaleX(1);
+  }
+  50%,
+  96% {
+    transform: scaleX(-1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ow-owl {
+    animation: none;
   }
 }

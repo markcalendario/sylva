@@ -386,6 +386,154 @@ function buildTent(): string[] {
 
 export const TENT_FRAMES: string[][] = [buildTent()];
 
+/* ---------------------------------------------------------------- shrine */
+
+export const SHRINE_W = 38;
+export const SHRINE_H = 40;
+
+/**
+ * The grove's shrine: where a dryad goes when its work has landed. A stone arch
+ * over a lit basin — somewhere for a finished turn to be *put*, which a bare
+ * tree never gave it.
+ */
+function buildShrine(flare: number): string[] {
+  const g = grid(SHRINE_W, SHRINE_H);
+
+  // Two pillars carrying a lintel.
+  for (const px0 of [4, 27]) {
+    box(g, px0, 13, px0 + 6, 34, "s");
+    for (let y = 13; y <= 34; y++) {
+      put(g, px0, y, "u");
+      put(g, px0 - 1, y, "O");
+      put(g, px0 + 7, y, "O");
+      // Coursing, so the stone reads as blocks rather than a slab.
+      if ((y - 13) % 4 === 3) for (let x = px0; x <= px0 + 6; x++) put(g, x, y, "t");
+    }
+  }
+
+  box(g, 2, 8, 35, 12, "s");
+  for (let x = 2; x <= 35; x++) {
+    put(g, x, 8, "u");
+    put(g, x, 12, "t");
+  }
+  for (let y = 8; y <= 12; y++) {
+    put(g, 1, y, "O");
+    put(g, 36, y, "O");
+  }
+  for (let x = 1; x <= 36; x++) put(g, x, 7, "O");
+
+  // A carved mark on the lintel, lit from the basin below.
+  for (const [mx, my] of [
+    [18, 10],
+    [19, 9],
+    [20, 10],
+    [19, 11],
+  ] as const) {
+    put(g, mx, my, "a");
+  }
+
+  // The basin, and its flame.
+  box(g, 14, 26, 23, 30, "t");
+  box(g, 15, 27, 22, 29, "s");
+  for (let y = 31; y <= 33; y++) box(g, 17, y, 20, y, "t");
+  box(g, 14, 34, 23, 35, "u");
+
+  const height = 6 + (flare % 2);
+  for (let step = 0; step <= height; step++) {
+    const t = step / height;
+    const half = 3.4 * Math.pow(1 - t, 0.6);
+    const sway = Math.sin(t * 3 + flare * 1.7) * 1.4 * t;
+    const y = 26 - step;
+    for (let x = Math.floor(18.5 + sway - half); x <= Math.ceil(18.5 + sway + half); x++) {
+      const off = Math.abs(x - (18.5 + sway)) / Math.max(half, 0.6);
+      if (off > 1) continue;
+      put(g, x, y, off > 0.7 ? "e" : off > 0.34 || t > 0.7 ? "E" : "F");
+    }
+  }
+
+  // Steps up to it.
+  for (let y = 36; y <= 38; y++) {
+    const inset = y - 36;
+    for (let x = 6 + inset * 2; x <= 31 - inset * 2; x++) {
+      put(g, x, y, (x + y) % 3 === 0 ? "t" : "u");
+    }
+  }
+  for (let x = 4; x <= 33; x++) put(g, x, 39, "O");
+
+  // Moss, because the forest is always taking it back.
+  for (const [mx, my] of [
+    [5, 30],
+    [6, 33],
+    [32, 28],
+    [33, 32],
+    [3, 11],
+  ] as const) {
+    put(g, mx, my, "m");
+  }
+
+  return rows(g);
+}
+
+export const SHRINE_FRAMES: string[][] = [
+  buildShrine(0),
+  buildShrine(1),
+  buildShrine(2),
+  buildShrine(1),
+];
+
+/* ------------------------------------------------------------------ gate */
+
+export const GATE_W = 46;
+export const GATE_H = 30;
+
+/**
+ * The checkpoint at the notice board. The bar is *down*: a dryad waiting on a
+ * permission decision literally cannot get through, which is a better picture
+ * of being blocked than a noticeboard on its own.
+ */
+function buildGate(lit: boolean): string[] {
+  const g = grid(GATE_W, GATE_H);
+
+  // Stone footings and timber posts.
+  for (const px0 of [3, 38]) {
+    box(g, px0, 6, px0 + 4, 25, "b");
+    for (let y = 6; y <= 25; y++) {
+      put(g, px0, y, "L");
+      put(g, px0 + 4, y, "W");
+      put(g, px0 - 1, y, "O");
+      put(g, px0 + 5, y, "O");
+    }
+    for (let x = px0 - 2; x <= px0 + 6; x++) {
+      put(g, x, 5, "O");
+      put(g, x, 26, "s");
+      put(g, x, 27, "t");
+    }
+    box(g, px0 - 2, 26, px0 + 6, 26, "u");
+  }
+
+  // The barrier across the road, striped so it reads as "stop".
+  for (let y = 12; y <= 15; y++) {
+    for (let x = 8; x <= 37; x++) {
+      const band = Math.floor((x - 8) / 5) % 2 === 0;
+      put(g, x, y, y === 12 ? "O" : y === 15 ? "O" : band ? "e" : "c");
+    }
+  }
+  put(g, 8, 13, "O");
+  put(g, 8, 14, "O");
+  put(g, 37, 13, "O");
+  put(g, 37, 14, "O");
+
+  // A lamp on the left post so the gate is visible at night.
+  box(g, 1, 1, 8, 8, "O");
+  box(g, 2, 2, 7, 7, "a");
+  box(g, 3, 3, 6, 6, lit ? "A" : "a");
+  for (let x = 1; x <= 8; x++) put(g, x, 0, "i");
+
+  return rows(g);
+}
+
+export const GATE_FRAMES: string[][] = [buildGate(true), buildGate(false)];
+
 /* -------------------------------------------------------------- wildlife */
 
 export const RABBIT_W = 11;
@@ -414,6 +562,68 @@ export const RABBIT_FRAMES: string[][] = [
     ".OnnnnnnNO.",
     "..OOOOOO...",
     "...........",
+  ],
+];
+
+export const OWL_W = 11;
+export const OWL_H = 12;
+
+/** An owl in the treeline. Blinks, which is most of what an owl does. */
+export const OWL_FRAMES: string[][] = [
+  [
+    "..O.....O..",
+    ".OLO...OLO.",
+    ".OLLLLLLLO.",
+    "OLLaaLaaLLO",
+    "OLLaOLOaLLO",
+    "OLLLLbLLLLO",
+    "OLbbLLLbbLO",
+    ".ObbbbbbbO.",
+    ".ObWbbbWbO.",
+    "..ObbbbbO..",
+    "...O...O...",
+    "..OO...OO..",
+  ],
+  [
+    "..O.....O..",
+    ".OLO...OLO.",
+    ".OLLLLLLLO.",
+    "OLLLLLLLLLO",
+    "OLLOOLOOLLO",
+    "OLLLLbLLLLO",
+    "OLbbLLLbbLO",
+    ".ObbbbbbbO.",
+    ".ObWbbbWbO.",
+    "..ObbbbbO..",
+    "...O...O...",
+    "..OO...OO..",
+  ],
+];
+
+export const FROG_W = 10;
+export const FROG_H = 8;
+
+/** A frog on the bank. Two frames: sitting, and mid-croak. */
+export const FROG_FRAMES: string[][] = [
+  [
+    "..OO..OO..",
+    ".OaO..OaO.",
+    ".OggggggO.",
+    "OggggggggO",
+    "OggggggggO",
+    ".OggggggO.",
+    "O.OOOOOO.O",
+    "OO......OO",
+  ],
+  [
+    "..OO..OO..",
+    ".OaO..OaO.",
+    ".OggggggO.",
+    "OggggggggO",
+    "OgggmmgggO",
+    "OggggggggO",
+    "O.OOOOOO.O",
+    "OO......OO",
   ],
 ];
 

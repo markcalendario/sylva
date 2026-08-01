@@ -21,6 +21,14 @@ const MAX_W = 900;
  */
 export const ROW = 32;
 /**
+ * Sky above the ground, in map pixels. The plane is tipped back far enough to
+ * show a horizon: the world is still read from above, but there is a night over
+ * it rather than a hard edge.
+ */
+export const SKY = 54;
+/** How far the treeline climbs off the ground into that sky. */
+export const RISE = 46;
+/**
  * Horizontal pitch between standing places. Tighter than a nameplate is wide —
  * the stagger in makeSlots is what keeps neighbouring labels apart — because
  * every extra column that fits is a row the map doesn't have to grow by.
@@ -53,6 +61,10 @@ export interface Layout {
   stumps: Spot[];
   trees: Array<Spot & { fruit?: boolean }>;
   boardProp: Spot;
+  /** The grove's arch, where finished work is put. */
+  shrine: Spot;
+  /** The barrier at the notice board — down while a decision is pending. */
+  gate: Spot;
   pond: { x: number; y: number; rx: number; ry: number };
   streamY: number;
   bridgeX: number;
@@ -62,6 +74,10 @@ export interface Layout {
   leaves: Array<{ x: number; delay: number; dur: number; drift: number }>;
   rabbit: { y: number; x: number; travel: number };
   moth: Spot;
+  /** Forest animals that call: an owl in the trees, a frog on the bank. */
+  owl: Spot;
+  frog: Spot;
+  cricket: Spot;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -102,12 +118,14 @@ export function computeLayout(viewWidth: number, plotCount: number): Layout {
   // the map does not resize each time an agent starts or stops.
   const rows = clamp(Math.ceil(Math.max(plotCount, 1) / cols), 1, 6);
 
-  const groveY = 62;
-  const buildBase = groveY + rows * ROW + 44;
+  // A crossroads: one road east-west, one north-south, meeting in the middle.
+  // Every journey is therefore a right angle, never a diagonal.
+  const groveY = 46;
+  const buildBase = groveY + rows * ROW + 46;
   const midY = buildBase + 10;
-  const boardY = midY + rows * ROW + 30;
-  const streamY = boardY + rows * ROW + 26;
-  const height = streamY + 24;
+  const boardY = midY + rows * ROW + 46;
+  const streamY = boardY + rows * ROW + 28;
+  const height = streamY + 26;
 
   const campX = Math.round(width * 0.18);
   const shopX = Math.round(width * 0.82);
@@ -160,19 +178,20 @@ export function computeLayout(viewWidth: number, plotCount: number): Layout {
     { x: campX + 4, y: buildBase + 2 },
     { x: shopX - 16, y: buildBase + 2 },
     // Clear of the "needs you" sign, which is centred on the same column.
-    { x: midX - 28, y: streamY - 16 },
-    { x: midX + 28, y: streamY - 16 },
+    { x: midX - 32, y: streamY - 16 },
+    { x: midX + 32, y: streamY - 16 },
+    // Marking the crossroads itself.
+    { x: midX - 30, y: midY - 20 },
+    { x: midX + 30, y: midY - 20 },
   ];
-  const midLamp = { x: Math.round((campX + midX) / 2) - 14, y: Math.round((midY + groveY) / 2) };
-  if (free(midLamp.x, 6)) lamps.push(midLamp);
 
+  // The grove's fruit trees flank its shrine rather than standing in for it.
   const trees: Array<Spot & { fruit?: boolean }> = [
-    { x: midX, y: groveY - 6, fruit: true },
-    { x: midX - 58, y: groveY - 16 },
-    { x: midX + 58, y: groveY - 16 },
+    { x: midX - 44, y: groveY - 2, fruit: true },
+    { x: midX + 44, y: groveY - 2, fruit: true },
     { x: 16, y: midY + 30 },
-    { x: width - 16, y: boardY - 6 },
-    { x: 20, y: boardY + 14 },
+    { x: width - 16, y: boardY - 10 },
+    { x: 20, y: boardY + 16 },
   ];
 
   // A deterministic scatter, so the ambience never reshuffles between renders.
@@ -203,7 +222,9 @@ export function computeLayout(viewWidth: number, plotCount: number): Layout {
     benches,
     stumps,
     trees,
-    boardProp: { x: midX, y: boardY - 10 },
+    boardProp: { x: midX + 30, y: boardY - 6 },
+    shrine: { x: midX, y: groveY - 4 },
+    gate: { x: midX, y: boardY - 4 },
     pond: { x: width - 44, y: 32, rx: Math.min(38, Math.round(width * 0.12)), ry: 17 },
     streamY,
     bridgeX: midX,
@@ -217,6 +238,9 @@ export function computeLayout(viewWidth: number, plotCount: number): Layout {
     fireflies,
     leaves,
     rabbit: { x: Math.round(width * 0.1), y: streamY - 24, travel: 54 },
+    owl: { x: Math.round(width * 0.31), y: 16 },
+    frog: { x: Math.round(width * 0.66), y: streamY - 13 },
+    cricket: { x: Math.round(width * 0.42), y: boardY + 26 },
     moth: { x: lamps[0]?.x ?? campX, y: buildBase - 12 },
   };
 }
@@ -274,9 +298,13 @@ export function renderPlane(layout: Layout): string {
   const { width: W, height: H, streamY, pond, bridgeX } = layout;
   const canvas = document.createElement("canvas");
   canvas.width = W;
-  canvas.height = H;
+  // Extra rows above the ground for the treeline to climb into. Translating by
+  // RISE means every coordinate below stays in ground space, and a canopy drawn
+  // at a negative y simply reaches up into the sky.
+  canvas.height = H + RISE;
   const cx = canvas.getContext("2d");
   if (!cx) return "";
+  cx.translate(0, RISE);
   const rand = mulberry32(0x51_1a);
 
   const px = (x: number, y: number, colour: string): void => {
@@ -296,37 +324,135 @@ export function renderPlane(layout: Layout): string {
   }
 
   // ---- the forest wall along the north edge ----
-  const TREELINE = 30;
-  cx.fillStyle = "#132419";
-  cx.fillRect(0, 0, W, 8);
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = 0; i * 13 < W + 26; i++) {
-      const bx = i * 13 + (pass === 0 ? 4 : 11);
-      const by = (pass === 0 ? 6 : 12) + Math.round(rand() * 9);
-      const r = 11 + Math.round(rand() * 7);
-      for (let y = 0; y < by + r; y++) {
-        for (let x = bx - r; x <= bx + r; x++) {
-          if (x < 0 || x >= W) continue;
-          const nx = (x - bx) / r;
-          const ny = (y - by) / (r * 0.85);
-          const d = nx * nx + ny * ny + edgeNoise(x, y) * 0.03;
-          if (d > 1 && y > 6) continue;
-          const shade = pass === 0 ? "#16291a" : "#1b3421";
-          px(x, y, d > 0.72 && y > 6 ? "#112016" : (x + y) % 3 === 0 ? shade : "#182d1d");
-        }
+  // No solid band behind it: the canopies themselves are the horizon, so the
+  // sky meets the wood on a ragged edge rather than a ruled one.
+  const TREELINE = 26;
+
+  /**
+   * A conifer: stacked tiers narrowing to a point, over a short trunk. The
+   * trunk matters — without it the widest tier is the bottom edge, and a rank
+   * of them lands as a row of triangles cut off along a line.
+   */
+  const conifer = (bx: number, baseY: number, height: number, body: string, lit: string): void => {
+    const halfAt = (t: number): number => (1 - t) * height * 0.42 + 1;
+    for (let step = 0; step <= height; step++) {
+      const y = baseY - step;
+      if (y < -RISE) break;
+      const t = step / height;
+      // Tiers rather than a clean cone: a triangle reads as a shape, a tiered
+      // triangle reads as a tree.
+      const tier = ((step % 7) / 7) * 1.6;
+      // The lowest tiers pull back in, so the silhouette sits on a trunk
+      // rather than flaring straight into the ground.
+      const foot = t < 0.14 ? (0.14 - t) * height * 1.5 : 0;
+      const half = Math.max(0, Math.round(halfAt(t) - tier - foot));
+      for (let x = bx - half; x <= bx + half; x++) {
+        if (x < 0 || x >= W) continue;
+        px(x, y, x < bx ? lit : body);
+      }
+    }
+    for (let y = baseY; y <= baseY + 3; y++) {
+      px(bx, y, body);
+      px(bx - 1, y, body);
+    }
+  };
+
+  /** A broadleaf: a wobbled crown over a short trunk. */
+  const broadleaf = (bx: number, baseY: number, r: number, body: string, lit: string): void => {
+    const cy = baseY - Math.round(r * 1.1);
+    for (let y = cy - r; y <= cy + r; y++) {
+      if (y < -RISE) continue;
+      for (let x = bx - r; x <= bx + r; x++) {
+        if (x < 0 || x >= W) continue;
+        const nx = (x - bx) / r;
+        const ny = (y - cy) / (r * 0.88);
+        if (nx * nx + ny * ny + edgeNoise(x, y) * 0.05 > 1) continue;
+        px(x, y, x < bx - 1 ? lit : body);
+      }
+    }
+    for (let y = cy + r - 1; y <= baseY; y++) {
+      if (y < -RISE) continue;
+      px(bx, y, body);
+    }
+  };
+
+  /**
+   * Three ranks, far to near. Depth comes from height, density and value:
+   * distant trees are shorter, paler and hazier, near ones taller and almost
+   * black. Silhouettes rather than blobs — a skyline of actual tree shapes is
+   * what makes it read as a wood instead of a hedge.
+   */
+  const ranks = [
+    { step: 9, lift: -6, vary: 7, min: 9, grow: 7, body: "#1a2b21", lit: "#20342a" },
+    { step: 12, lift: 1, vary: 9, min: 13, grow: 11, body: "#132218", lit: "#182a1e" },
+    { step: 16, lift: 8, vary: 7, min: 16, grow: 14, body: "#0c1610", lit: "#101c14" },
+  ];
+  for (const [i, r] of ranks.entries()) {
+    for (let n = 0; n * r.step < W + r.step * 2; n++) {
+      const bx = n * r.step + Math.round(rand() * r.step) - r.step / 2;
+      const baseY = r.lift + Math.round(rand() * r.vary);
+      const height = r.min + Math.round(rand() * r.grow);
+      // Mostly conifers, which give the skyline its teeth; the odd rounded
+      // crown stops it turning into a saw blade.
+      if (rand() < (i === 2 ? 0.34 : 0.24)) {
+        broadleaf(Math.round(bx), baseY, Math.round(height * 0.42) + 3, r.body, r.lit);
+      } else {
+        conifer(Math.round(bx), baseY, height, r.body, r.lit);
       }
     }
   }
+
+  // Undergrowth along the foot of the wood: bracken and scrub in the gap
+  // between the trunks and the grass, so the treeline is rooted in something
+  // instead of standing on a ruled line.
+  for (let x = 0; x < W; x++) {
+    const lip = 12 + Math.sin(x * 0.09) * 2.5 + Math.sin(x * 0.031 + 2.1) * 3;
+    for (let y = 2; y < lip; y++) {
+      const fade = 1 - (y - 2) / (lip - 2);
+      if (edgeNoise(x, y) * 0.14 + 0.55 > fade + rand() * 0.5) continue;
+      px(x, y, (x + y) % 3 === 0 ? "#16281b" : "#122015");
+    }
+    if (rand() < 0.16) {
+      const h = 2 + Math.round(rand() * 3);
+      for (let k = 0; k < h; k++) px(x, Math.round(lip) - k, k > h - 2 ? "#2f6136" : "#1d3b23");
+    }
+  }
+
+  // Haze along the horizon, dithered, so the furthest trees sit *in* the night
+  // rather than being pasted onto it. source-atop confines it to pixels that
+  // already have a tree on them — painted freely it tints the empty sky too,
+  // and the dither pattern becomes a visible hatch across the stars.
+  cx.save();
+  cx.globalCompositeOperation = "source-atop";
+  for (let y = -RISE; y < 8; y++) {
+    const nearness = (y + RISE) / (RISE + 8);
+    const veil = Math.max(0, 0.62 - nearness * 0.62);
+    if (veil <= 0) continue;
+    for (let x = 0; x < W; x++) {
+      if (((x * 3 + y * 5) % 11) / 11 > veil) continue;
+      px(x, y, "#0a0f0f");
+    }
+  }
+  cx.restore();
 
   // ---- the road network ----
   // Roads join the stations; each row of standing places wears its own lane in
   // the grass. Lanes rather than one big yard: a filled rectangle under a
   // station reads as a car park, a worn strip reads as ground people stand on.
+  // A crossroads. Every segment is axis-aligned: one road runs the width of the
+  // map through the camp and the workshop, one runs its height from the grove
+  // down over the bridge, and they meet in the middle. No diagonals anywhere,
+  // which is also why the dryads can walk it in right angles.
+  const eastWest = layout.stations.camp.y + 8;
   const roads: Array<[Spot, Spot]> = [
-    [layout.stations.camp, layout.stations.grove],
-    [layout.stations.grove, layout.stations.workshop],
-    [layout.stations.grove, layout.stations.board],
-    [layout.stations.board, { x: bridgeX, y: H + 12 }],
+    [
+      { x: 0, y: eastWest },
+      { x: W, y: eastWest },
+    ],
+    [
+      { x: bridgeX, y: layout.stations.grove.y + 8 },
+      { x: bridgeX, y: H + 12 },
+    ],
   ];
   const lanes: Array<[Spot, Spot]> = [];
   for (const key of Object.keys(layout.stations) as StationKey[]) {
@@ -346,7 +472,7 @@ export function renderPlane(layout: Layout): string {
   const roadDist = (x: number, y: number): number => {
     let d = Infinity;
     for (const [a, b] of roads) {
-      d = Math.min(d, distToSegment(x, y, a.x, a.y + 8, b.x, b.y + 8) * 1.28);
+      d = Math.min(d, distToSegment(x, y, a.x, a.y, b.x, b.y) * 1.28);
     }
     for (const [a, b] of lanes) {
       d = Math.min(d, distToSegment(x, y, a.x, a.y, b.x, b.y));

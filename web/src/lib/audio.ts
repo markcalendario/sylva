@@ -233,6 +233,157 @@ export function playCue(cue: Cue): void {
   play(CUES[cue]);
 }
 
+// ---------- scenery sounds ----------
+
+export type Noise = "rustle" | "water" | "fire" | "forge" | "owl" | "frog" | "cricket";
+
+/** One short noise buffer, reused: allocating per sound would churn memory. */
+let noiseBuffer: AudioBuffer | null = null;
+
+function shortNoise(context: AudioContext): AudioBuffer {
+  if (noiseBuffer) return noiseBuffer;
+  const buffer = context.createBuffer(1, Math.floor(context.sampleRate * 0.5), context.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  noiseBuffer = buffer;
+  return buffer;
+}
+
+/**
+ * The sounds the world makes: a branch moving, water, the fire, the forge.
+ *
+ * Routed through the ambient bus on purpose. These are scenery, not
+ * notifications — so they follow the ambience toggle and its volume, and
+ * someone who turned the forest off gets silence rather than a quieter forest.
+ */
+export function playNoise(noise: Noise): void {
+  const context = ensureContext();
+  if (!context || !ambientBus || muted || !ambient) return;
+  // No unlocking gesture yet; skip rather than queue, since ambience that
+  // arrives late is worse than ambience that never came.
+  if (context.state === "suspended") return;
+
+  const now = context.currentTime;
+  const out = context.createGain();
+  out.connect(ambientBus);
+
+  if (noise === "water") {
+    // A drip: a sine falling fast in pitch is the whole trick.
+    const osc = context.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1500, now);
+    osc.frequency.exponentialRampToValueAtTime(420, now + 0.11);
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.05, now + 0.006);
+    out.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    osc.connect(out);
+    osc.start(now);
+    osc.stop(now + 0.2);
+    return;
+  }
+
+  if (noise === "owl") {
+    // Two soft, breathy notes a tone apart — the shape of a hoot matters far
+    // more than the timbre at this volume.
+    for (const [freq, at, dur] of [
+      [498, 0, 0.34],
+      [430, 0.42, 0.46],
+    ] as const) {
+      const osc = context.createOscillator();
+      const env = context.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq * 0.94, now + at);
+      osc.frequency.linearRampToValueAtTime(freq, now + at + 0.09);
+      env.gain.setValueAtTime(0, now + at);
+      env.gain.linearRampToValueAtTime(0.05, now + at + 0.07);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + at + dur);
+      osc.connect(env);
+      env.connect(out);
+      osc.start(now + at);
+      osc.stop(now + at + dur + 0.05);
+    }
+    return;
+  }
+
+  if (noise === "frog") {
+    // A croak is a low pitch dropping fast through a rough waveform.
+    const osc = context.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(215, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.16);
+    const filter = context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 900;
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.05, now + 0.02);
+    out.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    osc.connect(filter);
+    filter.connect(out);
+    osc.start(now);
+    osc.stop(now + 0.26);
+    return;
+  }
+
+  if (noise === "cricket") {
+    // Three very short high pulses; crickets are rhythm, not tone.
+    for (let i = 0; i < 3; i++) {
+      const at = i * 0.075;
+      const osc = context.createOscillator();
+      const env = context.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = 4300 + i * 60;
+      env.gain.setValueAtTime(0, now + at);
+      env.gain.linearRampToValueAtTime(0.028, now + at + 0.005);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.045);
+      osc.connect(env);
+      env.connect(out);
+      osc.start(now + at);
+      osc.stop(now + at + 0.06);
+    }
+    return;
+  }
+
+  if (noise === "forge") {
+    // Two inharmonic partials, which is what makes metal sound like metal.
+    for (const [freq, gain] of [
+      [2100, 0.035],
+      [3170, 0.022],
+    ] as const) {
+      const osc = context.createOscillator();
+      const env = context.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      env.gain.setValueAtTime(0, now);
+      env.gain.linearRampToValueAtTime(gain, now + 0.004);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+      osc.connect(env);
+      env.connect(out);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    }
+    return;
+  }
+
+  // Rustle and fire are both filtered noise; they differ in band and length.
+  const source = context.createBufferSource();
+  source.buffer = shortNoise(context);
+  const filter = context.createBiquadFilter();
+  const rustle = noise === "rustle";
+  filter.type = rustle ? "bandpass" : "lowpass";
+  filter.frequency.value = rustle ? 2600 : 900;
+  filter.Q.value = rustle ? 0.8 : 1;
+
+  const dur = rustle ? 0.42 : 0.09;
+  out.gain.setValueAtTime(0, now);
+  out.gain.linearRampToValueAtTime(rustle ? 0.045 : 0.06, now + (rustle ? 0.09 : 0.004));
+  out.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  source.connect(filter);
+  filter.connect(out);
+  source.start(now, Math.random() * 0.2);
+  source.stop(now + dur + 0.05);
+}
+
 // ---------- ambient bed ----------
 
 function startAmbient(): void {
