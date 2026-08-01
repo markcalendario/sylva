@@ -1495,13 +1495,20 @@ button:disabled {
   color: var(--moss);
 }
 
+/* Fixed width so the summaries line up in a column. It has to clip as well as
+   size: a name longer than the column — websearch, toolsearch, notebookedit —
+   otherwise runs straight over the summary beside it. The full name stays in
+   the tooltip. */
 .tool-chip {
   font-family: var(--font-pixel);
   font-size: var(--text-xxs);
   color: var(--stream);
   opacity: 0.75;
   flex-shrink: 0;
-  width: 6ch;
+  width: 8ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: right;
   text-transform: lowercase;
 }
@@ -1518,7 +1525,7 @@ button:disabled {
   font-size: var(--text-xs);
   color: var(--moss-dim);
   padding: 1px var(--pad-2);
-  margin-left: calc(6ch + var(--pad-2) + var(--pad-2));
+  margin-left: calc(8ch + var(--pad-2) + var(--pad-2));
   border-radius: var(--radius);
 }
 
@@ -1542,7 +1549,7 @@ button:disabled {
   color: var(--ember);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  padding: 2px var(--pad-2) 2px calc(6ch + var(--pad-2) + var(--pad-2));
+  padding: 2px var(--pad-2) 2px calc(8ch + var(--pad-2) + var(--pad-2));
   overflow-wrap: anywhere;
 }
 
