@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { StatusEntry } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
+import { playCue } from "../lib/audio";
 import { useDiff, useInvalidate, useStatusQuery } from "../lib/queries";
 import { useSylva } from "../state/store";
 import { DiffView } from "./DiffView";
@@ -165,6 +166,7 @@ export function GitPanel({
               void run(async () => {
                 await api.commit(worktreeId, message);
                 setMessage("");
+                playCue("commit");
               }, "Committed.");
             }}
           >

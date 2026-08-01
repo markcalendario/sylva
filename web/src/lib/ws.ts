@@ -1,6 +1,25 @@
 import type { ServerEvent } from "sylva-shared";
 import { useSylva } from "../state/store";
+import { playCue } from "./audio";
 import { notifyAgentEvent } from "./notify";
+
+/**
+ * Sound only ever comes from live events. Transcript replay goes through the
+ * REST layer, so switching worktrees never re-plays an old conversation's cues.
+ */
+function soundForEvent(event: ServerEvent): void {
+  if (event.type === "permission.request") {
+    playCue("attention");
+    return;
+  }
+  if (event.type !== "agent.event") return;
+  if (event.event.kind === "result") {
+    if (event.event.outcome === "success") playCue("done");
+    else if (event.event.outcome === "error") playCue("error");
+  } else if (event.event.kind === "error") {
+    playCue("error");
+  }
+}
 
 const MAX_BACKOFF_MS = 15_000;
 
@@ -32,6 +51,7 @@ function connect(onResync: () => void): void {
       const event = JSON.parse(msg.data as string) as ServerEvent;
       useSylva.getState().applyServerEvent(event);
       notifyAgentEvent(event);
+      soundForEvent(event);
     } catch {
       // Ignore malformed frames.
     }

@@ -49,6 +49,66 @@
   color: var(--moss);
 }
 
+/* ---------- sound controls ---------- */
+
+.audio {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-1);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: 1px var(--pad-1);
+}
+
+.audio-btn {
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px var(--pad-1);
+  border-radius: 4px;
+  color: var(--moss-dim);
+  filter: grayscale(1);
+  opacity: 0.8;
+}
+
+.audio-btn:hover {
+  filter: none;
+  opacity: 1;
+  background: var(--pine-2);
+}
+
+.audio-btn-on {
+  color: var(--firefly);
+  filter: none;
+  opacity: 1;
+}
+
+.audio-volume {
+  width: 54px;
+  height: 3px;
+  appearance: none;
+  background: var(--pine-3);
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+}
+
+.audio-volume::-webkit-slider-thumb {
+  appearance: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--moss);
+  cursor: pointer;
+}
+
+.audio-volume:hover::-webkit-slider-thumb {
+  background: var(--firefly);
+}
+
+.audio-volume:disabled {
+  opacity: 0.4;
+}
+
 /* ---------- text size control ---------- */
 
 .textsize {

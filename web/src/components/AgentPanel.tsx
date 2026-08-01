@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
+import { playCue } from "../lib/audio";
 import { ensureNotifyPermission } from "../lib/notify";
 import { NO_EVENTS, useSylva } from "../state/store";
 import { Markdown } from "./Markdown";
@@ -228,6 +229,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
     const prompt = text.trim();
     if (!prompt && attachments.length === 0) return;
     ensureNotifyPermission();
+    playCue(running ? "queue" : "send");
     // The agent reads attachments off disk, so the prompt carries paths only.
     const attachmentNote = attachments.length
       ? `\n\nAttached files (read them from these paths):\n${attachments
