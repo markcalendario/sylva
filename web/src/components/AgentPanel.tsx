@@ -4,6 +4,7 @@ import { api, ApiFailure } from "../lib/api";
 import { ensureNotifyPermission } from "../lib/notify";
 import { NO_EVENTS, useSylva } from "../state/store";
 import { Markdown } from "./Markdown";
+import { PromptNav, type PromptMark } from "./PromptNav";
 import { ToolGroup, type ToolItem } from "./ToolGroup";
 
 type Block =
@@ -159,13 +160,50 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stickToBottom = useRef(true);
+  const blockRefs = useRef(new Map<number, HTMLDivElement>());
+  const [activePrompt, setActivePrompt] = useState<number | null>(null);
 
   const blocks = useMemo(() => toBlocks(transcript), [transcript]);
+
+  const prompts = useMemo<PromptMark[]>(
+    () =>
+      blocks.flatMap((block, i) =>
+        block.kind === "user" ? [{ blockIndex: i, text: block.text }] : [],
+      ),
+    [blocks],
+  );
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [transcript.length, permissions.length]);
+
+  /** Highlight the prompt whose section the reader is currently inside. */
+  const syncActivePrompt = () => {
+    const container = scrollRef.current;
+    if (!container || prompts.length === 0) return;
+    const top = container.scrollTop;
+    let current: number | null = prompts[0]?.blockIndex ?? null;
+    for (const prompt of prompts) {
+      const el = blockRefs.current.get(prompt.blockIndex);
+      if (!el) continue;
+      // A prompt owns the view once its heading has passed just under the top.
+      if (el.offsetTop - container.offsetTop <= top + 24) current = prompt.blockIndex;
+      else break;
+    }
+    setActivePrompt(current);
+  };
+
+  useEffect(syncActivePrompt, [blocks.length, prompts.length]);
+
+  const jumpTo = (blockIndex: number) => {
+    const container = scrollRef.current;
+    const el = blockRefs.current.get(blockIndex);
+    if (!container || !el) return;
+    stickToBottom.current = false;
+    container.scrollTo({ top: el.offsetTop - container.offsetTop - 12, behavior: "smooth" });
+    setActivePrompt(blockIndex);
+  };
 
   const running = session?.status === "running";
 
@@ -225,26 +263,41 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           </>
         )}
       </div>
-      <div
-        className="chat-scroll"
-        ref={scrollRef}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-        }}
-      >
-        {blocks.length === 0 && (
-          <div className="chat-empty">
-            Ask for anything — the dryad works right here in this worktree.
-          </div>
-        )}
-        {blocks.map((block, i) => (
-          <BlockRow key={i} block={block} />
-        ))}
-        {permissions.map((p) => (
-          <PermissionCard key={p.id} request={p} />
-        ))}
-        {running && permissions.length === 0 && <div className="thinking">the dryad is working…</div>}
+      <div className="agent-body">
+        <div
+          className="chat-scroll"
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+            syncActivePrompt();
+          }}
+        >
+          {blocks.length === 0 && (
+            <div className="chat-empty">
+              Ask for anything — the dryad works right here in this worktree.
+            </div>
+          )}
+          {blocks.map((block, i) => (
+            <div
+              key={i}
+              className="block-anchor"
+              ref={(el) => {
+                if (el) blockRefs.current.set(i, el);
+                else blockRefs.current.delete(i);
+              }}
+            >
+              <BlockRow block={block} />
+            </div>
+          ))}
+          {permissions.map((p) => (
+            <PermissionCard key={p.id} request={p} />
+          ))}
+          {running && permissions.length === 0 && (
+            <div className="thinking">the dryad is working…</div>
+          )}
+        </div>
+        <PromptNav prompts={prompts} activeIndex={activePrompt} onJump={jumpTo} />
       </div>
 
       {(session?.queuedPrompts.length ?? 0) > 0 && (

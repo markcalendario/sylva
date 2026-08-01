@@ -26,7 +26,7 @@ function WorktreeRow({
   return (
     <div className={`wt-row ${focused ? "focused" : ""}`}>
       <button className="wt-open" onClick={() => void api.setFocus(worktree.id)}>
-        <Sprite state={spriteState} scale={2} title={worktree.branch ?? "detached"} />
+        <Sprite state={spriteState} scale={1} title={worktree.branch ?? "detached"} />
         <span className="wt-name">
           {worktree.branch ?? `${worktree.head.slice(0, 7)} (detached)`}
           {worktree.isMain && <span className="wt-main-tag">main worktree</span>}

@@ -13,9 +13,9 @@ function Welcome() {
   return (
     <div className="welcome">
       <div className="welcome-sprites">
-        <Sprite state="idle" scale={4} />
-        <Sprite state="working" scale={4} />
-        <Sprite state="success" scale={4} />
+        <Sprite state="idle" scale={3} />
+        <Sprite state="working" scale={3} />
+        <Sprite state="success" scale={3} />
       </div>
       <h1 className="welcome-title">Welcome to the forest</h1>
       <p className="welcome-copy">
@@ -53,7 +53,7 @@ export function MainPanel() {
   return (
     <main className="main">
       <div className="wt-header">
-        <Sprite state={spriteState} scale={3} />
+        <Sprite state={spriteState} scale={2} />
         <div className="wt-header-text">
           <div className="wt-header-branch">{status?.branch ?? "…"}</div>
           <div className="wt-header-sub">

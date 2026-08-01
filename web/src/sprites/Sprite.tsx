@@ -1,8 +1,7 @@
 import { useMemo } from "react";
-import { PALETTE, SPRITE_FRAMES, SPRITE_SPEED, type SpriteState } from "./frames";
+import { GRID, PALETTE, SPRITE_FRAMES, SPRITE_SPEED, type SpriteState } from "./frames";
 import "./sprite.css";
 
-const GRID = 16;
 const sheetCache = new Map<string, string>();
 
 /** Render a state's frames into a horizontal sprite-sheet PNG (data URI). */

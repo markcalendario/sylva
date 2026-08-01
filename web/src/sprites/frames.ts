@@ -1,169 +1,175 @@
-// The dryads of Sylva — 16x16 pixel creatures, one per worktree.
-// Each state is a list of frames; each frame is 16 rows of glyphs.
-// Rows shorter than 16 are right-padded with transparency.
+// The dryads of Sylva — 24x24 sprouts, one per worktree.
+//
+// Frames are composed rather than hand-drawn per state: one rounded body holds
+// placeholders for the eyes (E/F) and mouth (M), and each expression fills them
+// in. That keeps the silhouette identical across states, so a worktree's
+// character reads as the same creature whether it's resting or panicking.
 
 export type SpriteState = "idle" | "working" | "success" | "error";
 
+export const GRID = 24;
+
 export const PALETTE: Record<string, string> = {
   ".": "transparent",
-  G: "#2e5b31", // dark green outline
-  g: "#4e8b44", // body
-  l: "#7fd068", // highlight
-  d: "#1c3a20", // deep shadow / mouth
-  k: "#10180f", // eyes
-  w: "#e9f0e4", // eye shine
-  a: "#ffb454", // firefly amber
-  r: "#ff6b5b", // ember
-  b: "#7a5537", // stem
+  O: "#22402a", // outline
+  l: "#a9e6a4", // body highlight (upper left)
+  g: "#7cc47f", // body
+  d: "#5da367", // body shadow (lower)
+  k: "#1b2a1c", // eyes, mouth
+  w: "#f4fff0", // eye shine
+  p: "#ff9db0", // blush
+  s: "#a8813f", // stem
+  e: "#9bd645", // leaf
+  a: "#ffb454", // firefly
+  y: "#fff0b8", // sparkle
+  r: "#ff6b5b", // fluster
 };
 
-const IDLE_A = [
-  "................",
-  "......b.........",
-  ".....lb.........",
-  "....Glllg.......",
-  "...GglllggG.....",
-  "..Glgggggggl....",
-  "..GgwkggwkgG....",
-  ".GggkkggkkggG...",
-  ".GgggggggggglG..",
-  ".GggddddggggG...",
-  "..Gggggggggl....",
-  "...GgllllggG....",
-  "....G.G..G.G....",
-  "................",
+/**
+ * The shared body. `E`/`F` mark the 3x4 eye wells, `M` the mouth.
+ * Every row is exactly GRID characters wide.
+ */
+const BODY = [
+  "........................", // 0
+  "........................", // 1
+  ".........ee..ee.........", // 2
+  "..........esse..........", // 3
+  "...........ss...........", // 4
+  "...........ss...........", // 5
+  ".........OllllO.........", // 6
+  ".......OllllllllO.......", // 7
+  "......OllllllllllO......", // 8
+  ".....OllllllggggggO.....", // 9
+  "....OlllllgggggggggO....", // 10
+  "....OllEEEggggFFFggO....", // 11
+  "...OlllEEEggggFFFgggO...", // 12
+  "...OlggEEEggggFFFgggO...", // 13
+  "...OppgEEEggggFFFgppO...", // 14
+  "...OppggggggggggggppO...", // 15
+  "....OggggggMMgggggO.....", // 16
+  "....OggggggggggggO......", // 17
+  ".....OddddddddddddO.....", // 18
+  "......OddddddddddO......", // 19
+  ".......OOOOOOOOOO.......", // 20
+  "........OO....OO........", // 21
+  "........................", // 22
+  "........................", // 23
 ];
 
-const IDLE_B = [
-  "................",
-  "................",
-  "......b.........",
-  ".....lb.........",
-  "....Glllg.......",
-  "...GglllggG.....",
-  "..Glgggggggl....",
-  "..GgkkggkkgG....",
-  ".GggggggggggG...",
-  ".GgggggggggglG..",
-  ".GggddddggggG...",
-  "...GgllllggG....",
-  "....G.G..G.G....",
-  "................",
-];
+const EYE_ROWS = [11, 12, 13, 14];
+const MOUTH_ROW = 16;
 
-const WORK_A = [
-  "................",
-  "......b....a....",
-  ".....lb.........",
-  "....Glllg.......",
-  "...GglllggG.....",
-  "..Glgggggggl....",
-  "..GgkwggkwgG....",
-  ".GggkkggkkggG...",
-  ".GgggggggggglG..",
-  ".Gggddddggggl...",
-  "..Ggggggggga....",
-  "...GgllllgaaG...",
-  "....G.G.aaaa....",
-  "........aaaa....",
-];
+/** 3 wide x 4 tall, top row first. */
+type EyePattern = [string, string, string, string];
 
-const WORK_B = [
-  "................",
-  "......b.........",
-  ".....lb....a....",
-  "....Glllg.......",
-  "...GglllggG.....",
-  "..Glgggggggl....",
-  "..GgwkggwkgG....",
-  ".GggkkggkkggG...",
-  ".GggggggggggG...",
-  ".Ggggddddgggl...",
-  "..Gggggggga.....",
-  "...GgllllgaaG...",
-  "....G.G.aaaa....",
-  "........aaaa....",
-];
+const EYES: Record<string, EyePattern> = {
+  // Big and round, shine in the upper left.
+  open: ["wkk", "kkk", "kkk", "gkg"],
+  // Mid-blink.
+  blink: ["ggg", "ggg", "kkk", "ggg"],
+  // Narrowed in concentration.
+  focused: ["ggg", "wkk", "kkk", "gkg"],
+  // Happy arcs.
+  happy: ["ggg", "gkg", "kgk", "ggg"],
+  // Startled: wide with a small pupil.
+  wide: ["kkk", "kwk", "kkk", "kkk"],
+};
 
-const SUCCESS_A = [
-  "....a...........",
-  "......b......a..",
-  ".....lb.........",
-  "....Glllg.......",
-  "l..GglllggG..l..",
-  "GlGlggggggglGlG.",
-  ".GGgwkggwkgGG...",
-  "..GgkkggkkgG....",
-  ".GggggggggggG...",
-  ".GggdddddgggG...",
-  "..Ggggggggga....",
-  "...GgllllggG....",
-  "....G.G..G.G....",
-  "................",
-];
+const MOUTHS: Record<string, string> = {
+  smile: "kk",
+  small: "gk",
+  open: "kk",
+  flat: "kk",
+};
 
-const SUCCESS_B = [
-  "................",
-  "..a...b.....a...",
-  ".....lb.........",
-  "....Glllg....a..",
-  "l..GglllggG..l..",
-  "GlGlggggggglGlG.",
-  ".GGgwkggwkgGG...",
-  "..GgkkggkkgG....",
-  ".GggggggggggG...",
-  ".GggdddddgggG...",
-  "..Gggggggggl....",
-  "...GgllllggG....",
-  "...G.G....G.G...",
-  "................",
-];
+interface FrameSpec {
+  eyes: keyof typeof EYES;
+  mouth: keyof typeof MOUTHS;
+  /** Extra pixels painted on top: [row, col, paletteKey]. */
+  extras?: Array<[number, number, string]>;
+  /** Shift the whole creature down by a row for a breathing/bobbing beat. */
+  bob?: boolean;
+}
 
-const ERROR_A = [
-  ".......r........",
-  ".......r........",
-  "......b.........",
-  ".....lb.........",
-  "....Glllg.......",
-  "...GglllggG.....",
-  "..Glgggggggl....",
-  "..GgkgkgkgkG....",
-  ".GgggkgggkggG...",
-  ".GgggggggggglG..",
-  ".GgdgggggdggG...",
-  "..Ggdddddggl....",
-  "...GgllllggG....",
-  "....G.G..G.G....",
-];
+function replaceAt(row: string, index: number, text: string): string {
+  return row.slice(0, index) + text + row.slice(index + text.length);
+}
 
-const ERROR_B = [
-  ".......r........",
-  "................",
-  ".......b........",
-  "......bl........",
-  ".....Glllg......",
-  "....GglllggG....",
-  "...Glgggggggl...",
-  "...GgkgkgkgkG...",
-  "..GggkgggkgggG..",
-  "..GgggggggggglG.",
-  "..GgdgggggdggG..",
-  "...GgdddddggG...",
-  "....GgllllggG...",
-  ".....G.G..G.G...",
-];
+function buildFrame(spec: FrameSpec): string[] {
+  const rows = [...BODY];
+  const eye = EYES[spec.eyes];
+  const mouth = MOUTHS[spec.mouth];
+
+  EYE_ROWS.forEach((rowIndex, i) => {
+    let row = rows[rowIndex] as string;
+    row = row.replace("EEE", (eye?.[i] ?? "kkk") as string);
+    row = row.replace("FFF", (eye?.[i] ?? "kkk") as string);
+    rows[rowIndex] = row;
+  });
+
+  const mouthRow = rows[MOUTH_ROW] as string;
+  rows[MOUTH_ROW] = mouthRow.replace("MM", mouth ?? "kk");
+
+  for (const [r, c, key] of spec.extras ?? []) {
+    const row = rows[r];
+    if (row === undefined || c < 0 || c >= GRID) continue;
+    rows[r] = replaceAt(row, c, key);
+  }
+
+  if (spec.bob) {
+    rows.pop();
+    rows.unshift(".".repeat(GRID));
+  }
+  return rows;
+}
 
 export const SPRITE_FRAMES: Record<SpriteState, string[][]> = {
-  idle: [IDLE_A, IDLE_B],
-  working: [WORK_A, WORK_B],
-  success: [SUCCESS_A, SUCCESS_B],
-  error: [ERROR_A, ERROR_B],
+  // Resting: a slow breath, then a blink.
+  idle: [
+    buildFrame({ eyes: "open", mouth: "smile" }),
+    buildFrame({ eyes: "open", mouth: "smile", bob: true }),
+    buildFrame({ eyes: "blink", mouth: "smile", bob: true }),
+  ],
+  // Working: heads-down, with a firefly circling.
+  working: [
+    buildFrame({ eyes: "focused", mouth: "small", extras: [[5, 19, "a"]] }),
+    buildFrame({ eyes: "focused", mouth: "flat", bob: true, extras: [[8, 21, "a"]] }),
+    buildFrame({ eyes: "focused", mouth: "small", extras: [[12, 22, "a"]] }),
+    buildFrame({ eyes: "focused", mouth: "flat", bob: true, extras: [[8, 2, "a"]] }),
+  ],
+  // Finished: eyes closed happily, sparkles.
+  success: [
+    buildFrame({
+      eyes: "happy",
+      mouth: "open",
+      extras: [
+        [3, 3, "y"],
+        [6, 20, "y"],
+        [10, 1, "y"],
+      ],
+    }),
+    buildFrame({
+      eyes: "happy",
+      mouth: "open",
+      bob: true,
+      extras: [
+        [2, 19, "y"],
+        [7, 2, "y"],
+        [11, 22, "y"],
+      ],
+    }),
+  ],
+  // Trouble: wide eyes and a fluster mark.
+  error: [
+    buildFrame({ eyes: "wide", mouth: "open", extras: [[6, 20, "r"]] }),
+    buildFrame({ eyes: "wide", mouth: "open", bob: true, extras: [[5, 21, "r"]] }),
+  ],
 };
 
 /** Frame duration per state, ms. Working types fast; idling breathes slow. */
 export const SPRITE_SPEED: Record<SpriteState, number> = {
-  idle: 900,
-  working: 220,
-  success: 320,
-  error: 260,
+  idle: 700,
+  working: 180,
+  success: 260,
+  error: 220,
 };
