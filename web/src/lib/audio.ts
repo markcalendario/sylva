@@ -28,8 +28,12 @@ let ambientOn = readBool(AMBIENT_KEY, false);
 const listeners = new Set<() => void>();
 
 function readNumber(key: string, fallback: number): number {
-  const raw = Number(localStorage.getItem(key));
-  return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : fallback;
+  // Number(null) is 0, and 0 is a valid volume — so an unset key has to be
+  // checked before parsing, or the default silently becomes silence.
+  const raw = localStorage.getItem(key);
+  if (raw === null) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
 }
 
 function readBool(key: string, fallback: boolean): boolean {
