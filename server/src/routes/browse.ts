@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { DirEntry, DirListing } from "sylva-shared";
 import type { AppContext } from "../context.js";
-import { badRequest } from "../lib/errors.js";
+import { badRequest, HttpError } from "../lib/errors.js";
 
 const browseSchema = z.object({ path: z.string().optional() });
 
@@ -44,8 +44,21 @@ export function registerBrowseRoutes(app: FastifyInstance, _ctx: AppContext): vo
     let dirents;
     try {
       dirents = await readdir(target, { withFileTypes: true });
-    } catch {
-      throw badRequest(`Cannot read ${target} — check permissions`);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      // macOS gates Desktop, Documents, Downloads and removable volumes behind
+      // TCC. The folder is readable by you but not by the process serving this
+      // request, which is a very different problem from a file mode.
+      if (code === "EPERM" || code === "EACCES") {
+        throw new HttpError(
+          403,
+          `macOS is blocking Sylva from listing ${target}`,
+          process.platform === "darwin"
+            ? "Grant access to the terminal app running Sylva under System Settings → Privacy & Security → Files and Folders (or Full Disk Access), then restart Sylva. You can also paste the repository path directly instead of browsing to it."
+            : "The process running Sylva lacks read permission on this directory. You can also paste the repository path directly instead of browsing to it.",
+        );
+      }
+      throw badRequest(`Cannot read ${target}`, code);
     }
 
     const entries: DirEntry[] = [];

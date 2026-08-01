@@ -12,16 +12,26 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
   const [listing, setListing] = useState<DirListing | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
+  const [typedPath, setTypedPath] = useState("");
 
   const go = (path?: string) => {
     setLoading(true);
     setError(null);
+    setDetail(null);
     api
       .browse(path)
       .then(setListing)
-      .catch((e) => setError(e instanceof ApiFailure ? e.message : "Couldn't open that folder"))
+      .catch((e) => {
+        if (e instanceof ApiFailure) {
+          setError(e.message);
+          setDetail(e.detail ?? null);
+        } else {
+          setError("Couldn't open that folder");
+        }
+      })
       .finally(() => setLoading(false));
   };
 
@@ -96,7 +106,38 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
         </button>
       )}
 
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error">
+          {error}
+          {detail && <div className="form-error-detail">{detail}</div>}
+        </div>
+      )}
+
+      {/* Browsing can fail on folders you can still use — macOS blocks listing
+          Desktop and Documents unless the terminal is granted access — so
+          typing a path stays available as the reliable route. */}
+      <form
+        className="browse-manual"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void register(typedPath.trim());
+        }}
+      >
+        <label className="field">
+          Or paste the repository path
+          <div className="browse-manual-row">
+            <input
+              className="mono-input"
+              placeholder="/Users/you/Desktop/my-project"
+              value={typedPath}
+              onChange={(e) => setTypedPath(e.target.value)}
+            />
+            <button type="submit" className="btn-quiet" disabled={busy || !typedPath.trim()}>
+              Use path
+            </button>
+          </div>
+        </label>
+      </form>
 
       <div className="dialog-actions">
         <button type="button" className="btn-quiet" onClick={onClose} disabled={busy}>

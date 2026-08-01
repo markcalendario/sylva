@@ -386,6 +386,23 @@
   color: var(--firefly);
 }
 
+.browse-manual-row {
+  display: flex;
+  gap: var(--pad-2);
+}
+
+.browse-manual-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-error-detail {
+  color: var(--moss);
+  font-size: var(--text-xs);
+  margin-top: var(--pad-1);
+  line-height: 1.5;
+}
+
 /* ---------- settings sections ---------- */
 
 .settings-section {
