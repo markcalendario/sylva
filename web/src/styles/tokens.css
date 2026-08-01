@@ -1,0 +1,44 @@
+/* Sylva design tokens — a forest at night, lit by fireflies. */
+:root {
+  /* surfaces */
+  --pine-0: #0c1110; /* canvas */
+  --pine-1: #141c18; /* bark: cards, sidebar */
+  --pine-2: #1a2420; /* raised: hover, inputs */
+  --pine-3: #243129; /* hairline borders */
+
+  /* text */
+  --moon: #e9f0e4; /* primary */
+  --moss: #8ca192; /* muted */
+  --moss-dim: #5d6f63; /* faint */
+
+  /* light in the woods */
+  --firefly: #ffb454; /* action, working */
+  --firefly-dim: #8a6430;
+  --sapling: #7fd068; /* success, added lines */
+  --sapling-dim: #3d6b35;
+  --ember: #ff6b5b; /* danger, deleted lines */
+  --ember-dim: #7a3830;
+  --stream: #7fb7c9; /* branches, links */
+
+  /* type */
+  --font-ui: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-pixel: "Silkscreen", monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+
+  /* rhythm */
+  --pad-1: 4px;
+  --pad-2: 8px;
+  --pad-3: 12px;
+  --pad-4: 16px;
+  --pad-5: 24px;
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  --shadow-raise: 0 4px 24px rgb(0 0 0 / 0.45);
+}

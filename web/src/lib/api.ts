@@ -1,0 +1,123 @@
+import type {
+  AgentAvailability,
+  AgentEvent,
+  BranchInfo,
+  FileDiff,
+  PermissionAnswer,
+  PermissionRequest,
+  QuickStartResult,
+  Repo,
+  SessionInfo,
+  Worktree,
+  WorktreeStatus,
+} from "sylva-shared";
+
+export class ApiFailure extends Error {
+  status: number;
+  detail?: string;
+
+  constructor(status: number, message: string, detail?: string) {
+    super(message);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    headers: init?.body ? { "content-type": "application/json" } : undefined,
+    ...init,
+  });
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new ApiFailure(
+      res.status,
+      typeof body.error === "string" ? body.error : `Request failed (${res.status})`,
+      typeof body.detail === "string" ? body.detail : undefined,
+    );
+  }
+  return body as T;
+}
+
+export const api = {
+  listRepos: () => request<Repo[]>("/api/repos"),
+  registerRepo: (path: string) =>
+    request<Repo>("/api/repos", { method: "POST", body: JSON.stringify({ path }) }),
+  removeRepo: (repoId: string) => request<{ ok: true }>(`/api/repos/${repoId}`, { method: "DELETE" }),
+
+  listWorktrees: (repoId: string) => request<Worktree[]>(`/api/repos/${repoId}/worktrees`),
+  createWorktree: (repoId: string, body: { branch: string; baseRef?: string; path?: string }) =>
+    request<Worktree>(`/api/repos/${repoId}/worktrees`, { method: "POST", body: JSON.stringify(body) }),
+  removeWorktree: (worktreeId: string, force: boolean) =>
+    request<{ ok: true }>(`/api/worktrees/${worktreeId}`, {
+      method: "DELETE",
+      body: JSON.stringify({ force }),
+    }),
+
+  getFocus: () => request<{ worktreeId: string | null }>("/api/focus"),
+  setFocus: (worktreeId: string | null) =>
+    request<{ worktreeId: string | null }>("/api/focus", {
+      method: "POST",
+      body: JSON.stringify({ worktreeId }),
+    }),
+
+  status: (worktreeId: string) => request<WorktreeStatus>(`/api/worktrees/${worktreeId}/status`),
+  diff: (worktreeId: string, path: string, staged: boolean) =>
+    request<FileDiff>(
+      `/api/worktrees/${worktreeId}/diff?path=${encodeURIComponent(path)}&staged=${staged ? "1" : "0"}`,
+    ),
+  stage: (worktreeId: string, paths: string[] | "all") =>
+    request<{ ok: true }>(`/api/worktrees/${worktreeId}/stage`, {
+      method: "POST",
+      body: JSON.stringify(paths === "all" ? { all: true } : { paths }),
+    }),
+  unstage: (worktreeId: string, paths: string[] | "all") =>
+    request<{ ok: true }>(`/api/worktrees/${worktreeId}/unstage`, {
+      method: "POST",
+      body: JSON.stringify(paths === "all" ? { all: true } : { paths }),
+    }),
+  commit: (worktreeId: string, message: string) =>
+    request<{ head: string }>(`/api/worktrees/${worktreeId}/commit`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+  branches: (repoId: string) => request<BranchInfo[]>(`/api/repos/${repoId}/branches`),
+  push: (worktreeId: string, setUpstream: boolean) =>
+    request<{ output: string }>(`/api/worktrees/${worktreeId}/push`, {
+      method: "POST",
+      body: JSON.stringify({ setUpstream }),
+    }),
+  pull: (worktreeId: string) =>
+    request<{ output: string }>(`/api/worktrees/${worktreeId}/pull`, { method: "POST", body: "{}" }),
+
+  session: (worktreeId: string) =>
+    request<{
+      session: SessionInfo | null;
+      pendingPermissions: PermissionRequest[];
+      availability: AgentAvailability;
+    }>(`/api/worktrees/${worktreeId}/session`),
+  listSessions: () => request<SessionInfo[]>("/api/sessions"),
+  transcript: (worktreeId: string) =>
+    request<AgentEvent[]>(`/api/worktrees/${worktreeId}/session/transcript`),
+  prompt: (worktreeId: string, text: string) =>
+    request<SessionInfo>(`/api/worktrees/${worktreeId}/session/prompt`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  interrupt: (worktreeId: string) =>
+    request<SessionInfo>(`/api/worktrees/${worktreeId}/session/interrupt`, {
+      method: "POST",
+      body: "{}",
+    }),
+  removeQueued: (worktreeId: string, promptId: string) =>
+    request<SessionInfo>(`/api/worktrees/${worktreeId}/session/queue/${promptId}`, {
+      method: "DELETE",
+    }),
+  answerPermission: (requestId: string, answer: PermissionAnswer) =>
+    request<{ ok: true }>("/api/permissions/answer", {
+      method: "POST",
+      body: JSON.stringify({ requestId, answer }),
+    }),
+  quickStart: (body: { repoId: string; taskName: string; prompt: string; baseRef?: string }) =>
+    request<QuickStartResult>("/api/quickstart", { method: "POST", body: JSON.stringify(body) }),
+};

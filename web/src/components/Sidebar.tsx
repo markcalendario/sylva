@@ -1,0 +1,126 @@
+import { useState } from "react";
+import type { Repo, Worktree } from "sylva-shared";
+import { api } from "../lib/api";
+import { useInvalidate, useRepos, useWorktrees } from "../lib/queries";
+import { spriteStateFor, useSylva } from "../state/store";
+import { Sprite } from "../sprites/Sprite";
+import { NewTaskDialog } from "./dialogs/NewTaskDialog";
+import { NewWorktreeDialog } from "./dialogs/NewWorktreeDialog";
+import { RegisterRepoDialog } from "./dialogs/RegisterRepoDialog";
+
+function WorktreeRow({ worktree }: { worktree: Worktree }) {
+  const focused = useSylva((s) => s.focusedWorktreeId) === worktree.id;
+  const spriteState = useSylva((s) => spriteStateFor(s, worktree.id));
+  const unseen = useSylva((s) => s.unseenActivity[worktree.id] ?? false);
+  const dirtyCount = useSylva((s) => {
+    const st = s.statuses[worktree.id];
+    return st ? st.staged.length + st.unstaged.length + st.untracked.length : 0;
+  });
+
+  return (
+    <button
+      className={`wt-row ${focused ? "focused" : ""}`}
+      onClick={() => void api.setFocus(worktree.id)}
+    >
+      <Sprite state={spriteState} scale={2} title={worktree.branch ?? "detached"} />
+      <span className="wt-name">
+        {worktree.branch ?? `${worktree.head.slice(0, 7)} (detached)`}
+        {worktree.isMain && <span className="wt-main-tag">main worktree</span>}
+      </span>
+      <span className="wt-meta">
+        {unseen && !focused && <span className="unseen-dot" title="New activity" />}
+        {dirtyCount > 0 && <span className="dirty-count">{dirtyCount}</span>}
+      </span>
+    </button>
+  );
+}
+
+function RepoGroup({ repo }: { repo: Repo }) {
+  const [expanded, setExpanded] = useState(true);
+  const [showNewWorktree, setShowNewWorktree] = useState(false);
+  const worktrees = useWorktrees(repo.id);
+  const invalidate = useInvalidate();
+
+  return (
+    <div className="repo-group">
+      <div className="repo-head">
+        <button className="repo-toggle" onClick={() => setExpanded((e) => !e)}>
+          <span className={`chevron ${expanded ? "open" : ""}`}>▸</span>
+          <span className="repo-name">{repo.name}</span>
+          {!repo.available && <span className="repo-missing">missing</span>}
+        </button>
+        {repo.available && (
+          <div className="repo-actions">
+            <button
+              className="ghost"
+              title="New worktree"
+              onClick={() => setShowNewWorktree(true)}
+            >
+              +
+            </button>
+            <button
+              className="ghost"
+              title="Remove from Sylva (files stay on disk)"
+              onClick={() => {
+                if (confirm(`Remove ${repo.name} from Sylva? The repository on disk is untouched.`)) {
+                  void api.removeRepo(repo.id).then(() => invalidate.repos());
+                }
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+      {expanded && repo.available && (
+        <div className="wt-list">
+          {worktrees.data?.map((wt) => <WorktreeRow key={wt.id} worktree={wt} />)}
+          {worktrees.isError && <div className="side-note">Couldn't list worktrees</div>}
+        </div>
+      )}
+      <NewWorktreeDialog
+        repo={repo}
+        open={showNewWorktree}
+        onClose={() => {
+          setShowNewWorktree(false);
+          invalidate.worktrees(repo.id);
+        }}
+      />
+    </div>
+  );
+}
+
+export function Sidebar() {
+  const repos = useRepos();
+  const [showRegister, setShowRegister] = useState(false);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const invalidate = useInvalidate();
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-label">forest</div>
+      <div className="sidebar-scroll">
+        {repos.data?.map((r) => <RepoGroup key={r.id} repo={r} />)}
+        {repos.data?.length === 0 && (
+          <div className="side-note">No repositories yet — plant one below.</div>
+        )}
+      </div>
+      <div className="sidebar-foot">
+        <button className="btn-primary" onClick={() => setShowNewTask(true)}>
+          ✦ New task
+        </button>
+        <button className="btn-quiet" onClick={() => setShowRegister(true)}>
+          + Register repo
+        </button>
+      </div>
+      <RegisterRepoDialog
+        open={showRegister}
+        onClose={() => {
+          setShowRegister(false);
+          invalidate.repos();
+        }}
+      />
+      <NewTaskDialog open={showNewTask} onClose={() => setShowNewTask(false)} />
+    </aside>
+  );
+}

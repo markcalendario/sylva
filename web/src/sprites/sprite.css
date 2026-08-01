@@ -1,0 +1,25 @@
+.sprite {
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sprite-strip {
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  animation-name: sprite-slide;
+  animation-iteration-count: infinite;
+}
+
+@keyframes sprite-slide {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* Frozen first frame when the viewer prefers reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .sprite-strip {
+    animation: none;
+  }
+}

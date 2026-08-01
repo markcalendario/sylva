@@ -1,0 +1,80 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--pine-0);
+  color: var(--moon);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: var(--moon);
+  background: var(--pine-2);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: var(--pad-2) var(--pad-3);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--moss-dim);
+}
+
+:focus-visible {
+  outline: 2px solid var(--firefly);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--firefly-dim);
+}
+
+a {
+  color: var(--stream);
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+/* scrollbars that belong to the forest */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pine-3) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
