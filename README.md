@@ -1,10 +1,6 @@
-# Sylva 🌲
-
-**Mission control for git worktrees and Claude agents — a forest at night, tended by pixel dryads.**
+![Sylva — mission control for git worktrees and Claude agents](docs/images/brand.png)
 
 Run several Claude agents at once, each in its own git worktree, and see what all of them are doing on one screen. Every worktree gets a dryad: it sleeps at the camp when idle, walks to the workshop when its agent starts working, celebrates in the grove when a turn lands, and waits at the notice board when it needs a decision from you.
-
-![The forest — every worktree as a dryad on one map](docs/images/forest.png)
 
 Sylva runs entirely on your machine. It talks to `git` through the real CLI and to Claude through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), using the credentials Claude Code already stores — there is no API key to configure and nothing leaves localhost.
 
@@ -25,6 +21,10 @@ Working on three things at once means three worktrees, three terminals, and no i
 - **Sound, optional.** Synthesized notification cues and an ambient forest bed, with separate volumes and a global mute. No audio files.
 
 ## Screenshots
+
+**The forest** — every worktree across every repository on one map, generated to fit the panel. Here: two dryads resting at the camp, one at work in the shed, one waiting at the notice board for a permission decision.
+
+![The forest view, with dryads at the camp, the workshop and the notice board](docs/images/forest.png)
 
 **Talking to an agent** — streamed text, tool calls, per-turn cost, and a rail down the right that jumps to any of your earlier prompts.
 
