@@ -1,4 +1,8 @@
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
+import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import { ZodError } from "zod";
 import type { AppContext } from "./context.js";
@@ -37,6 +41,18 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerRepoRoutes(app, ctx);
   registerGitRoutes(app, ctx);
   registerAgentRoutes(app, ctx);
+
+  // Production: serve the built frontend from this same port.
+  const webDist = join(dirname(fileURLToPath(import.meta.url)), "../../web/dist");
+  if (process.env.NODE_ENV === "production" && existsSync(webDist)) {
+    await app.register(fastifyStatic, { root: webDist });
+    app.setNotFoundHandler((req, reply) => {
+      if (req.method === "GET" && !req.url.startsWith("/api")) {
+        return reply.sendFile("index.html");
+      }
+      reply.code(404).send({ error: "not found" });
+    });
+  }
 
   app.get("/ws", { websocket: true }, (socket) => {
     ctx.hub.add(socket);
