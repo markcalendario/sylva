@@ -39,7 +39,7 @@ export function ForestView() {
   const live = useSylva((s) => s.statuses);
   const sessions = useSylva((s) => s.sessions);
   const pendingPermissions = useSylva((s) => s.pendingPermissions);
-  const celebratingUntil = useSylva((s) => s.celebratingUntil);
+  const celebrating = useSylva((s) => s.celebrating);
   const focusedId = useSylva((s) => s.focusedWorktreeId);
   const unseenMap = useSylva((s) => s.unseenActivity);
 
@@ -48,7 +48,7 @@ export function ForestView() {
     return {
       repo,
       worktree,
-      state: spriteStateFor({ sessions, pendingPermissions, celebratingUntil }, worktree.id),
+      state: spriteStateFor({ sessions, pendingPermissions, celebrating }, worktree.id),
       ...(status ? { status } : {}),
       ...(sessions[worktree.id]?.totalCostUsd !== undefined
         ? { cost: sessions[worktree.id]?.totalCostUsd }

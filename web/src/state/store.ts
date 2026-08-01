@@ -11,7 +11,6 @@ import type {
 } from "sylva-shared";
 
 const FEED_CAP = 200;
-const CELEBRATE_MS = 4000;
 
 /** Stable empty arrays so selectors don't mint new references every render. */
 export const NO_EVENTS: never[] = [];
@@ -40,7 +39,12 @@ interface SylvaState {
   pendingPermissions: Record<string, PermissionRequest[]>; // by worktreeId
   fileFeed: Record<string, FileEvent[]>; // by worktreeId, newest first
   statuses: Record<string, WorktreeStatus>; // by worktreeId
-  celebratingUntil: Record<string, number>; // by worktreeId
+  /**
+   * Worktrees whose last turn finished cleanly and you haven't looked at yet.
+   * Not a timer: a dryad waits in the grove until you open its worktree, so a
+   * turn that lands while you're away is still there when you get back.
+   */
+  celebrating: Record<string, boolean>; // by worktreeId
   /** Worktrees with activity the user hasn't looked at (unfocused). */
   unseenActivity: Record<string, boolean>;
   /**
@@ -74,7 +78,7 @@ export const useSylva = create<SylvaState>((set, get) => ({
   pendingPermissions: {},
   fileFeed: {},
   statuses: {},
-  celebratingUntil: {},
+  celebrating: {},
   unseenActivity: {},
   drafts: {},
 
@@ -109,12 +113,18 @@ export const useSylva = create<SylvaState>((set, get) => ({
     }),
 
   setFocus: (focusedWorktreeId) =>
-    set((s) => ({
-      focusedWorktreeId,
-      unseenActivity: focusedWorktreeId
-        ? { ...s.unseenActivity, [focusedWorktreeId]: false }
-        : s.unseenActivity,
-    })),
+    set((s) => {
+      if (!focusedWorktreeId) return { focusedWorktreeId };
+      // Opening a worktree is the acknowledgement. Its dryad heads back to the
+      // camp the next time you look at the forest.
+      const celebrating = { ...s.celebrating };
+      delete celebrating[focusedWorktreeId];
+      return {
+        focusedWorktreeId,
+        unseenActivity: { ...s.unseenActivity, [focusedWorktreeId]: false },
+        celebrating,
+      };
+    }),
 
   setTranscript: (worktreeId, events) =>
     set((s) => ({ transcripts: { ...s.transcripts, [worktreeId]: events } })),
@@ -135,15 +145,14 @@ export const useSylva = create<SylvaState>((set, get) => ({
 
   setAvailability: (availability) => set({ availability }),
 
-  celebrate: (worktreeId) => {
-    set((s) => ({
-      celebratingUntil: { ...s.celebratingUntil, [worktreeId]: Date.now() + CELEBRATE_MS },
-    }));
-    setTimeout(() => {
-      // Nudge a re-render after the celebration window closes.
-      set((s) => ({ celebratingUntil: { ...s.celebratingUntil } }));
-    }, CELEBRATE_MS + 50);
-  },
+  celebrate: (worktreeId) =>
+    set((s) =>
+      // Already looking at it? Then you watched it finish, and sending its
+      // dryad to the grove to be acknowledged would be asking twice.
+      s.focusedWorktreeId === worktreeId
+        ? {}
+        : { celebrating: { ...s.celebrating, [worktreeId]: true } },
+    ),
 
   applyServerEvent: (event) => {
     const s = get();
@@ -205,13 +214,13 @@ export const useSylva = create<SylvaState>((set, get) => ({
 
 /** Derive the sprite state for a worktree from live state. */
 export function spriteStateFor(
-  s: Pick<SylvaState, "sessions" | "pendingPermissions" | "celebratingUntil">,
+  s: Pick<SylvaState, "sessions" | "pendingPermissions" | "celebrating">,
   worktreeId: string,
 ): "idle" | "working" | "success" | "error" {
   const session = s.sessions[worktreeId];
   if (session?.status === "errored") return "error";
   if ((s.pendingPermissions[worktreeId]?.length ?? 0) > 0) return "error";
-  if ((s.celebratingUntil[worktreeId] ?? 0) > Date.now()) return "success";
+  if (s.celebrating[worktreeId]) return "success";
   if (session?.status === "running") return "working";
   return "idle";
 }

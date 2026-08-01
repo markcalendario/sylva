@@ -121,8 +121,29 @@
 
 /* ---------- dryads and signs ---------- */
 
+/* The same state rim the map uses, so the two scenes read alike. 3px is one
+   sprite pixel at the landing scene's scale. */
 .scene-dryad {
   pointer-events: none;
+  --edge: transparent;
+  filter: drop-shadow(3px 0 0 var(--edge)) drop-shadow(-3px 0 0 var(--edge))
+    drop-shadow(0 3px 0 var(--edge)) drop-shadow(0 -3px 0 var(--edge));
+}
+
+.scene-dryad-idle {
+  --edge: var(--moss-dim);
+}
+
+.scene-dryad-working {
+  --edge: var(--firefly);
+}
+
+.scene-dryad-success {
+  --edge: var(--sapling);
+}
+
+.scene-dryad-error {
+  --edge: var(--ember);
 }
 
 .scene-dryad-working {

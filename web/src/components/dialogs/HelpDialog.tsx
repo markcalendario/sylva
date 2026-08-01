@@ -44,9 +44,10 @@ const SECTIONS: Section[] = [
         q: "What happens to a running agent when I switch worktrees?",
         a: (
           <>
-            It keeps working. Switching only changes what you're looking at. The tree keeps its
-            sprite animation in the sidebar and the forest view, gets an activity dot when
-            something happens, and fires a notification and chime when it finishes.
+            It keeps working. Switching only changes what you're looking at. Its dryad keeps moving
+            on the map, it gets an activity dot when something happens, and it notifies you both
+            when it finishes <em>and</em> when it stops needing a decision from you — the second
+            being the one that actually costs you time.
           </>
         ),
       },
@@ -89,10 +90,12 @@ const SECTIONS: Section[] = [
         q: "What else is stored, and where?",
         a: (
           <>
-            Everything lives under <code>~/.sylva/</code>: <code>registry.json</code> for
-            registered repos, settings and per-worktree overrides; <code>sessions/</code> for
-            transcripts; <code>attachments/</code> for files you attach to prompts. Attachments are
-            deliberately kept outside your repository so they never show up as changes.
+            Everything lives under <code>~/.sylva/</code>: <code>settings.json</code> for agent
+            defaults, saved prompts and per-worktree overrides; <code>registry.json</code> for the
+            repositories you've registered and their session metadata; <code>sessions/</code> for
+            transcripts; <code>attachments/</code> for files you attach to prompts. None of it is
+            inside your repository, so none of it can be committed — and attachments in particular
+            are kept out so they never show up as changes.
           </>
         ),
       },
@@ -159,22 +162,46 @@ const SECTIONS: Section[] = [
         ),
       },
       {
-        q: "What are the numbers on a tree in the forest?",
+        q: "What are the numbers under the forest?",
         a: (
           <>
-            ↑ and ↓ are commits ahead of and behind the repository's base branch (resolved from{" "}
-            <code>origin/HEAD</code>, then main or master). “dirty” counts files changed but not
-            committed. The dollar figure is what that worktree's agent session has cost so far.
+            The roster under the map carries the facts the scene doesn't. ↑ and ↓ are commits ahead
+            of and behind the repository's base branch (resolved from <code>origin/HEAD</code>, then
+            main or master). “dirty” counts files changed but not committed. The dollar figure is
+            what that worktree's agent session has cost so far.
           </>
         ),
       },
       {
-        q: "What is the dryad telling me?",
+        q: "What is a dryad telling me by where it's standing?",
         a: (
           <>
-            Sitting at the roots means nothing is running. Up at the trunk with a firefly means an
-            agent is working. Mid-hop under a fruiting tree means the last turn finished cleanly.
-            Slumped under a dimmed tree means it failed or is waiting on you.
+            The forest is one map and each dryad walks to the place its state names. Asleep at the{" "}
+            <strong>camp</strong> means nothing is running. At the <strong>workshop</strong> means
+            an agent is working. At the <strong>grove</strong> shrine means its last turn finished
+            cleanly. At the <strong>notice board</strong> — where the gate is down — means it is
+            blocked, waiting for you to answer a permission request.
+          </>
+        ),
+      },
+      {
+        q: "Why is a dryad still in the grove long after it finished?",
+        a: (
+          <>
+            Because you haven't looked yet. A finished dryad waits at the grove until you open its
+            worktree, so a turn that lands while you're away is still announced when you get back.
+            Opening it is the acknowledgement; next time you return to the forest it walks home to
+            the camp.
+          </>
+        ),
+      },
+      {
+        q: "What is “1 waiting” in the top bar?",
+        a: (
+          <>
+            The number of agents stopped on a permission request. A blocked agent is the one failure
+            with no other symptom — it simply stops — so it gets a standing counter rather than a
+            notification you might miss. Click it to jump straight to the first one.
           </>
         ),
       },

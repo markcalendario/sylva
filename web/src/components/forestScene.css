@@ -382,9 +382,31 @@
   will-change: transform;
 }
 
+/* A one-pixel rim in the state's colour. Four drop-shadows follow the sprite's
+   own alpha, so the outline hugs the dryad rather than boxing it — and 2px is
+   exactly one sprite pixel at this scale, which keeps it on the pixel grid. */
 .ow-body {
   position: relative;
   display: block;
+  --edge: transparent;
+  filter: drop-shadow(2px 0 0 var(--edge)) drop-shadow(-2px 0 0 var(--edge))
+    drop-shadow(0 2px 0 var(--edge)) drop-shadow(0 -2px 0 var(--edge));
+}
+
+.ow-idle .ow-body {
+  --edge: var(--moss-dim);
+}
+
+.ow-working .ow-body {
+  --edge: var(--firefly);
+}
+
+.ow-success .ow-body {
+  --edge: var(--sapling);
+}
+
+.ow-error .ow-body {
+  --edge: var(--ember);
 }
 
 /* Gait: the body bobs while its owner is en route or busy. The transition on

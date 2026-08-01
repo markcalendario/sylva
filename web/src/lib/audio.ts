@@ -29,7 +29,10 @@ let unlocked = false;
 let volume = readNumber(VOLUME_KEY, 0.6);
 let ambientVolume = readNumber(AMBIENT_VOLUME_KEY, 0.35);
 let muted = readBool(MUTED_KEY, false);
-let ambientOn = readBool(AMBIENT_KEY, false);
+// On by default, at the low ambient level above. It shipped defaulting to off,
+// which meant the forest was silent until you found the ♪ toggle and knew to
+// press it.
+let ambientOn = readBool(AMBIENT_KEY, true);
 
 const listeners = new Set<() => void>();
 
@@ -105,9 +108,17 @@ export function initAudio(): void {
     if (unlocked) return;
     const context = ensureContext();
     if (!context) return;
-    void context.resume();
     unlocked = true;
-    if (ambientOn) startAmbient();
+    // resume() is async, and startAmbient refuses to build anything while the
+    // context is still suspended. Calling it straight after resume() therefore
+    // did nothing at all, and the bed only ever appeared if you toggled
+    // ambience off and on again by hand. Wait for the resume to land.
+    void context
+      .resume()
+      .then(() => {
+        if (ambientOn) startAmbient();
+      })
+      .catch(() => {});
     window.removeEventListener("pointerdown", unlock);
     window.removeEventListener("keydown", unlock);
   };
@@ -386,6 +397,46 @@ export function playNoise(noise: Noise): void {
 
 // ---------- ambient bed ----------
 
+/**
+ * The forest at night, as a piece of music rather than a drone.
+ *
+ * Written in the shape of the music that plays under a survival game: a slow
+ * chord progression, a soft piano-ish voice picking out a sparse melody over
+ * it, and long silences between phrases. The silences are the important part —
+ * what makes that style feel like company rather than a soundtrack is that it
+ * stops for ten seconds at a time and lets the room back in.
+ *
+ * Everything is diatonic to C major, so a melody note can never land wrong
+ * against the chord underneath it however the phrase wanders.
+ */
+
+const midi = (note: number): number => 440 * Math.pow(2, (note - 69) / 12);
+
+/**
+ * C major, pitched high — a music box rather than a cello. Register does most
+ * of the emotional work here: the same notes an octave down read as brooding.
+ */
+const SCALE = [64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84];
+
+/**
+ * Four chords, each held long enough to stop being a progression and start
+ * being a place. `pad` is what sustains; `tones` are the notes the melody
+ * treats as home when a phrase begins or ends.
+ *
+ * All four are major, coloured with sixths and sevenths, and every voicing
+ * keeps E4 sounding throughout. That common tone is why it settles rather than
+ * travels — a minor chord or a moving bass here turns the whole thing uneasy,
+ * which is exactly what it did before.
+ */
+const PROGRESSION = [
+  { pad: [48, 59, 64], tones: [64, 67, 71] }, // Cmaj7
+  { pad: [53, 57, 64], tones: [65, 69, 72] }, // Fmaj7
+  { pad: [48, 57, 64], tones: [64, 67, 69] }, // C6
+  { pad: [55, 59, 64], tones: [62, 67, 71] }, // G6
+];
+
+const CHORD_SECONDS = 13;
+
 function startAmbient(): void {
   const context = ensureContext();
   if (!context || !ambientBus || ambient) return;
@@ -394,16 +445,16 @@ function startAmbient(): void {
   const bed = context.createGain();
   bed.gain.value = 0;
   bed.connect(ambientBus);
-  bed.gain.setTargetAtTime(0.5, context.currentTime, 2);
+  bed.gain.setTargetAtTime(0.5, context.currentTime, 3);
 
-  // Wind: filtered noise from a looping buffer.
-  const seconds = 4;
+  // ---- air, well underneath everything ----
+  const seconds = 6;
   const buffer = context.createBuffer(1, context.sampleRate * seconds, context.sampleRate);
   const data = buffer.getChannelData(0);
   let last = 0;
   for (let i = 0; i < data.length; i++) {
-    // Brown-ish noise: integrating white noise puts the energy low, which
-    // sounds like wind rather than static.
+    // Integrating white noise puts the energy low, which sounds like moving
+    // air rather than static.
     last = (last + Math.random() * 2 - 1) * 0.5;
     data[i] = last * 0.5;
   }
@@ -412,64 +463,171 @@ function startAmbient(): void {
   noise.loop = true;
   const noiseFilter = context.createBiquadFilter();
   noiseFilter.type = "lowpass";
-  noiseFilter.frequency.value = 420;
+  // Brighter and quieter than a low rumble. Energy below ~300Hz under a slow
+  // pad is the sound of something approaching, and there is nothing here.
+  noiseFilter.frequency.value = 1100;
   const noiseGain = context.createGain();
-  noiseGain.gain.value = 0.09;
+  noiseGain.gain.value = 0.018;
   noise.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
   noiseGain.connect(bed);
   noise.start();
 
-  // Pad: two slightly detuned low sines, breathing via a slow LFO.
+  const breath = context.createOscillator();
+  breath.frequency.value = 0.045;
+  const breathDepth = context.createGain();
+  breathDepth.gain.value = 0.008;
+  breath.connect(breathDepth);
+  breathDepth.connect(noiseGain.gain);
+  breath.start();
+
+  // ---- pad: three voices that glide from chord to chord ----
   const padGain = context.createGain();
-  padGain.gain.value = 0.05;
+  padGain.gain.value = 0.038;
   padGain.connect(bed);
+
   const padFilter = context.createBiquadFilter();
   padFilter.type = "lowpass";
-  padFilter.frequency.value = 700;
+  // Open and fixed. A filter crawling up and down is tension — it makes the
+  // ear track something it can't see.
+  padFilter.frequency.value = 1500;
+  padFilter.Q.value = 0.4;
   padFilter.connect(padGain);
 
-  const pads = [110, 110.6, 164.8].map((freq) => {
+  const padVoices = PROGRESSION[0]!.pad.map((note, i) => {
     const osc = context.createOscillator();
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    osc.connect(padFilter);
+    osc.type = i === 0 ? "triangle" : "sine";
+    osc.frequency.value = midi(note);
+    const voice = context.createGain();
+    voice.gain.value = i === 0 ? 1 : 0.62;
+    osc.connect(voice);
+    voice.connect(padFilter);
     osc.start();
     return osc;
   });
 
-  const lfo = context.createOscillator();
-  lfo.frequency.value = 0.07;
-  const lfoDepth = context.createGain();
-  lfoDepth.gain.value = 0.025;
-  lfo.connect(lfoDepth);
-  lfoDepth.connect(padGain.gain);
-  lfo.start();
+  // A shallow breath on the filter rather than a sweep: enough that the pad
+  // isn't dead still, far too little to read as movement.
+  const sweep = context.createOscillator();
+  sweep.frequency.value = 0.021;
+  const sweepDepth = context.createGain();
+  sweepDepth.gain.value = 110;
+  sweep.connect(sweepDepth);
+  sweepDepth.connect(padFilter.frequency);
+  sweep.start();
 
-  // Occasional crickets, so the bed isn't a static drone.
+  // ---- the voice that carries the tune ----
+  /**
+   * A struck note: fundamental, a quiet octave and a whisper of the twelfth,
+   * with a fast attack and a long tail. Not a real piano — but the envelope is
+   * what the ear identifies, far more than the spectrum.
+   */
+  const strike = (note: number, velocity: number): void => {
+    const now = context.currentTime;
+    const freq = midi(note);
+    for (const [ratio, gain, dur] of [
+      [1, 0.07 * velocity, 3.2],
+      [2.002, 0.032 * velocity, 2.1],
+      [4.01, 0.009 * velocity, 0.8],
+    ] as const) {
+      const osc = context.createOscillator();
+      const env = context.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = freq * ratio;
+      env.gain.setValueAtTime(0, now);
+      env.gain.linearRampToValueAtTime(gain, now + 0.014);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(env);
+      env.connect(bed);
+      osc.start(now);
+      osc.stop(now + dur + 0.1);
+    }
+  };
+
+  let chord = 0;
+  let chordTimer: number | undefined;
+  const advanceChord = (): void => {
+    chordTimer = window.setTimeout(() => {
+      chord = (chord + 1) % PROGRESSION.length;
+      const next = PROGRESSION[chord]!;
+      const at = context.currentTime;
+      padVoices.forEach((osc, i) => {
+        const target = midi(next.pad[i] ?? next.pad[0]!);
+        // Glide rather than jump: the chord should arrive without an edge.
+        osc.frequency.exponentialRampToValueAtTime(target, at + 2.4);
+      });
+      advanceChord();
+    }, CHORD_SECONDS * 1000);
+  };
+
+  // Phrases of a few notes, then a long rest. Stepwise motion with the odd
+  // leap, which is what keeps a sparse melody sounding written rather than
+  // sampled from a scale.
+  let cursor = 72;
+  let phraseLeft = 0;
+  let melodyTimer: number | undefined;
+
+  const nextNote = (): number => {
+    const tones = PROGRESSION[chord]!.tones;
+    // Land on a chord tone at the start and end of a phrase; wander between.
+    if (phraseLeft <= 1 || Math.random() < 0.3) {
+      const near = tones
+        .flatMap((t) => [t, t + 12])
+        .reduce((best, t) => (Math.abs(t - cursor) < Math.abs(best - cursor) ? t : best));
+      return near;
+    }
+    const here = SCALE.indexOf(cursor);
+    const from = here === -1 ? SCALE.findIndex((n) => n >= cursor) : here;
+    const step = (Math.random() < 0.78 ? 1 : 2) * (Math.random() < 0.5 ? -1 : 1);
+    const index = Math.min(SCALE.length - 1, Math.max(0, from + step));
+    return SCALE[index] ?? cursor;
+  };
+
+  const playMelody = (): void => {
+    if (!ambient || muted) {
+      melodyTimer = window.setTimeout(playMelody, 4000);
+      return;
+    }
+    if (phraseLeft <= 0) {
+      // Rest. Long enough that the music has clearly stopped, which is the
+      // whole character of the style.
+      phraseLeft = 3 + Math.floor(Math.random() * 5);
+      cursor = PROGRESSION[chord]!.tones[Math.floor(Math.random() * 3)] ?? 72;
+      melodyTimer = window.setTimeout(playMelody, 7000 + Math.random() * 9000);
+      return;
+    }
+    cursor = nextNote();
+    phraseLeft -= 1;
+    strike(cursor, 0.75 + Math.random() * 0.35);
+    // Uneven note lengths; a steady pulse would turn this into a metronome.
+    melodyTimer = window.setTimeout(playMelody, 620 + Math.random() * 1150);
+  };
+
+  advanceChord();
+  melodyTimer = window.setTimeout(playMelody, 3500);
+
+  // Crickets, rare enough to be a surprise.
   let chirpTimer: number | undefined;
-  const scheduleChirp = () => {
+  const scheduleChirp = (): void => {
     chirpTimer = window.setTimeout(
       () => {
-        if (!ambient || muted) {
-          scheduleChirp();
-          return;
+        if (ambient && !muted) {
+          const osc = context.createOscillator();
+          const env = context.createGain();
+          osc.type = "sine";
+          osc.frequency.value = 1700 + Math.random() * 900;
+          const now = context.currentTime;
+          env.gain.setValueAtTime(0, now);
+          env.gain.linearRampToValueAtTime(0.012, now + 0.01);
+          env.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+          osc.connect(env);
+          env.connect(bed);
+          osc.start(now);
+          osc.stop(now + 0.15);
         }
-        const osc = context.createOscillator();
-        const env = context.createGain();
-        osc.type = "sine";
-        osc.frequency.value = 1700 + Math.random() * 900;
-        const now = context.currentTime;
-        env.gain.setValueAtTime(0, now);
-        env.gain.linearRampToValueAtTime(0.02, now + 0.01);
-        env.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
-        osc.connect(env);
-        env.connect(bed);
-        osc.start(now);
-        osc.stop(now + 0.15);
         scheduleChirp();
       },
-      5000 + Math.random() * 9000,
+      14000 + Math.random() * 20000,
     );
   };
   scheduleChirp();
@@ -477,15 +635,18 @@ function startAmbient(): void {
   ambient = {
     gain: bed,
     stop: () => {
-      if (chirpTimer !== undefined) clearTimeout(chirpTimer);
+      for (const t of [chordTimer, melodyTimer, chirpTimer]) {
+        if (t !== undefined) clearTimeout(t);
+      }
       const end = context.currentTime;
-      bed.gain.setTargetAtTime(0, end, 0.6);
+      bed.gain.setTargetAtTime(0, end, 0.8);
       window.setTimeout(() => {
         noise.stop();
-        for (const osc of pads) osc.stop();
-        lfo.stop();
+        breath.stop();
+        for (const osc of padVoices) osc.stop();
+        sweep.stop();
         bed.disconnect();
-      }, 2500);
+      }, 3000);
     },
   };
 }
