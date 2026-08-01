@@ -2,14 +2,16 @@
    and all motion is translate-only — pixel art survives translation, but
    rotation and fractional scaling turn it to mush. */
 
+/* The map is generated at this panel's width, so it never scrolls sideways —
+   anything that strays past the edge is world, not content, and is clipped. */
 .overworld-wrap {
   border: 1px solid var(--pine-3);
   border-radius: var(--radius-lg);
-  overflow-x: auto;
+  overflow: hidden;
   background: var(--pine-0);
-  /* Centre the plane when the panel is wider than it. */
+  /* Centre the plane when width doesn't divide evenly by the display scale. */
   display: flex;
-  justify-content: safe center;
+  justify-content: center;
 }
 
 .overworld {
@@ -23,6 +25,219 @@
 .ow-prop {
   position: absolute;
   pointer-events: none;
+}
+
+/* ---------- light, weather and water ----------
+
+   Everything here is atmosphere drawn over the tiles rather than into them,
+   so it can move without regenerating the map. */
+
+.ow-glow {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  /* Screen lifts the ground under it instead of painting a grey disc on top. */
+  mix-blend-mode: screen;
+}
+
+.ow-glow-warm {
+  background: radial-gradient(circle, rgb(255 150 60 / 0.34), rgb(255 120 40 / 0.1) 55%, transparent 72%);
+  animation: ow-breathe 2.9s ease-in-out infinite;
+}
+
+.ow-glow-cool {
+  background: radial-gradient(circle, rgb(255 210 140 / 0.24), transparent 68%);
+  animation: ow-breathe 5.4s ease-in-out infinite;
+}
+
+@keyframes ow-breathe {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+.ow-smoke {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(196 204 198 / 0.3);
+  pointer-events: none;
+  animation: ow-smoke 5.4s ease-out infinite;
+}
+
+@keyframes ow-smoke {
+  0% {
+    transform: translate(0, 0) scale(0.5);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.65;
+  }
+  100% {
+    transform: translate(18px, -46px) scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* A band of light sliding along the water. */
+.ow-shimmer {
+  position: absolute;
+  height: 4px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(190 232 244 / 0.32) 45%,
+    rgb(190 232 244 / 0.32) 55%,
+    transparent 100%
+  );
+  background-size: 34% 100%;
+  background-repeat: no-repeat;
+  animation: ow-shimmer 7s linear infinite;
+}
+
+.ow-shimmer-slow {
+  height: 6px;
+  animation-duration: 13s;
+}
+
+@keyframes ow-shimmer {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+
+/* Drifting things are clipped to the plane rather than allowed to widen it. */
+.ow-air {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Fireflies loose in the world, as opposed to the one orbiting a busy dryad. */
+.ow-wild-fly {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--firefly);
+  box-shadow: 0 0 5px var(--firefly);
+  pointer-events: none;
+  animation-name: ow-wander;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes ow-wander {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  35% {
+    transform: translate(22px, -14px);
+  }
+  55% {
+    transform: translate(6px, -30px);
+    opacity: 0.35;
+  }
+  80% {
+    transform: translate(-18px, -12px);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+}
+
+/* Leaves on the wind. Percentage `top` resolves against the plane, so one
+   keyframe works at every map height. */
+.ow-leaf {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: #6f8a4a;
+  pointer-events: none;
+  animation-name: ow-leaf-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.ow-leaf-warm {
+  background: #a3763c;
+}
+
+@keyframes ow-leaf-fall {
+  0% {
+    top: -2%;
+    transform: translateX(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.75;
+  }
+  90% {
+    opacity: 0.75;
+  }
+  100% {
+    top: 102%;
+    transform: translateX(var(--drift, 50px));
+    opacity: 0;
+  }
+}
+
+/* A rabbit that patrols the riverbank, and a moth working the nearest lamp. */
+.ow-rabbit {
+  animation: ow-patrol 11s ease-in-out infinite;
+}
+
+@keyframes ow-patrol {
+  0%,
+  8% {
+    transform: translateX(0) scaleX(1);
+  }
+  42%,
+  58% {
+    transform: translateX(var(--travel, 54px)) scaleX(1);
+  }
+  92%,
+  100% {
+    transform: translateX(0) scaleX(-1);
+  }
+}
+
+.ow-moth {
+  animation: ow-flit 6.5s ease-in-out infinite;
+}
+
+@keyframes ow-flit {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(14px, -10px);
+  }
+  50% {
+    transform: translate(2px, -18px);
+  }
+  75% {
+    transform: translate(-12px, -7px);
+  }
 }
 
 /* ---------- station signs ---------- */
@@ -145,7 +360,9 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: 100px;
+  /* Wider than the gap between neighbours and the labels start colliding;
+     the standing places stagger to buy back some of the difference. */
+  max-width: 92px;
   margin-bottom: 3px;
   padding: 1px 6px;
   border-radius: 999px;
@@ -386,8 +603,19 @@
   .zzz,
   .ow-firefly,
   .ow-spark,
-  .ow-alert {
+  .ow-alert,
+  .ow-glow,
+  .ow-shimmer,
+  .ow-rabbit,
+  .ow-moth {
     transition: none;
     animation: none;
+  }
+
+  /* Drifting motion with nothing anchoring it is the worst of the lot. */
+  .ow-smoke,
+  .ow-leaf,
+  .ow-wild-fly {
+    display: none;
   }
 }
