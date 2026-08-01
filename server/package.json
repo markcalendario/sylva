@@ -1,0 +1,27 @@
+{
+  "name": "sylva-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --noEmit",
+    "start": "NODE_ENV=production tsx src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.220",
+    "@fastify/static": "^10.1.2",
+    "@fastify/websocket": "^11.3.0",
+    "chokidar": "^5.0.0",
+    "fastify": "^5.11.0",
+    "sylva-shared": "^0.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
