@@ -21,7 +21,7 @@ let master: GainNode | null = null;
 let ambient: AmbientNodes | null = null;
 let unlocked = false;
 
-let volume = readNumber(VOLUME_KEY, 0.35);
+let volume = readNumber(VOLUME_KEY, 0.6);
 let muted = readBool(MUTED_KEY, false);
 let ambientOn = readBool(AMBIENT_KEY, false);
 
@@ -129,8 +129,23 @@ interface Note {
 function play(notes: Note[]): void {
   const context = ensureContext();
   if (!context || !master || muted) return;
-  if (context.state === "suspended") return; // not unlocked yet; stay silent
 
+  // A cue fired in the same tick as the unlocking gesture would otherwise be
+  // dropped: resume() is async, so the context is still suspended when the
+  // first cue arrives. Resume, then schedule — if the browser refuses because
+  // there has been no gesture yet, the promise rejects and nothing plays.
+  if (context.state === "suspended") {
+    void context
+      .resume()
+      .then(() => schedule(context, notes))
+      .catch(() => {});
+    return;
+  }
+  schedule(context, notes);
+}
+
+function schedule(context: AudioContext, notes: Note[]): void {
+  if (!master) return;
   const now = context.currentTime;
   for (const note of notes) {
     const osc = context.createOscillator();
@@ -139,7 +154,9 @@ function play(notes: Note[]): void {
     osc.frequency.value = note.freq;
 
     const start = now + note.at;
-    const peak = note.gain ?? 0.16;
+    // Peaks are deliberately conservative per note; the master gain does the
+    // loud/quiet work, so cues stay clean rather than clipping when turned up.
+    const peak = (note.gain ?? 0.16) * 1.6;
     // Fast attack, exponential-ish decay: reads as a blip, not a beep.
     env.gain.setValueAtTime(0, start);
     env.gain.linearRampToValueAtTime(peak, start + 0.008);
