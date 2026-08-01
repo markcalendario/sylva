@@ -21,7 +21,7 @@
   --stream: #7fb7c9; /* branches, links */
 
   /* type */
-  --font-ui: "Space Grotesk", system-ui, sans-serif;
+  --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --font-pixel: "Silkscreen", monospace;
 

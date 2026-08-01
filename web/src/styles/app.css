@@ -459,6 +459,11 @@ button:disabled {
 
 /* ---------- markdown ---------- */
 
+/* Prose wants more air than UI chrome does. */
+.md {
+  line-height: 1.62;
+}
+
 .md > :first-child {
   margin-top: 0;
 }
