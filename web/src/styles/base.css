@@ -16,8 +16,43 @@ body {
   color: var(--moon);
   font-family: var(--font-ui);
   font-size: var(--text-md);
-  line-height: 1.5;
+  line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Kerning and ligatures on for prose; numerals handled per-role below. */
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * Numbers that change in place — costs, counts, ahead/behind — must not
+ * change width as digits change, or the layout twitches while you watch it.
+ * Proportional figures stay on prose, where they read better.
+ */
+.tabular,
+.dirty-count,
+.tree-card-facts,
+.agent-meta,
+.statusstrip,
+.divergence,
+.turn-cost,
+.textsize-value,
+.git-count,
+.dl-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  /* Stops a heading dropping one orphaned word onto its own line. */
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
 }
 
 button {

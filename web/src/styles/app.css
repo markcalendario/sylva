@@ -32,7 +32,7 @@
 .wordmark {
   font-family: var(--font-pixel);
   font-size: var(--text-lg);
-  letter-spacing: 2px;
+  letter-spacing: var(--track-pixel);
   color: var(--moon);
   user-select: none;
   border-radius: var(--radius);
@@ -87,8 +87,8 @@
 
 .landing-title {
   font-family: var(--font-pixel);
-  font-size: calc(34px * var(--text-scale));
-  letter-spacing: 5px;
+  font-size: var(--text-display);
+  letter-spacing: 4px;
   margin: 0 0 var(--pad-3);
 }
 
@@ -96,7 +96,7 @@
   color: var(--moss);
   max-width: 54ch;
   margin: 0 auto var(--pad-4);
-  line-height: 1.6;
+  line-height: var(--leading-relaxed);
 }
 
 .landing-cta {
@@ -133,7 +133,7 @@
   color: var(--moss);
   font-size: var(--text-sm);
   margin: 0;
-  line-height: 1.55;
+  line-height: var(--leading-snug);
 }
 
 .landing-foot {
@@ -169,7 +169,7 @@
 .forest-title {
   font-family: var(--font-pixel);
   font-size: var(--text-xl);
-  letter-spacing: 2px;
+  letter-spacing: var(--track-pixel);
   margin: 0 0 var(--pad-1);
 }
 
@@ -195,7 +195,7 @@
   flex-direction: column;
   align-items: center;
   gap: var(--pad-1);
-  padding: var(--pad-4) var(--pad-3);
+  padding: var(--pad-2) var(--pad-2) var(--pad-4);
   border: 1px solid var(--pine-3);
   border-radius: var(--radius-lg);
   background: var(--pine-1);
@@ -220,15 +220,21 @@
   border-color: var(--ember-dim);
 }
 
-.tree-card-sprite {
+.tree-card-scene {
   position: relative;
-  margin-bottom: var(--pad-1);
+  width: 100%;
+  margin-bottom: var(--pad-2);
 }
 
 .tree-card-dot {
   position: absolute;
-  top: 0;
-  right: -2px;
+  top: var(--pad-2);
+  right: var(--pad-2);
+  z-index: 4;
+}
+
+.forest-grid {
+  --tree-card-min: 210px;
 }
 
 .tree-card-branch {
@@ -249,7 +255,7 @@
 .tree-card-state {
   font-family: var(--font-pixel);
   font-size: var(--text-xxs);
-  letter-spacing: 1px;
+  letter-spacing: var(--track-label);
   color: var(--moss-dim);
   margin-top: var(--pad-1);
 }
@@ -403,6 +409,122 @@
   line-height: 1.5;
 }
 
+/* ---------- sound panel ---------- */
+
+.audio-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: var(--pad-3);
+  background: var(--pine-0);
+  width: 100%;
+}
+
+.audio-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-3);
+}
+
+.audio-row-label {
+  font-size: var(--text-xs);
+  color: var(--moss);
+  width: 8ch;
+  flex-shrink: 0;
+}
+
+.audio-row .audio-volume {
+  flex: 1;
+}
+
+.audio-row-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  width: 4ch;
+  text-align: right;
+}
+
+/* ---------- help / faq ---------- */
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-4);
+  max-height: 58vh;
+  overflow-y: auto;
+  padding-right: var(--pad-2);
+}
+
+.faq-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.faq-section .settings-heading {
+  margin-bottom: var(--pad-2);
+}
+
+.faq {
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.faq:last-child {
+  border-bottom: none;
+}
+
+.faq-q {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pad-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--pad-2) var(--pad-1);
+  color: var(--moon);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+}
+
+.faq-q:hover {
+  color: var(--firefly);
+}
+
+.faq-chevron {
+  color: var(--moss-dim);
+  transition: transform 140ms;
+  flex-shrink: 0;
+}
+
+.faq-open .faq-chevron {
+  transform: rotate(90deg);
+  color: var(--firefly);
+}
+
+.faq-a {
+  color: var(--moss);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  padding: 0 var(--pad-1) var(--pad-3) calc(var(--pad-2) + 1ch);
+  max-width: 66ch;
+}
+
+.faq-a code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--pine-0);
+  border: 1px solid var(--pine-3);
+  border-radius: 4px;
+  padding: 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.faq-a strong {
+  color: var(--moon);
+}
+
 /* ---------- settings sections ---------- */
 
 .settings-section {
@@ -423,7 +545,7 @@
 .settings-heading {
   font-family: var(--font-pixel);
   font-size: var(--text-xs);
-  letter-spacing: 1px;
+  letter-spacing: var(--track-label);
   color: var(--firefly);
   margin: 0;
   text-transform: lowercase;
@@ -492,7 +614,7 @@
   font-family: var(--font-pixel);
   font-size: var(--text-xs);
   color: var(--firefly);
-  letter-spacing: 1px;
+  letter-spacing: var(--track-label);
   margin-top: var(--pad-2);
 }
 
@@ -665,7 +787,7 @@
   font-family: var(--font-pixel);
   font-size: var(--text-xs);
   color: var(--moss-dim);
-  letter-spacing: 2px;
+  letter-spacing: var(--track-pixel);
   padding: var(--pad-3) var(--pad-4) var(--pad-1);
   user-select: none;
 }
@@ -948,6 +1070,7 @@ button:disabled {
   font-family: var(--font-mono);
   font-size: var(--text-lg);
   font-weight: 600;
+  letter-spacing: var(--track-title);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1002,7 +1125,7 @@ button:disabled {
 .welcome-title {
   font-family: var(--font-pixel);
   font-size: var(--text-xl);
-  letter-spacing: 1px;
+  letter-spacing: var(--track-label);
   margin: 0 0 var(--pad-2);
 }
 
@@ -1072,7 +1195,7 @@ button:disabled {
 .prompt-nav-label {
   font-family: var(--font-pixel);
   font-size: var(--text-xxs);
-  letter-spacing: 1px;
+  letter-spacing: var(--track-label);
   color: var(--moss-dim);
   padding: 0 var(--pad-2) var(--pad-2);
   user-select: none;
@@ -1187,9 +1310,11 @@ button:disabled {
 
 /* ---------- markdown ---------- */
 
-/* Prose wants more air than UI chrome does. */
+/* Prose wants more air than UI chrome does, and a measure that doesn't run to
+   the full bubble width on a wide screen. */
 .md {
-  line-height: 1.62;
+  line-height: var(--leading-relaxed);
+  max-width: 68ch;
 }
 
 .md > :first-child {
@@ -1213,19 +1338,33 @@ button:disabled {
   font-weight: 600;
 }
 
-/* Model headings live inside a chat bubble — keep them close to body size. */
+/* Model headings live inside a chat bubble, so the scale is compressed — but
+   the three levels still have to be distinguishable at a glance. Weight and
+   colour carry the hierarchy where size alone can't. */
 .md h1 {
   font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: var(--track-title);
 }
 
 .md h2 {
   font-size: calc(14px * var(--text-scale));
+  font-weight: 600;
+  letter-spacing: var(--track-title);
 }
 
-.md h3,
-.md h4 {
+.md h3 {
   font-size: var(--text-md);
+  font-weight: 600;
   color: var(--moss);
+}
+
+.md h4 {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--moss);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
 }
 
 .md strong {
@@ -1420,7 +1559,7 @@ button:disabled {
   align-self: center;
   font-family: var(--font-pixel);
   font-size: var(--text-xs);
-  letter-spacing: 1px;
+  letter-spacing: var(--track-label);
   color: var(--moss-dim);
   padding: var(--pad-1) 0;
   display: flex;
@@ -1507,7 +1646,7 @@ button:disabled {
 .pixel-label {
   font-family: var(--font-pixel);
   font-size: var(--text-xs);
-  letter-spacing: 1px;
+  letter-spacing: var(--track-label);
   color: var(--firefly);
   text-transform: lowercase;
 }
@@ -2220,4 +2359,59 @@ button:disabled {
     opacity: 0;
     transform: translateY(2px);
   }
+}
+
+/* ---------- permission mode choice ---------- */
+
+.permchoice {
+  display: flex;
+  gap: var(--pad-2);
+  flex-wrap: wrap;
+}
+
+.permchoice-option {
+  flex: 1 1 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  padding: var(--pad-2) var(--pad-3);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-0);
+  color: var(--moss);
+  transition: border-color 140ms, background 140ms, color 140ms;
+}
+
+.permchoice-option:hover {
+  border-color: var(--moss-dim);
+  color: var(--moon);
+}
+
+.permchoice-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.permchoice-hint {
+  font-size: var(--text-xxs);
+  color: var(--moss-dim);
+  line-height: var(--leading-snug);
+}
+
+.permchoice-on {
+  border-color: var(--firefly);
+  background: rgb(255 180 84 / 0.08);
+  color: var(--moon);
+}
+
+.permchoice-danger.permchoice-on {
+  border-color: var(--ember);
+  background: rgb(255 107 91 / 0.1);
+  color: var(--ember);
+}
+
+.permchoice-danger.permchoice-on .permchoice-hint {
+  color: var(--ember);
 }

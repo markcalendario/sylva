@@ -5,9 +5,11 @@ import { AudioControls } from "./AudioControls";
 export function TopBar({
   onAbout,
   onGlobalSettings,
+  onHelp,
 }: {
   onAbout: () => void;
   onGlobalSettings: () => void;
+  onHelp: () => void;
 }) {
   const connection = useSylva((s) => s.connection);
   const focused = useSylva((s) => s.focusedWorktreeId);
@@ -37,6 +39,13 @@ export function TopBar({
       </div>
       <div className="topbar-right">
         <AudioControls compact />
+        <button
+          className="topbar-settings"
+          onClick={onHelp}
+          data-tip="How Sylva works — worktrees, sessions, settings"
+        >
+          ? Help
+        </button>
         <button
           className="topbar-settings"
           onClick={onGlobalSettings}

@@ -6,6 +6,7 @@
  */
 
 const VOLUME_KEY = "sylva.volume";
+const AMBIENT_VOLUME_KEY = "sylva.ambient-volume";
 const MUTED_KEY = "sylva.muted";
 const AMBIENT_KEY = "sylva.ambient";
 
@@ -17,11 +18,16 @@ interface AmbientNodes {
 }
 
 let ctx: AudioContext | null = null;
+/** Mute lives here so one switch silences everything. */
 let master: GainNode | null = null;
+/** Cues and ambience get their own bus so their levels are independent. */
+let cueBus: GainNode | null = null;
+let ambientBus: GainNode | null = null;
 let ambient: AmbientNodes | null = null;
 let unlocked = false;
 
 let volume = readNumber(VOLUME_KEY, 0.6);
+let ambientVolume = readNumber(AMBIENT_VOLUME_KEY, 0.35);
 let muted = readBool(MUTED_KEY, false);
 let ambientOn = readBool(AMBIENT_KEY, false);
 
@@ -42,7 +48,10 @@ function readBool(key: string, fallback: boolean): boolean {
 }
 
 export interface AudioState {
+  /** Level for one-shot cues: chimes, approval prompts, blips. */
   volume: number;
+  /** Level for the ambient bed, independent of cues. */
+  ambientVolume: number;
   muted: boolean;
   ambient: boolean;
 }
@@ -52,10 +61,10 @@ export interface AudioState {
  * rebuilt only when something actually changes — returning a fresh object on
  * every read spins the render loop.
  */
-let snapshot: AudioState = { volume, muted, ambient: ambientOn };
+let snapshot: AudioState = { volume, ambientVolume, muted, ambient: ambientOn };
 
 function notify(): void {
-  snapshot = { volume, muted, ambient: ambientOn };
+  snapshot = { volume, ambientVolume, muted, ambient: ambientOn };
   for (const listener of listeners) listener();
 }
 
@@ -74,8 +83,16 @@ function ensureContext(): AudioContext | null {
   if (!Ctor) return null;
   ctx = new Ctor();
   master = ctx.createGain();
-  master.gain.value = muted ? 0 : volume;
+  master.gain.value = muted ? 0 : 1;
   master.connect(ctx.destination);
+
+  cueBus = ctx.createGain();
+  cueBus.gain.value = volume;
+  cueBus.connect(master);
+
+  ambientBus = ctx.createGain();
+  ambientBus.gain.value = ambientVolume;
+  ambientBus.connect(master);
   return ctx;
 }
 
@@ -98,17 +115,28 @@ export function initAudio(): void {
   window.addEventListener("keydown", unlock);
 }
 
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, Math.round(value * 100) / 100));
+}
+
 export function setVolume(next: number): void {
-  volume = Math.min(1, Math.max(0, Math.round(next * 100) / 100));
+  volume = clamp01(next);
   localStorage.setItem(VOLUME_KEY, String(volume));
-  if (master && ctx) master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.02);
+  if (cueBus && ctx) cueBus.gain.setTargetAtTime(volume, ctx.currentTime, 0.02);
+  notify();
+}
+
+export function setAmbientVolume(next: number): void {
+  ambientVolume = clamp01(next);
+  localStorage.setItem(AMBIENT_VOLUME_KEY, String(ambientVolume));
+  if (ambientBus && ctx) ambientBus.gain.setTargetAtTime(ambientVolume, ctx.currentTime, 0.05);
   notify();
 }
 
 export function setMuted(next: boolean): void {
   muted = next;
   localStorage.setItem(MUTED_KEY, String(muted));
-  if (master && ctx) master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.02);
+  if (master && ctx) master.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.02);
   notify();
 }
 
@@ -149,7 +177,7 @@ function play(notes: Note[]): void {
 }
 
 function schedule(context: AudioContext, notes: Note[]): void {
-  if (!master) return;
+  if (!cueBus) return;
   const now = context.currentTime;
   for (const note of notes) {
     const osc = context.createOscillator();
@@ -167,7 +195,7 @@ function schedule(context: AudioContext, notes: Note[]): void {
     env.gain.exponentialRampToValueAtTime(0.0001, start + note.dur);
 
     osc.connect(env);
-    env.connect(master);
+    env.connect(cueBus);
     osc.start(start);
     osc.stop(start + note.dur + 0.02);
   }
@@ -209,12 +237,12 @@ export function playCue(cue: Cue): void {
 
 function startAmbient(): void {
   const context = ensureContext();
-  if (!context || !master || ambient) return;
+  if (!context || !ambientBus || ambient) return;
   if (context.state === "suspended") return; // starts when audio unlocks
 
   const bed = context.createGain();
   bed.gain.value = 0;
-  bed.connect(master);
+  bed.connect(ambientBus);
   bed.gain.setTargetAtTime(0.5, context.currentTime, 2);
 
   // Wind: filtered noise from a looping buffer.

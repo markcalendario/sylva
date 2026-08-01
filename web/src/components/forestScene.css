@@ -1,0 +1,423 @@
+/* One clearing, many dryads. Positions are in whole pixels and motion is
+   translate-only — pixel art survives translation but not rotation or
+   fractional scaling. */
+
+.clearing {
+  position: relative;
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.clearing-sky {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(90% 70% at 50% 115%, rgb(63 130 68 / 0.16), transparent 68%),
+    linear-gradient(180deg, #0a1211 0%, #101a17 62%, #16211b 100%);
+}
+
+/* A still starfield, drawn with gradients so no image ships. */
+.clearing-stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgb(233 240 228 / 0.5), transparent),
+    radial-gradient(1px 1px at 27% 9%, rgb(233 240 228 / 0.35), transparent),
+    radial-gradient(1px 1px at 41% 24%, rgb(233 240 228 / 0.28), transparent),
+    radial-gradient(1px 1px at 58% 12%, rgb(233 240 228 / 0.45), transparent),
+    radial-gradient(1px 1px at 73% 21%, rgb(233 240 228 / 0.3), transparent),
+    radial-gradient(1px 1px at 88% 8%, rgb(233 240 228 / 0.4), transparent),
+    radial-gradient(1px 1px at 95% 27%, rgb(233 240 228 / 0.25), transparent);
+  animation: twinkle 7s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+
+.clearing-plots {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  padding: var(--pad-4) var(--pad-3) 30px;
+  align-items: flex-end;
+  scrollbar-width: thin;
+  /* Earth drawn across the row's bottom padding: the props stand on it, and it
+     stays continuous under every plot however far the row scrolls. */
+  background:
+    repeating-linear-gradient(90deg, #3f8244 0 2px, transparent 2px 5px) 0 calc(100% - 27px) / 100% 3px no-repeat,
+    repeating-linear-gradient(90deg, #24402a 0 3px, #1d3623 3px 6px) 0 calc(100% - 24px) / 100% 3px no-repeat,
+    linear-gradient(180deg, #1d3623 0%, #14241a 100%) 0 100% / 100% 30px no-repeat;
+}
+
+/* ---------- a plot: tree + stump + bench + its dryad ---------- */
+
+.plot {
+  position: relative;
+  flex: 0 0 240px;
+  height: 156px;
+  border-left: 1px dashed rgb(63 130 68 / 0.16);
+  border-radius: var(--radius);
+  text-align: left;
+  transition: background 160ms;
+}
+
+.plot:hover {
+  background: rgb(233 240 228 / 0.04);
+}
+
+/* Lift the hovered plot's nameplate above its neighbours. */
+.plot:hover .actor,
+.plot-focused .actor {
+  z-index: 6;
+}
+
+.plot-focused {
+  background: rgb(255 180 84 / 0.07);
+  box-shadow: inset 0 0 0 1px var(--firefly-dim);
+}
+
+.plot-tree {
+  position: absolute;
+  bottom: 0;
+  left: 6px;
+}
+
+.plot-stump {
+  position: absolute;
+  bottom: 0;
+  left: 74px;
+}
+
+.plot-bench {
+  position: absolute;
+  bottom: 0;
+  left: 150px;
+  filter: brightness(0.75);
+  transition: filter 300ms;
+}
+
+.plot-bench-lit {
+  filter: brightness(1.1) drop-shadow(0 0 6px rgb(255 180 84 / 0.4));
+}
+
+.plot-error .plot-tree {
+  filter: saturate(0.5) brightness(0.75);
+}
+
+/* ---------- the actor ---------- */
+
+.actor {
+  position: absolute;
+  bottom: -2px;
+  left: 78px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* The walk. Long and eased so it reads as travel, not a teleport. */
+  transition: transform 2.6s cubic-bezier(0.45, 0.05, 0.35, 1);
+}
+
+.actor-at-bench {
+  transform: translateX(76px);
+}
+
+.actor-body {
+  position: relative;
+}
+
+/* Footfalls while working or walking: a two-step bob. */
+.plot-working .actor-body,
+.plot-error .actor-body {
+  animation: step 560ms steps(2, end) infinite;
+}
+
+@keyframes step {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.plot-success .actor-body {
+  animation: cheer 900ms cubic-bezier(0.3, 0.8, 0.4, 1) infinite;
+}
+
+@keyframes cheer {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-10px);
+  }
+  40% {
+    transform: translateY(-3px);
+  }
+}
+
+.plot-idle .actor-body {
+  animation: doze 4.5s ease-in-out infinite;
+}
+
+@keyframes doze {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+
+.plot-error .actor-body {
+  filter: saturate(0.7);
+}
+
+/* ---------- nameplate ---------- */
+
+.actor-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 112px;
+  margin-bottom: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgb(12 17 16 / 0.82);
+  border: 1px solid var(--pine-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  line-height: 1.6;
+  color: var(--moss);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plot-working .actor-name {
+  color: var(--firefly);
+  border-color: var(--firefly-dim);
+}
+
+.plot-success .actor-name {
+  color: var(--sapling);
+  border-color: var(--sapling-dim);
+}
+
+.plot-error .actor-name {
+  color: var(--ember);
+  border-color: var(--ember-dim);
+}
+
+.actor-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--firefly);
+  box-shadow: 0 0 5px var(--firefly);
+  flex-shrink: 0;
+}
+
+/* ---------- sleeping ---------- */
+
+.zzz {
+  position: absolute;
+  right: -2px;
+  bottom: 26px;
+  font-family: var(--font-pixel);
+  font-size: var(--text-xs);
+  color: var(--moss);
+  opacity: 0;
+  animation: zzz-drift 3.6s ease-out infinite;
+  pointer-events: none;
+}
+
+.zzz-b {
+  animation-delay: 1.8s;
+}
+
+@keyframes zzz-drift {
+  0% {
+    transform: translate(0, 0) scale(0.7);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(12px, -22px) scale(1.1);
+    opacity: 0;
+  }
+}
+
+/* ---------- particles ---------- */
+
+.plot-firefly,
+.plot-mote,
+.plot-spark {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.plot-firefly {
+  width: 3px;
+  height: 3px;
+  background: var(--firefly);
+  box-shadow: 0 0 6px var(--firefly);
+  bottom: 54px;
+  left: 152px;
+  animation: firefly-round 6s linear infinite;
+}
+
+@keyframes firefly-round {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0.25;
+  }
+  25% {
+    transform: translate(28px, -16px);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(52px, 2px);
+    opacity: 0.7;
+  }
+  75% {
+    transform: translate(24px, 14px);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(0, 0);
+    opacity: 0.25;
+  }
+}
+
+.plot-mote {
+  width: 2px;
+  height: 2px;
+  background: var(--firefly);
+  bottom: 38px;
+  left: 166px;
+  opacity: 0;
+  animation: mote-rise 2s ease-out infinite;
+}
+
+.plot-mote-b {
+  animation-delay: 1s;
+  left: 176px;
+}
+
+@keyframes mote-rise {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-24px);
+    opacity: 0;
+  }
+}
+
+.plot-spark {
+  width: 3px;
+  height: 3px;
+  background: var(--sapling);
+  box-shadow: 0 0 5px var(--sapling);
+  bottom: 62px;
+  left: 96px;
+  animation: spark-pop 1.7s ease-out infinite;
+}
+
+.plot-spark-b {
+  animation-delay: 0.5s;
+  left: 112px;
+  background: var(--firefly);
+  box-shadow: 0 0 5px var(--firefly);
+}
+
+.plot-spark-c {
+  animation-delay: 1s;
+  left: 80px;
+}
+
+@keyframes spark-pop {
+  0% {
+    transform: translateY(8px) scale(0.4);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-18px) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ---------- caption ---------- */
+
+.plot-caption {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-size: var(--text-xxs);
+  color: var(--moss-dim);
+  z-index: 4;
+}
+
+.plot-repo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+.plot-facts {
+  font-family: var(--font-mono);
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.plot-cost {
+  color: var(--firefly);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actor,
+  .actor-body,
+  .zzz,
+  .plot-firefly,
+  .plot-mote,
+  .plot-spark,
+  .clearing-stars {
+    transition: none;
+    animation: none;
+  }
+}

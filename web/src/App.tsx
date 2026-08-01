@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { useEffect, useState } from "react";
 import { AboutDialog } from "./components/dialogs/AboutDialog";
 import { GlobalSettingsDialog } from "./components/dialogs/GlobalSettingsDialog";
+import { HelpDialog } from "./components/dialogs/HelpDialog";
 import { RegisterRepoDialog } from "./components/dialogs/RegisterRepoDialog";
 import { api } from "./lib/api";
 import { startWs } from "./lib/ws";
@@ -24,6 +25,7 @@ function Shell() {
   const [showAbout, setShowAbout] = useState(false);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     startWs(() => {
@@ -38,7 +40,7 @@ function Shell() {
 
   return (
     <div className="shell">
-      <TopBar onAbout={() => setShowAbout(true)} onGlobalSettings={() => setShowGlobalSettings(true)} />
+      <TopBar onAbout={() => setShowAbout(true)} onGlobalSettings={() => setShowGlobalSettings(true)} onHelp={() => setShowHelp(true)} />
       <div className="shell-body">
         <Sidebar />
         <MainPanel
@@ -49,6 +51,7 @@ function Shell() {
       <StatusStrip />
 
       <AboutDialog open={showAbout} onClose={() => setShowAbout(false)} />
+      <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
       <GlobalSettingsDialog
         open={showGlobalSettings}
         onClose={() => setShowGlobalSettings(false)}
