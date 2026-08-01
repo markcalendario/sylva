@@ -79,6 +79,15 @@ const Z_SIGN = 900;
 const Z_AIR = 940;
 
 /**
+ * Where the scene last painted each dryad. Module state on purpose: leaving the
+ * forest unmounts the scene, and a dryad that changed station while you were
+ * away has to be put back where you last saw it so the walk still plays when
+ * you return. A dryad we have never painted starts at the camp, which is where
+ * one is when nothing is running.
+ */
+const standing = new Map<string, StationKey>();
+
+/**
  * The overworld. Stations are places — camp, workshop, grove, notice board —
  * and each dryad walks to the one its state names. The map is generated to the
  * width of this panel, so it fits without scrolling sideways at any window
@@ -134,11 +143,56 @@ function Plane({
   // its own, show that instead; the roster and the tooltip keep the full name.
   const labels = useMemo(() => byLeafSegment(plots), [plots]);
 
+  // Position comes from where each dryad is *painted*, which lags where its
+  // state says it should be until the walk has been kicked off below. A CSS
+  // transition needs a value to move from, so rendering an actor straight into
+  // its destination — which is what happens when you open the forest after
+  // starting an agent elsewhere — teleports it instead of walking it.
+  const [painted, setPainted] = useState<Record<string, StationKey>>(() =>
+    Object.fromEntries(plots.map((p) => [p.worktree.id, standing.get(p.worktree.id) ?? "camp"])),
+  );
+  const stationFor = (plot: Plot): StationKey =>
+    painted[plot.worktree.id] ?? standing.get(plot.worktree.id) ?? "camp";
+
+  const destinations = plots.map((p) => `${p.worktree.id}:${STATE_STATION[p.state]}`).join(",");
+  useEffect(() => {
+    // Two frames deep: the first commit has to reach the screen at the old
+    // station before the new one is applied, or the browser folds both into a
+    // single paint and there is nothing to animate between.
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        setPainted((current) => {
+          let moved = false;
+          const next = { ...current };
+          for (const plot of plots) {
+            const target = STATE_STATION[plot.state];
+            standing.set(plot.worktree.id, target);
+            if (next[plot.worktree.id] !== target) {
+              next[plot.worktree.id] = target;
+              moved = true;
+            }
+          }
+          // Same object back when nobody moved, so this can't spin the loop.
+          return moved ? next : current;
+        });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+    // `plots` is read inside; `destinations` is what decides if it matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destinations]);
+
   const taken = new Map<StationKey, number>();
   const placed = [...plots]
     .sort((a, b) => a.worktree.id.localeCompare(b.worktree.id))
     .map((plot) => {
-      const key = STATE_STATION[plot.state];
+      // Claimed against the painted station, so a dryad reserves its place the
+      // moment it sets off and no two ever glide onto the same spot.
+      const key = stationFor(plot);
       const station = stations[key];
       const next = taken.get(key) ?? 0;
       taken.set(key, next + 1);
