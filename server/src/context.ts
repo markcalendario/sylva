@@ -1,5 +1,6 @@
 import { GitService } from "./services/git.js";
 import { GitOps } from "./services/gitOps.js";
+import { SessionManager } from "./services/sessions.js";
 import { Store } from "./services/store.js";
 import { WatcherManager } from "./services/watcher.js";
 import { Workspace } from "./services/workspace.js";
@@ -13,6 +14,7 @@ export interface AppContext {
   workspace: Workspace;
   gitOps: GitOps;
   watchers: WatcherManager;
+  sessions: SessionManager;
 }
 
 export async function createContext(baseDir?: string): Promise<AppContext> {
@@ -34,5 +36,6 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
     });
   };
 
-  return { store, git, hub, workspace, gitOps, watchers };
+  const sessions = new SessionManager(store, workspace, watchers, hub);
+  return { store, git, hub, workspace, gitOps, watchers, sessions };
 }

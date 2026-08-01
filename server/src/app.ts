@@ -3,6 +3,7 @@ import websocket from "@fastify/websocket";
 import { ZodError } from "zod";
 import type { AppContext } from "./context.js";
 import { GitError, HttpError } from "./lib/errors.js";
+import { registerAgentRoutes } from "./routes/agent.js";
 import { registerGitRoutes } from "./routes/git.js";
 import { registerRepoRoutes } from "./routes/repos.js";
 import { originGuard } from "./security.js";
@@ -35,6 +36,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   registerRepoRoutes(app, ctx);
   registerGitRoutes(app, ctx);
+  registerAgentRoutes(app, ctx);
 
   app.get("/ws", { websocket: true }, (socket) => {
     ctx.hub.add(socket);
@@ -42,6 +44,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   app.addHook("onClose", async () => {
     ctx.hub.close();
+    await ctx.sessions.shutdown();
     await ctx.watchers.closeAll();
   });
 
