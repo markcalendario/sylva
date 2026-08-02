@@ -1,51 +1,65 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Eraser, ExternalLink, Play, RotateCcw, Square } from "lucide-react";
+import type { RunnerLine } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { ANSI_INITIAL, parseAnsiLine, type AnsiState } from "../lib/ansi";
 import { NO_EVENTS, useSylva } from "../state/store";
 
 /**
- * The project, running. Not a terminal — nothing is typed at it — but it reads
- * like one, because the output *is* terminal output and stripping its colour
- * throws away the part that tells errors from progress at a glance.
+ * The projects, running.
+ *
+ * Not a terminal — nothing is typed at it — but it reads like one, because the
+ * output *is* terminal output and stripping its colour throws away the part
+ * that tells errors from progress at a glance.
+ *
+ * With several worktrees the logs are merged rather than stacked in separate
+ * panes: the moment worth seeing is an old system and a new one booting
+ * together and one of them failing, and two scrolling panes leave you to
+ * correlate that yourself.
  */
-export function RunPanel({ worktreeId }: { worktreeId: string }) {
-  const state = useSylva((s) => s.runners[worktreeId]);
-  const lines = useSylva((s) => s.runnerOutput[worktreeId] ?? NO_EVENTS);
+export function RunPanel({ members }: { members: string[] }) {
+  const runners = useSylva((s) => s.runners);
+  const output = useSylva((s) => s.runnerOutput);
+  const index = useSylva((s) => s.worktreeIndex);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const shared = members.length > 1;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
-  // The runner outlives this tab, so arriving means catching up on whatever it
+  // A runner outlives this tab, so arriving means catching up on whatever it
   // has been saying while we were elsewhere.
+  const memberKey = members.join(",");
   useEffect(() => {
-    void api
-      .runner(worktreeId)
-      .then(({ state, lines }) => useSylva.getState().seedRunner(worktreeId, state, lines))
-      .catch(() => {});
-  }, [worktreeId]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
-  }, [lines.length]);
+    for (const id of memberKey ? memberKey.split(",") : []) {
+      void api
+        .runner(id)
+        .then(({ state, lines }) => useSylva.getState().seedRunner(id, state, lines))
+        .catch(() => {});
+    }
+  }, [memberKey]);
 
   /**
-   * SGR state carries from one line to the next in a real terminal, so the
-   * whole buffer is parsed as one run rather than each line in isolation —
-   * otherwise a colour opened on one line is lost on the next.
+   * One log in the order things actually happened. Each worktree's SGR state is
+   * carried separately — colour opened by one process must not bleed into
+   * another's line just because they interleaved.
    */
   const rendered = useMemo(() => {
-    let carry: AnsiState = ANSI_INITIAL;
-    return lines.map((line) => {
-      const parsed = parseAnsiLine(line.text, carry);
-      carry = parsed.next;
-      return { line, parsed };
+    const ids = memberKey ? memberKey.split(",") : [];
+    const all: { worktreeId: string; line: RunnerLine }[] = ids.flatMap((id) =>
+      (output[id] ?? NO_EVENTS).map((line) => ({ worktreeId: id, line })),
+    );
+    all.sort((a, b) => a.line.at.localeCompare(b.line.at) || a.line.seq - b.line.seq);
+
+    const carry = new Map<string, AnsiState>();
+    return all.map(({ worktreeId, line }) => {
+      const parsed = parseAnsiLine(line.text, carry.get(worktreeId) ?? ANSI_INITIAL);
+      carry.set(worktreeId, parsed.next);
+      return { worktreeId, line, parsed };
     });
-  }, [lines]);
+  }, [memberKey, output]);
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -59,72 +73,70 @@ export function RunPanel({ worktreeId }: { worktreeId: string }) {
     }
   };
 
-  const running = state?.status === "running";
+  /** Best effort across every member; one refusal shouldn't stop the others. */
+  const actAll = async (fn: (id: string) => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    for (const id of members) {
+      await fn(id).catch(() => {});
+    }
+    setBusy(false);
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [rendered.length]);
+
+  const anyRunning = members.some((id) => runners[id]?.status === "running");
+  const anyLines = rendered.length > 0;
 
   return (
     <div className="run-panel">
-      <div className="run-bar">
-        <button
-          className={running ? "btn-danger run-toggle" : "btn-primary run-toggle"}
-          disabled={busy || !state}
-          onClick={() =>
-            void act(() => (running ? api.stopRunner(worktreeId) : api.startRunner(worktreeId)))
-          }
-          data-tip={
-            running ? "Stop this command and everything it started" : "Run this project here"
-          }
-        >
-          {running ? <Square size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}
-          {running ? "Stop" : "Run"}
-        </button>
-
-        {state && <CommandField state={state} />}
-
-        <span className="run-status">
-          {running && (
-            <span className="run-live" data-tip="The command is running right now">
-              <span className="run-dot" />
-              running
-            </span>
-          )}
-          {state?.status === "exited" && (
-            <span
-              className={state.exitCode === 0 ? "run-exit-ok" : "run-exit-bad"}
-              data-tip={
-                state.exitCode === 0
-                  ? "The command finished cleanly"
-                  : "The command stopped with an error"
-              }
-            >
-              exited{state.exitCode === null ? "" : ` · ${state.exitCode}`}
-            </span>
-          )}
-        </span>
-
-        {state?.url && (
-          <a
-            className="run-url"
-            href={state.url}
-            target="_blank"
-            rel="noreferrer"
-            data-tip="Open what this command is serving, in a new tab"
-          >
-            <ExternalLink size={12} />
-            {state.url}
-          </a>
-        )}
-
-        {lines.length > 0 && (
+      {shared && (
+        <div className="run-all-bar">
           <button
-            className="ghost run-clear"
-            onClick={() => useSylva.getState().clearRunnerOutput(worktreeId)}
-            aria-label="Clear the output"
-            data-tip="Clear what's on screen — the command keeps running"
+            className="btn-primary run-toggle"
+            disabled={busy}
+            onClick={() => void actAll((id) => api.startRunner(id))}
+            data-tip="Start every project this dryad tends"
           >
-            <Eraser size={14} />
+            <Play size={13} fill="currentColor" /> Run all
           </button>
-        )}
-      </div>
+          <button
+            className="btn-quiet run-toggle"
+            disabled={busy || !anyRunning}
+            onClick={() => void actAll((id) => api.stopRunner(id))}
+            data-tip="Stop everything that's running"
+          >
+            <Square size={13} fill="currentColor" /> Stop all
+          </button>
+          <span className="run-all-gap" />
+          {anyLines && (
+            <button
+              className="ghost"
+              onClick={() => {
+                for (const id of members) useSylva.getState().clearRunnerOutput(id);
+              }}
+              aria-label="Clear the output"
+              data-tip="Clear what's on screen — the commands keep running"
+            >
+              <Eraser size={14} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {members.map((id) => (
+        <RunnerRow
+          key={id}
+          worktreeId={id}
+          shared={shared}
+          busy={busy}
+          onAct={act}
+          canClear={!shared && anyLines}
+        />
+      ))}
 
       {error && <div className="run-error">{error}</div>}
 
@@ -140,36 +152,132 @@ export function RunPanel({ worktreeId }: { worktreeId: string }) {
       >
         {rendered.length === 0 ? (
           <div className="run-empty">
-            {running
-              ? "Started — waiting for it to say something."
+            {anyRunning
+              ? "Started — waiting for something to be said."
               : "Nothing has run here yet. Run starts the command above in this worktree."}
           </div>
         ) : (
-          rendered.map(({ line, parsed }) => (
+          rendered.map(({ worktreeId, line, parsed }) => (
             <div
-              key={line.seq}
+              key={`${worktreeId}:${line.seq}`}
               className={`run-line ${line.stream === "stderr" ? "run-line-err" : ""}`}
             >
-              {parsed.segments.length === 0
-                ? " "
-                : parsed.segments.map((segment, i) => (
-                    <span
-                      key={i}
-                      className={segment.className}
-                      style={{
-                        ...(parsed.styles[i]?.fg ? { color: parsed.styles[i]?.fg } : {}),
-                        ...(parsed.styles[i]?.bg
-                          ? { background: parsed.styles[i]?.bg }
-                          : {}),
-                      }}
-                    >
-                      {segment.text}
-                    </span>
-                  ))}
+              {/* Which project said it, only when more than one can. */}
+              {shared && (
+                <span
+                  className="run-line-where"
+                  data-tip={index[worktreeId]?.repoName ?? worktreeId}
+                >
+                  {(index[worktreeId]?.repoName ?? worktreeId).slice(0, 10)}
+                </span>
+              )}
+              <span className="run-line-text">
+                {parsed.segments.length === 0
+                  ? " "
+                  : parsed.segments.map((segment, i) => (
+                      <span
+                        key={i}
+                        className={segment.className}
+                        style={{
+                          ...(parsed.styles[i]?.fg ? { color: parsed.styles[i]?.fg } : {}),
+                          ...(parsed.styles[i]?.bg ? { background: parsed.styles[i]?.bg } : {}),
+                        }}
+                      >
+                        {segment.text}
+                      </span>
+                    ))}
+              </span>
             </div>
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+/** One worktree's command: what it is, whether it's up, and where it's served. */
+function RunnerRow({
+  worktreeId,
+  shared,
+  busy,
+  onAct,
+  canClear,
+}: {
+  worktreeId: string;
+  shared: boolean;
+  busy: boolean;
+  onAct: (fn: () => Promise<unknown>) => Promise<void>;
+  canClear: boolean;
+}) {
+  const state = useSylva((s) => s.runners[worktreeId]);
+  const place = useSylva((s) => s.worktreeIndex[worktreeId]);
+  const running = state?.status === "running";
+
+  return (
+    <div className="run-bar">
+      {shared && (
+        <span className="run-bar-where" data-tip={place?.repoName ?? worktreeId}>
+          {place?.repoName ?? worktreeId.slice(0, 7)}
+        </span>
+      )}
+      <button
+        className={running ? "btn-danger run-toggle" : "btn-primary run-toggle"}
+        disabled={busy || !state}
+        onClick={() =>
+          void onAct(() => (running ? api.stopRunner(worktreeId) : api.startRunner(worktreeId)))
+        }
+        data-tip={running ? "Stop this command and everything it started" : "Run this project here"}
+      >
+        {running ? <Square size={13} fill="currentColor" /> : <Play size={13} fill="currentColor" />}
+        {running ? "Stop" : "Run"}
+      </button>
+
+      {state && <CommandField state={state} />}
+
+      <span className="run-status">
+        {running && (
+          <span className="run-live" data-tip="The command is running right now">
+            <span className="run-dot" />
+            running
+          </span>
+        )}
+        {state?.status === "exited" && (
+          <span
+            className={state.exitCode === 0 ? "run-exit-ok" : "run-exit-bad"}
+            data-tip={
+              state.exitCode === 0
+                ? "The command finished cleanly"
+                : "The command stopped with an error"
+            }
+          >
+            exited{state.exitCode === null ? "" : ` · ${state.exitCode}`}
+          </span>
+        )}
+      </span>
+
+      {state?.url && (
+        <a
+          className="run-url"
+          href={state.url}
+          target="_blank"
+          rel="noreferrer"
+          data-tip="Open what this command is serving, in a new tab"
+        >
+          <ExternalLink size={12} />
+          {state.url}
+        </a>
+      )}
+
+      {canClear && (
+        <button
+          className="ghost run-clear"
+          onClick={() => useSylva.getState().clearRunnerOutput(worktreeId)}
+          aria-label="Clear the output"
+          data-tip="Clear what's on screen — the command keeps running"
+        >
+          <Eraser size={14} />
+        </button>
+      )}
     </div>
   );
 }

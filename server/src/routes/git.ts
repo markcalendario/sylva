@@ -20,6 +20,10 @@ const pathsSchema = z.union([
   z.object({ paths: z.array(z.string().min(1)).min(1) }),
 ]);
 const commitSchema = z.object({ message: z.string() });
+const commitManySchema = z.object({
+  worktreeIds: z.array(z.string().min(1)).min(1).max(8),
+  message: z.string(),
+});
 const pushSchema = z.object({ setUpstream: z.boolean().optional() }).default({});
 const diffQuerySchema = z.object({
   path: z.string().min(1),
@@ -80,6 +84,16 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     const body = commitSchema.parse(req.body);
     const result = await gitOps.commit(worktreeId, body.message);
     await broadcastStatus(worktreeId);
+    return result;
+  });
+
+  /** One message, several worktrees; the result says what actually landed. */
+  app.post("/api/worktrees/commit-many", async (req) => {
+    const body = commitManySchema.parse(req.body);
+    const result = await gitOps.commitMany(body.worktreeIds, body.message);
+    for (const outcome of result.results) {
+      if (outcome.ok) await broadcastStatus(outcome.worktreeId);
+    }
     return result;
   });
 

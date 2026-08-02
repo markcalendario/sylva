@@ -909,14 +909,16 @@
   position: relative;
 }
 
+/* A selected row is marked with a crisp rule down its edge, full height. The
+   rounded, inset version read as a half-moon rather than as an edge — a marker
+   that draws attention to its own shape instead of to the row. */
 .active-bar::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 999px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
   background: var(--firefly);
 }
 
@@ -968,10 +970,9 @@
   content: "";
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 999px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
   background: var(--firefly);
 }
 
@@ -1323,10 +1324,9 @@ button:disabled {
   content: "";
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 999px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
   background: var(--firefly);
 }
 
@@ -2149,11 +2149,20 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* Sticky rather than merely last: it stays reachable while the lists above it
-   scroll, which is the whole point of moving the scroll inside. */
 .commit-form {
   border-top: 1px solid var(--pine-3);
   padding-top: var(--pad-3);
+}
+
+/* Sticky rather than merely last: it stays reachable while the lists above it
+   scroll, which is the whole point of moving the scroll inside.
+   Only for a single worktree — with several, each section carries its own box
+   and several sticky boxes would stack up and eat the panel. */
+.git-section:not(.git-section-shared) .commit-form {
+  position: sticky;
+  bottom: 0;
+  background: var(--pine-0);
+  padding-bottom: var(--pad-2);
 }
 
 .diff-close {
@@ -2197,10 +2206,9 @@ button:disabled {
   content: "";
   position: absolute;
   left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  border-radius: 999px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
   background: var(--firefly);
 }
 
@@ -4465,4 +4473,227 @@ a svg,
 .rail-count-shared {
   background: var(--firefly-dim);
   color: var(--moon);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Shared panels — one dryad, several worktrees
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ---------- git: a section per worktree ---------- */
+
+.git-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-3);
+}
+
+.git-section-shared {
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: var(--pad-2);
+  background: var(--pine-1);
+}
+
+.git-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+}
+
+.git-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  flex: 1;
+  min-width: 0;
+  color: var(--moon);
+  text-align: left;
+}
+
+.git-section-repo {
+  font-size: var(--text-xs);
+  color: var(--moss);
+  flex-shrink: 0;
+}
+
+.git-section-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--moon);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-section-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  flex-shrink: 0;
+}
+
+.git-section-actions {
+  display: flex;
+  gap: var(--pad-2);
+  flex-wrap: wrap;
+}
+
+.git-toolbar-title {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-label);
+  color: var(--firefly);
+}
+
+.git-history-lane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+}
+
+.git-lane-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pad-2);
+  padding-bottom: var(--pad-1);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.diff-worktree {
+  font-size: var(--text-xs);
+  color: var(--moss);
+  background: var(--pine-2);
+  border-radius: var(--radius);
+  padding: 1px var(--pad-2);
+  flex-shrink: 0;
+}
+
+/* The shared commit is the one thing here that spans repositories, so it is
+   the one thing marked. */
+.commit-form-shared {
+  border-top: 1px solid var(--firefly-dim);
+  padding-top: var(--pad-3);
+}
+
+.commit-shared-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  color: var(--firefly);
+  margin-bottom: var(--pad-2);
+}
+
+.commit-shared-where {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  color: var(--moss-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+}
+
+/* ---------- files: where a row came from ---------- */
+
+.file-where,
+.run-bar-where {
+  font-size: var(--text-xs);
+  color: var(--moss);
+  background: var(--pine-2);
+  border-radius: var(--radius);
+  padding: 0 var(--pad-2);
+  flex-shrink: 0;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-worktree-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  width: 100%;
+  padding: var(--pad-2);
+  color: var(--moon);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.tree-worktree-head:hover {
+  background: var(--pine-2);
+}
+
+.tree-worktree-repo {
+  font-size: var(--text-xs);
+  color: var(--moss);
+}
+
+.tree-worktree-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--moon);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-group-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pad-2);
+  padding: var(--pad-2) var(--pad-2) var(--pad-1);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.tree-group-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  color: var(--moss-dim);
+}
+
+/* ---------- run: several projects, one log ---------- */
+
+.run-all-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  padding: var(--pad-2) var(--pad-4);
+  border-bottom: 1px solid var(--pine-3);
+  background: var(--pine-1);
+}
+
+.run-all-gap {
+  flex: 1;
+}
+
+.run-panel .run-bar + .run-bar {
+  border-top: 1px solid var(--pine-3);
+}
+
+.run-line {
+  display: flex;
+  gap: var(--pad-2);
+}
+
+.run-line-where {
+  flex-shrink: 0;
+  color: var(--moss-dim);
+  border-right: 1px solid var(--pine-3);
+  padding-right: var(--pad-2);
+  min-width: 10ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.run-line-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

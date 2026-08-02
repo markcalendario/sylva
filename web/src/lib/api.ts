@@ -6,6 +6,7 @@ import type {
   Attachment,
   BranchInfo,
   CommitGraph,
+  CommitManyResult,
   DirListing,
   FileContent,
   FileDiff,
@@ -128,6 +129,11 @@ export const api = {
     request<{ head: string }>(`/api/worktrees/${worktreeId}/commit`, {
       method: "POST",
       body: JSON.stringify({ message }),
+    }),
+  commitMany: (worktreeIds: string[], message: string) =>
+    request<CommitManyResult>("/api/worktrees/commit-many", {
+      method: "POST",
+      body: JSON.stringify({ worktreeIds, message }),
     }),
   recentFiles: (worktreeId: string) =>
     request<FileEvent[]>(`/api/worktrees/${worktreeId}/recent-files`),

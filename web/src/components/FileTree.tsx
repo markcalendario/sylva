@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, File as FileIcon, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ContentSearchResponse, FileSearchResponse, TreeEntry } from "sylva-shared";
 import { api } from "../lib/api";
+import { useSylva } from "../state/store";
 import { useFileContent, useTree } from "../lib/queries";
 
 /**
@@ -9,14 +10,16 @@ import { useFileContent, useTree } from "../lib/queries";
  * expansion rather than up front — a repository is far too big to walk eagerly,
  * and you only ever look at a few branches of it.
  */
-export function FileTree({ worktreeId }: { worktreeId: string }) {
-  const [selected, setSelected] = useState<string | null>(null);
+export function FileTree({ members }: { members: string[] }) {
+  /** A file being read, and the worktree it lives in. */
+  const [selected, setSelected] = useState<{ worktreeId: string; path: string } | null>(null);
   const [query, setQuery] = useState("");
   /** Two different questions: "where is the file called X" and "where is X written". */
   const [mode, setMode] = useState<"name" | "text">("name");
   const [highlight, setHighlight] = useState<number | null>(null);
-  const results = useFileSearch(worktreeId, mode === "name" ? query : "");
-  const content = useContentSearch(worktreeId, mode === "text" ? query : "");
+  const shared = members.length > 1;
+  const results = useFileSearch(members, mode === "name" ? query : "");
+  const content = useContentSearch(members, mode === "text" ? query : "");
 
   return (
     <div className="tree-panel">
@@ -65,24 +68,49 @@ export function FileTree({ worktreeId }: { worktreeId: string }) {
             clearing the box returns every folder you had expanded. */}
         {query.trim() ? (
           mode === "name" ? (
-            <SearchResults state={results} selected={selected} onSelect={setSelected} />
+            <SearchResults
+              groups={results}
+              shared={shared}
+              selected={selected}
+              onSelect={(worktreeId, path) => {
+                setSelected({ worktreeId, path });
+                setHighlight(null);
+              }}
+            />
           ) : (
             <ContentResults
-              state={content}
+              groups={content}
+              shared={shared}
               selected={selected}
-              onSelect={(path, line) => {
-                setSelected(path);
+              onSelect={(worktreeId, path, line) => {
+                setSelected({ worktreeId, path });
                 setHighlight(line);
               }}
             />
           )
+        ) : shared ? (
+          /* A root of worktrees. With one member this level is skipped
+             entirely, so an ordinary worktree gains no extra click. */
+          members.map((id) => (
+            <WorktreeBranch key={id} worktreeId={id} selected={selected} onSelect={setSelected} />
+          ))
         ) : (
-          <Directory worktreeId={worktreeId} path="" selected={selected} onSelect={setSelected} />
+          <Directory
+            worktreeId={members[0] ?? ""}
+            path=""
+            selected={selected?.path ?? null}
+            onSelect={(path) => setSelected({ worktreeId: members[0] ?? "", path })}
+          />
         )}
       </div>
       <div className="tree-view">
         {selected ? (
-          <FilePreview worktreeId={worktreeId} path={selected} highlight={highlight} />
+          <FilePreview
+            key={`${selected.worktreeId}:${selected.path}`}
+            worktreeId={selected.worktreeId}
+            path={selected.path}
+            highlight={highlight}
+          />
         ) : (
           <div className="tree-empty">Pick a file to read it.</div>
         )}
@@ -91,190 +119,267 @@ export function FileTree({ worktreeId }: { worktreeId: string }) {
   );
 }
 
-interface SearchState {
-  loading: boolean;
-  data: FileSearchResponse | null;
+/** One worktree's share of a search. Grouped, never merged into one list. */
+interface SearchGroup<T> {
+  worktreeId: string;
+  data: T | null;
   failed: boolean;
+}
+
+interface SearchState<T> {
+  loading: boolean;
+  groups: SearchGroup<T>[];
 }
 
 /**
  * Search as you type, debounced so a fast typist doesn't set a filesystem walk
  * going for every keystroke. The previous results stay on screen while the next
  * ones are fetched — blanking the list mid-typing makes it feel broken.
+ *
+ * Fanned out across members and kept grouped: a cap reached in one worktree
+ * says nothing about the others, and merging the lists would lose that.
  */
-function useFileSearch(worktreeId: string, query: string): SearchState {
-  const [state, setState] = useState<SearchState>({ loading: false, data: null, failed: false });
+function useSearchAcross<T>(
+  members: string[],
+  query: string,
+  minLength: number,
+  delay: number,
+  fetch: (worktreeId: string, q: string) => Promise<T>,
+): SearchState<T> {
+  const memberKey = members.join(",");
+  const [state, setState] = useState<SearchState<T>>({ loading: false, groups: [] });
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (!trimmed) {
-      setState({ loading: false, data: null, failed: false });
+    if (trimmed.length < minLength) {
+      setState({ loading: false, groups: [] });
       return;
     }
-    setState((s) => ({ ...s, loading: true, failed: false }));
+    setState((s) => ({ ...s, loading: true }));
     let cancelled = false;
+    const ids = memberKey ? memberKey.split(",") : [];
     const timer = window.setTimeout(() => {
-      api
-        .searchFiles(worktreeId, trimmed)
-        .then((data) => {
-          // A slow response for an old query must not overwrite a newer one.
-          if (!cancelled) setState({ loading: false, data, failed: false });
-        })
-        .catch(() => {
-          if (!cancelled) setState({ loading: false, data: null, failed: true });
-        });
-    }, 150);
+      void Promise.all(
+        ids.map((id) =>
+          fetch(id, trimmed).then(
+            (data): SearchGroup<T> => ({ worktreeId: id, data, failed: false }),
+            (): SearchGroup<T> => ({ worktreeId: id, data: null, failed: true }),
+          ),
+        ),
+      ).then((groups) => {
+        // A slow response for an old query must not overwrite a newer one.
+        if (!cancelled) setState({ loading: false, groups });
+      });
+    }, delay);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [worktreeId, query]);
+  }, [memberKey, query, minLength, delay]);
 
   return state;
 }
 
-function SearchResults({
-  state,
+function useFileSearch(members: string[], query: string): SearchState<FileSearchResponse> {
+  return useSearchAcross(members, query, 1, 150, (id, q) => api.searchFiles(id, q));
+}
+
+/**
+ * The same shape, with a longer debounce and a two-character floor: this reads
+ * every file in the worktree rather than its directory entries, so a keystroke
+ * costs more, and one character matches most of a repository.
+ */
+function useContentSearch(members: string[], query: string): SearchState<ContentSearchResponse> {
+  return useSearchAcross(members, query, 2, 260, (id, q) => api.searchContent(id, q));
+}
+
+/** A worktree as a top level in the tree, expanded by default. */
+function WorktreeBranch({
+  worktreeId,
   selected,
   onSelect,
 }: {
-  state: SearchState;
-  selected: string | null;
-  onSelect: (path: string) => void;
+  worktreeId: string;
+  selected: { worktreeId: string; path: string } | null;
+  onSelect: (selection: { worktreeId: string; path: string }) => void;
 }) {
-  if (state.failed) return <div className="tree-note">Couldn't search this worktree.</div>;
-  if (!state.data) return <div className="tree-note">Searching…</div>;
-  if (state.data.results.length === 0) {
-    return (
-      <div className="tree-note">
-        {state.loading ? "Searching…" : `Nothing matches “${state.data.query}”.`}
-      </div>
-    );
+  const [open, setOpen] = useState(true);
+  const place = useSylva((s) => s.worktreeIndex[worktreeId]);
+  const status = useSylva((s) => s.statuses[worktreeId]);
+
+  return (
+    <div className="tree-worktree">
+      <button
+        className="tree-worktree-head"
+        onClick={() => setOpen((o) => !o)}
+        data-tip={place?.repoName ?? worktreeId}
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span className="tree-worktree-repo">{place?.repoName ?? "worktree"}</span>
+        <code className="tree-worktree-branch">
+          {status?.branch ?? place?.branch ?? worktreeId.slice(0, 7)}
+        </code>
+      </button>
+      {open && (
+        <Directory
+          worktreeId={worktreeId}
+          path=""
+          selected={selected?.worktreeId === worktreeId ? selected.path : null}
+          onSelect={(path) => onSelect({ worktreeId, path })}
+        />
+      )}
+    </div>
+  );
+}
+
+function SearchResults({
+  groups,
+  shared,
+  selected,
+  onSelect,
+}: {
+  groups: SearchState<FileSearchResponse>;
+  shared: boolean;
+  selected: { worktreeId: string; path: string } | null;
+  onSelect: (worktreeId: string, path: string) => void;
+}) {
+  const total = groups.groups.reduce((n, g) => n + (g.data?.results.length ?? 0), 0);
+  if (groups.groups.length === 0) return <div className="tree-note">Searching…</div>;
+  if (total === 0) {
+    return <div className="tree-note">{groups.loading ? "Searching…" : "Nothing matches."}</div>;
   }
 
   return (
     <>
-      <ul className="tree-list">
-        {state.data.results.map((result) => (
-          <li key={result.path} className="tree-node">
-            <button
-              className={`tree-row ${selected === result.path ? "tree-row-on" : ""}`}
-              onClick={() => onSelect(result.path)}
-              data-tip={result.path}
-            >
-              <span className="tree-glyph">
-                <FileIcon size={12} />
-              </span>
-              <span className="tree-name">{result.name}</span>
-              <span className="tree-result-path">{dirOf(result.path)}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {state.data.truncated && (
-        <div className="tree-note">Showing the closest matches only.</div>
-      )}
+      {groups.groups.map((group) => {
+        if (group.failed) {
+          return (
+            <div key={group.worktreeId} className="tree-note">
+              Couldn't search this worktree.
+            </div>
+          );
+        }
+        if (!group.data || group.data.results.length === 0) return null;
+        return (
+          <div key={group.worktreeId}>
+            {shared && (
+              <GroupLabel worktreeId={group.worktreeId} count={group.data.results.length} />
+            )}
+            <ul className="tree-list">
+              {group.data.results.map((result) => (
+                <li key={result.path} className="tree-node">
+                  <button
+                    className={`tree-row ${
+                      selected?.worktreeId === group.worktreeId && selected.path === result.path
+                        ? "tree-row-on"
+                        : ""
+                    }`}
+                    onClick={() => onSelect(group.worktreeId, result.path)}
+                    data-tip={result.path}
+                  >
+                    <span className="tree-glyph">
+                      <FileIcon size={12} />
+                    </span>
+                    <span className="tree-name">{result.name}</span>
+                    <span className="tree-result-path">{dirOf(result.path)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {/* Per group: a cap reached here says nothing about the other worktree. */}
+            {group.data.truncated && (
+              <div className="tree-note">Showing the closest matches only.</div>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }
 
-interface ContentState {
-  loading: boolean;
-  data: ContentSearchResponse | null;
-  failed: boolean;
+/** Which worktree a run of results came from. */
+function GroupLabel({ worktreeId, count }: { worktreeId: string; count: number }) {
+  const place = useSylva((s) => s.worktreeIndex[worktreeId]);
+  const status = useSylva((s) => s.statuses[worktreeId]);
+  return (
+    <div className="tree-group-label">
+      <span className="tree-worktree-repo">{place?.repoName ?? "worktree"}</span>
+      <code className="tree-worktree-branch">{status?.branch ?? place?.branch ?? ""}</code>
+      <span className="tree-group-count">{count}</span>
+    </div>
+  );
 }
 
-/**
- * The same debounce as name search, but a longer one: this reads every file in
- * the worktree rather than its directory entries, so a keystroke costs more.
- */
-function useContentSearch(worktreeId: string, query: string): ContentState {
-  const [state, setState] = useState<ContentState>({ loading: false, data: null, failed: false });
-
-  useEffect(() => {
-    const trimmed = query.trim();
-    // One or two characters matches most of the repository and helps nobody.
-    if (trimmed.length < 2) {
-      setState({ loading: false, data: null, failed: false });
-      return;
-    }
-    setState((s) => ({ ...s, loading: true, failed: false }));
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      api
-        .searchContent(worktreeId, trimmed)
-        .then((data) => {
-          if (!cancelled) setState({ loading: false, data, failed: false });
-        })
-        .catch(() => {
-          if (!cancelled) setState({ loading: false, data: null, failed: true });
-        });
-    }, 260);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [worktreeId, query]);
-
-  return state;
-}
-
-/** Matches grouped by file, because ten hits in one file is one answer. */
+/** Matches grouped by worktree, then by file: ten hits in one file is one answer. */
 function ContentResults({
-  state,
+  groups,
+  shared,
   selected,
   onSelect,
 }: {
-  state: ContentState;
-  selected: string | null;
-  onSelect: (path: string, line: number) => void;
+  groups: SearchState<ContentSearchResponse>;
+  shared: boolean;
+  selected: { worktreeId: string; path: string } | null;
+  onSelect: (worktreeId: string, path: string, line: number) => void;
 }) {
-  if (state.failed) return <div className="tree-note">Couldn't search this worktree.</div>;
-  if (!state.data) {
-    return <div className="tree-note">{state.loading ? "Searching…" : "Type at least two characters."}</div>;
-  }
-  if (state.data.matches.length === 0) {
+  const total = groups.groups.reduce((n, g) => n + (g.data?.matches.length ?? 0), 0);
+  if (groups.groups.length === 0) {
     return (
       <div className="tree-note">
-        {state.loading ? "Searching…" : `Nothing contains “${state.data.query}”.`}
+        {groups.loading ? "Searching…" : "Type at least two characters."}
       </div>
     );
   }
-
-  const byFile = new Map<string, typeof state.data.matches>();
-  for (const match of state.data.matches) {
-    byFile.set(match.path, [...(byFile.get(match.path) ?? []), match]);
+  if (total === 0) {
+    return (
+      <div className="tree-note">{groups.loading ? "Searching…" : "Nothing contains that."}</div>
+    );
   }
 
   return (
     <>
-      <div className="tree-note">
-        {state.data.matches.length} match{state.data.matches.length === 1 ? "" : "es"} in{" "}
-        {state.data.fileCount} file{state.data.fileCount === 1 ? "" : "s"}
-      </div>
-      <ul className="tree-list">
-        {[...byFile].map(([path, matches]) => (
-          <li key={path} className="hit-group">
-            <div className="hit-file" data-tip={path}>
-              {path}
-            </div>
-            {matches.map((match) => (
-              <button
-                key={`${path}:${match.line}`}
-                className={`hit-row ${selected === path ? "hit-row-on" : ""}`}
-                onClick={() => onSelect(path, match.line)}
-                data-tip={`Open ${path} at line ${match.line}`}
-              >
-                <span className="hit-line">{match.line}</span>
-                <span className="hit-text">{match.text}</span>
-              </button>
-            ))}
-          </li>
-        ))}
-      </ul>
-      {state.data.truncated && <div className="tree-note">Showing the first matches only.</div>}
+      {groups.groups.map((group) => {
+        if (!group.data || group.data.matches.length === 0) return null;
+        const byFile = new Map<string, typeof group.data.matches>();
+        for (const match of group.data.matches) {
+          byFile.set(match.path, [...(byFile.get(match.path) ?? []), match]);
+        }
+        return (
+          <div key={group.worktreeId}>
+            {shared && (
+              <GroupLabel worktreeId={group.worktreeId} count={group.data.matches.length} />
+            )}
+            <ul className="tree-list">
+              {[...byFile].map(([path, matches]) => (
+                <li key={path} className="hit-group">
+                  <div className="hit-file" data-tip={path}>
+                    {path}
+                  </div>
+                  {matches.map((match) => (
+                    <button
+                      key={`${path}:${match.line}`}
+                      className={`hit-row ${
+                        selected?.worktreeId === group.worktreeId && selected.path === path
+                          ? "hit-row-on"
+                          : ""
+                      }`}
+                      onClick={() => onSelect(group.worktreeId, path, match.line)}
+                      data-tip={`Open ${path} at line ${match.line}`}
+                    >
+                      <span className="hit-line">{match.line}</span>
+                      <span className="hit-text">{match.text}</span>
+                    </button>
+                  ))}
+                </li>
+              ))}
+            </ul>
+            {group.data.truncated && (
+              <div className="tree-note">Showing the first matches only.</div>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }

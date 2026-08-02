@@ -45,18 +45,23 @@ export type Tab = "agent" | "files" | "git" | "run";
  * a small list of them — each with its own tab and its own selected diff,
  * because a pane you switch to Git shouldn't drag the other pane along.
  */
+/**
+ * A file being looked at. Carries its worktree because a path alone is
+ * ambiguous the moment two of them are in view — both may have a
+ * `src/index.ts`, and the wrong one would render with nothing to say so.
+ */
+export interface DiffSelection {
+  worktreeId: string;
+  path: string;
+  staged: boolean;
+}
+
 export interface Pane {
   id: string;
   /** A worktree, the grove, or a circle of worktrees sharing one dryad. */
   worktreeId: string | null;
   tab: Tab;
-  diffPath: string | null;
-  /**
-   * Which worktree the Files/Git/Run tabs act on when this pane holds a circle.
-   * The Agent tab always addresses the circle itself — that is the point of it —
-   * but a diff has to belong to exactly one worktree.
-   */
-  memberId: string | null;
+  diff: DiffSelection | null;
 }
 
 /** What the main area is showing. Panes persist behind the other two. */
@@ -112,8 +117,7 @@ function freshPane(worktreeId: string | null = null): Pane {
     id: Math.random().toString(36).slice(2, 9),
     worktreeId,
     tab: "agent",
-    diffPath: null,
-    memberId: null,
+    diff: null,
   };
 }
 
@@ -128,7 +132,9 @@ function loadPanes(): Pane[] {
       ...freshPane(typeof p.worktreeId === "string" ? p.worktreeId : null),
       ...(p.id ? { id: p.id } : {}),
       tab: p.tab === "files" || p.tab === "git" || p.tab === "run" ? p.tab : "agent",
-      memberId: typeof p.memberId === "string" ? p.memberId : null,
+      // A layout saved before selections carried their worktree has nothing
+      // worth migrating — the path alone can't say which worktree it meant.
+      diff: null,
     }));
   } catch {
     return [freshPane()];
@@ -194,9 +200,8 @@ interface SylvaState {
   setView: (view: View) => void;
   setActivePane: (paneId: string) => void;
   setPaneWorktree: (paneId: string, worktreeId: string | null) => void;
-  setPaneMember: (paneId: string, memberId: string) => void;
   setPaneTab: (paneId: string, tab: Tab) => void;
-  setPaneDiff: (paneId: string, diffPath: string | null, tab?: Tab) => void;
+  setPaneDiff: (paneId: string, diff: DiffSelection | null, tab?: Tab) => void;
   splitPane: () => void;
   closePane: (paneId: string) => void;
   /** Open a worktree in whichever pane is active — what the sidebar calls. */
@@ -295,16 +300,7 @@ export const useSylva = create<SylvaState>((set, get) => ({
       const panes = s.panes.map((p) =>
         // A pane pointed at a different worktree keeps its tab — you were on
         // Git for a reason — but not its diff, which belonged to the old one.
-        p.id === paneId ? { ...p, worktreeId, diffPath: null, memberId: null } : p,
-      );
-      savePanes(panes);
-      return { panes };
-    }),
-
-  setPaneMember: (paneId, memberId) =>
-    set((s) => {
-      const panes = s.panes.map((p) =>
-        p.id === paneId ? { ...p, memberId, diffPath: null } : p,
+        p.id === paneId ? { ...p, worktreeId, diff: null } : p,
       );
       savePanes(panes);
       return { panes };
@@ -317,11 +313,9 @@ export const useSylva = create<SylvaState>((set, get) => ({
       return { panes };
     }),
 
-  setPaneDiff: (paneId, diffPath, tab) =>
+  setPaneDiff: (paneId, diff, tab) =>
     set((s) => ({
-      panes: s.panes.map((p) =>
-        p.id === paneId ? { ...p, diffPath, ...(tab ? { tab } : {}) } : p,
-      ),
+      panes: s.panes.map((p) => (p.id === paneId ? { ...p, diff, ...(tab ? { tab } : {}) } : p)),
     })),
 
   /**

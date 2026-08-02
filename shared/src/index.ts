@@ -584,6 +584,29 @@ export interface CommitRequest {
   message: string;
 }
 
+/**
+ * One message, several worktrees. Deliberately not atomic — git has no
+ * cross-repository transaction, and faking one by resetting the commits that
+ * did land would be far more dangerous than reporting what happened.
+ */
+export interface CommitManyRequest {
+  worktreeIds: string[];
+  message: string;
+}
+
+export interface CommitOutcome {
+  worktreeId: string;
+  ok: boolean;
+  /** New HEAD when it landed. */
+  head?: string;
+  /** Why it didn't, in git's own words. */
+  error?: string;
+}
+
+export interface CommitManyResult {
+  results: CommitOutcome[];
+}
+
 export interface PushRequest {
   setUpstream?: boolean;
 }

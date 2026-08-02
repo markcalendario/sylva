@@ -4,6 +4,8 @@ import type {
   BaseDivergence,
   BranchInfo,
   CommitGraph,
+  CommitManyResult,
+  CommitOutcome,
   CommitStats,
   FileChangeKind,
   FileContent,
@@ -18,7 +20,7 @@ import type {
   TreeListing,
   WorktreeStatus,
 } from "sylva-shared";
-import { badRequest, conflict, GitError } from "../lib/errors.js";
+import { badRequest, conflict, GitError, HttpError } from "../lib/errors.js";
 import { parseBranches, parseDiff, parseStatusV2 } from "../lib/parse.js";
 import type { GitService } from "./git.js";
 import { isIgnored } from "./watcher.js";
@@ -256,6 +258,31 @@ export class GitOps {
     await this.git.runExclusive(worktree.path, ["commit", "-m", message]);
     const { stdout } = await this.git.run(worktree.path, ["rev-parse", "HEAD"]);
     return { head: stdout.trim() };
+  }
+
+  /**
+   * Commit the same message in several worktrees.
+   *
+   * One call rather than several from the client, because several can
+   * half-fail and the client would then have to invent its own account of what
+   * happened. This returns the account: which worktrees landed, and why the
+   * others didn't. It keeps going after a failure — the successful commits are
+   * real work, and abandoning the rest would be arbitrary.
+   */
+  async commitMany(worktreeIds: string[], message: string): Promise<CommitManyResult> {
+    if (!message.trim()) throw badRequest("Commit message must not be empty");
+    const results: CommitOutcome[] = [];
+    for (const worktreeId of worktreeIds) {
+      try {
+        const { head } = await this.commit(worktreeId, message);
+        results.push({ worktreeId, ok: true, head });
+      } catch (e) {
+        const detail =
+          e instanceof HttpError ? (e.detail ?? e.message) : e instanceof Error ? e.message : String(e);
+        results.push({ worktreeId, ok: false, error: detail });
+      }
+    }
+    return { results };
   }
 
   async branches(repoId: string): Promise<BranchInfo[]> {

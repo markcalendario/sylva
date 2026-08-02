@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Columns2, PanelsTopLeft, X } from "lucide-react";
 import { circleMembers } from "sylva-shared";
 import { api } from "../lib/api";
@@ -32,20 +32,27 @@ const TAB_TIP: Record<Tab, string> = {
 export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
   /** The session this pane talks to: a worktree, or a circle of them. */
   const targetId = pane.worktreeId;
-  const members = targetId ? circleMembers(targetId) : null;
+  const circle = targetId ? circleMembers(targetId) : null;
   /**
-   * The worktree the file-shaped tabs act on. A circle has no files of its own —
-   * a diff belongs to exactly one worktree — so those tabs follow a chosen
-   * member while the chat keeps addressing the whole circle.
+   * Every worktree the panels below are about. One entry for an ordinary
+   * worktree, which is what keeps this the *same* code path rather than a
+   * second one that has to be kept in step.
    */
-  const worktreeId = members ? (pane.memberId ?? members[0] ?? null) : targetId;
+  const members = useMemo(
+    () => circle ?? (targetId ? [targetId] : []),
+    [circle?.join(","), targetId],
+  );
 
   const active = useSylva((s) => s.activePaneId) === pane.id;
   const spriteState = useSylva((s) => (targetId ? spriteStateFor(s, targetId) : "idle"));
-  const status = useSylva((s) => (worktreeId ? s.statuses[worktreeId] : undefined));
+  const statuses = useSylva((s) => s.statuses);
   const session = useSylva((s) => (targetId ? s.sessions[targetId] : undefined));
-  const runner = useSylva((s) => (worktreeId ? s.runners[worktreeId] : undefined));
+  const runners = useSylva((s) => s.runners);
   const index = useSylva((s) => s.worktreeIndex);
+
+  // The header still describes a single worktree when there is one.
+  const status = circle ? undefined : statuses[members[0] ?? ""];
+  const anyRunning = members.some((id) => runners[id]?.status === "running");
 
   // The session belongs to the target; a circle's transcript is its own.
   useEffect(() => {
@@ -60,25 +67,27 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
     });
   }, [targetId]);
 
-  // Git status and the file feed belong to a real worktree, which for a circle
-  // is whichever member is currently being looked at.
+  // Status and the file feed belong to real worktrees, so they are fetched for
+  // every member rather than for whichever one was being pointed at.
+  const memberKey = members.join(",");
   useEffect(() => {
-    if (!worktreeId) return;
-    void api.status(worktreeId).then((st) => useSylva.getState().setStatus(st));
-    // The watcher only reports changes from the moment it starts, so without
-    // this the Files tab is blank until something happens to move.
-    void api
-      .recentFiles(worktreeId)
-      .then((events) => useSylva.getState().seedFileFeed(worktreeId, events))
-      .catch(() => {});
-  }, [worktreeId]);
+    for (const id of memberKey ? memberKey.split(",") : []) {
+      void api.status(id).then((st) => useSylva.getState().setStatus(st)).catch(() => {});
+      // The watcher only reports changes from the moment it starts, so without
+      // this the Files tab is blank until something happens to move.
+      void api
+        .recentFiles(id)
+        .then((events) => useSylva.getState().seedFileFeed(id, events))
+        .catch(() => {});
+    }
+  }, [memberKey]);
 
   const store = useSylva.getState();
   const focusPane = () => {
     if (!active) store.setActivePane(pane.id);
   };
 
-  if (!targetId || !worktreeId) {
+  if (!targetId || members.length === 0) {
     return (
       <section
         className={`pane ${split && active ? "pane-active" : ""}`}
@@ -109,30 +118,23 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
         <Sprite state={spriteState} scale={2} />
         <div className="wt-header-text">
           <div className="wt-header-branch" data-tip="Branch checked out in this worktree">
-            {members ? (
+            {circle ? (
               <span className="wt-circle-title" data-tip="One dryad tends all of these">
                 <PanelsTopLeft size={14} />
-                {members.length} worktrees, one dryad
+                {circle.length} worktrees, one dryad
               </span>
             ) : (
               (status?.branch ?? "…")
             )}
           </div>
           <div className="wt-header-sub">
-            {members && (
-              /* Which worktree the file-shaped tabs are pointed at. The chat is
-                 unaffected — it always addresses the whole circle. */
-              <span className="wt-members" role="group" aria-label="Worktree in view">
-                {members.map((id) => (
-                  <button
-                    key={id}
-                    className={`wt-member ${id === worktreeId ? "wt-member-on" : ""}`}
-                    onClick={() => store.setPaneMember(pane.id, id)}
-                    data-tip={`Point Files, Git and Run at ${index[id]?.repoName ?? "this worktree"}`}
-                  >
-                    {index[id]?.branch ?? id.slice(0, 7)}
-                  </button>
-                ))}
+            {circle && (
+              /* What the dryad tends, stated rather than chosen between. The
+                 panels below show all of it at once. */
+              <span className="wt-members" data-tip="Every worktree this dryad tends">
+                {circle
+                  .map((id) => statuses[id]?.branch ?? index[id]?.branch ?? id.slice(0, 7))
+                  .join("  +  ")}
               </span>
             )}
             {status?.base ? (
@@ -175,7 +177,10 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
             </span>
           </div>
         </div>
-        <OpenExternallyButtons worktreeId={worktreeId} />
+        {/* Opening "the worktree" in an editor needs one worktree. For a
+            circle, that action lives per-section in the Git tab, where the
+            worktree it belongs to is already named. */}
+        {!circle && members[0] && <OpenExternallyButtons worktreeId={members[0]} />}
         <div className="pane-controls">
           {split ? (
             <button
@@ -206,7 +211,7 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
               data-tip={TAB_TIP[t]}
             >
               {TAB_LABEL[t]}
-              {t === "run" && runner?.status === "running" && (
+              {t === "run" && anyRunning && (
                 <span className="tab-dot" data-tip="This project is running" />
               )}
             </button>
@@ -214,21 +219,21 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
         </nav>
       </div>
 
-      {pane.tab === "agent" && <AgentPanel worktreeId={worktreeId} />}
+      {pane.tab === "agent" && <AgentPanel worktreeId={targetId} />}
       {pane.tab === "files" && (
         <FilesPanel
-          worktreeId={worktreeId}
-          onOpenDiff={(path) => store.setPaneDiff(pane.id, path, "git")}
+          members={members}
+          onOpenDiff={(selection) => store.setPaneDiff(pane.id, selection, "git")}
         />
       )}
       {pane.tab === "git" && (
         <GitPanel
-          key={pane.diffPath ?? "none"}
-          worktreeId={worktreeId}
-          initialDiffPath={pane.diffPath}
+          members={members}
+          selection={pane.diff}
+          onSelect={(selection) => store.setPaneDiff(pane.id, selection)}
         />
       )}
-      {pane.tab === "run" && <RunPanel worktreeId={worktreeId} />}
+      {pane.tab === "run" && <RunPanel members={members} />}
     </section>
   );
 }
