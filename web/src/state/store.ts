@@ -12,6 +12,7 @@ import type {
   Worktree,
   WorktreeStatus,
 } from "sylva-shared";
+import { circleId, circleMembers } from "sylva-shared";
 import { api } from "../lib/api";
 
 const FEED_CAP = 200;
@@ -46,9 +47,16 @@ export type Tab = "agent" | "files" | "git" | "run";
  */
 export interface Pane {
   id: string;
+  /** A worktree, the grove, or a circle of worktrees sharing one dryad. */
   worktreeId: string | null;
   tab: Tab;
   diffPath: string | null;
+  /**
+   * Which worktree the Files/Git/Run tabs act on when this pane holds a circle.
+   * The Agent tab always addresses the circle itself — that is the point of it —
+   * but a diff has to belong to exactly one worktree.
+   */
+  memberId: string | null;
 }
 
 /** What the main area is showing. Panes persist behind the other two. */
@@ -62,9 +70,33 @@ export interface WorktreePlace {
 }
 
 const PANES_KEY = "sylva.panes";
+const SIDEBAR_KEY = "sylva.sidebarCollapsed";
+
+/** Small booleans that should outlive a reload. Failing to read one is fine. */
+function loadFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveFlag(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    // Private mode or a full quota; the preference just won't stick.
+  }
+}
 
 function freshPane(worktreeId: string | null = null): Pane {
-  return { id: Math.random().toString(36).slice(2, 9), worktreeId, tab: "agent", diffPath: null };
+  return {
+    id: Math.random().toString(36).slice(2, 9),
+    worktreeId,
+    tab: "agent",
+    diffPath: null,
+    memberId: null,
+  };
 }
 
 /** Pane layout outlives a reload; which view you were on does not. */
@@ -78,6 +110,7 @@ function loadPanes(): Pane[] {
       ...freshPane(typeof p.worktreeId === "string" ? p.worktreeId : null),
       ...(p.id ? { id: p.id } : {}),
       tab: p.tab === "files" || p.tab === "git" || p.tab === "run" ? p.tab : "agent",
+      memberId: typeof p.memberId === "string" ? p.memberId : null,
     }));
   } catch {
     return [freshPane()];
@@ -137,12 +170,29 @@ interface SylvaState {
   setView: (view: View) => void;
   setActivePane: (paneId: string) => void;
   setPaneWorktree: (paneId: string, worktreeId: string | null) => void;
+  setPaneMember: (paneId: string, memberId: string) => void;
   setPaneTab: (paneId: string, tab: Tab) => void;
   setPaneDiff: (paneId: string, diffPath: string | null, tab?: Tab) => void;
   splitPane: () => void;
   closePane: (paneId: string) => void;
   /** Open a worktree in whichever pane is active — what the sidebar calls. */
   openWorktree: (worktreeId: string) => void;
+  /** Put several worktrees under one dryad and open that. */
+  openCircle: (worktreeIds: string[]) => void;
+
+  /**
+   * Worktrees picked for a shared dryad, or null when not picking. Selection is
+   * modal because the ordinary click already means "open this" — long-pressing
+   * is how you say you meant something else.
+   */
+  selection: string[] | null;
+  beginSelection: (worktreeId: string) => void;
+  toggleSelection: (worktreeId: string) => void;
+  clearSelection: () => void;
+
+  /** Hidden sidebar, for when the work deserves the whole window. */
+  sidebarCollapsed: boolean;
+  toggleSidebar: () => void;
   setRunner: (state: RunnerState) => void;
   seedRunner: (worktreeId: string, state: RunnerState, lines: RunnerLine[]) => void;
   clearRunnerOutput: (worktreeId: string) => void;
@@ -210,7 +260,16 @@ export const useSylva = create<SylvaState>((set, get) => ({
       const panes = s.panes.map((p) =>
         // A pane pointed at a different worktree keeps its tab — you were on
         // Git for a reason — but not its diff, which belonged to the old one.
-        p.id === paneId ? { ...p, worktreeId, diffPath: null } : p,
+        p.id === paneId ? { ...p, worktreeId, diffPath: null, memberId: null } : p,
+      );
+      savePanes(panes);
+      return { panes };
+    }),
+
+  setPaneMember: (paneId, memberId) =>
+    set((s) => {
+      const panes = s.panes.map((p) =>
+        p.id === paneId ? { ...p, memberId, diffPath: null } : p,
       );
       savePanes(panes);
       return { panes };
@@ -260,6 +319,44 @@ export const useSylva = create<SylvaState>((set, get) => ({
     if (s.view !== "workspace") set({ view: "workspace" });
     void api.setFocus(worktreeId);
   },
+
+  openCircle: (worktreeIds) => {
+    const s = get();
+    const id = circleId(worktreeIds);
+    const paneId = s.panes.find((p) => p.id === s.activePaneId)?.id ?? s.panes[0]?.id;
+    if (paneId) s.setPaneWorktree(paneId, id);
+    set({ selection: null, view: "workspace" });
+    // Focus the first member so the status strip and the watcher have a
+    // worktree to talk about; the circle itself is not one.
+    const first = circleMembers(id)?.[0];
+    if (first) void api.setFocus(first);
+  },
+
+  selection: null,
+
+  beginSelection: (worktreeId) => set({ selection: [worktreeId] }),
+
+  toggleSelection: (worktreeId) =>
+    set((s) => {
+      if (!s.selection) return {};
+      const next = s.selection.includes(worktreeId)
+        ? s.selection.filter((id) => id !== worktreeId)
+        : [...s.selection, worktreeId];
+      // Unpicking the last one leaves selection mode rather than stranding you
+      // in it with nothing chosen.
+      return { selection: next.length === 0 ? null : next };
+    }),
+
+  clearSelection: () => set({ selection: null }),
+
+  sidebarCollapsed: loadFlag(SIDEBAR_KEY),
+
+  toggleSidebar: () =>
+    set((s) => {
+      const sidebarCollapsed = !s.sidebarCollapsed;
+      saveFlag(SIDEBAR_KEY, sidebarCollapsed);
+      return { sidebarCollapsed };
+    }),
 
   setRunner: (state) =>
     set((s) => ({ runners: { ...s.runners, [state.worktreeId]: state } })),

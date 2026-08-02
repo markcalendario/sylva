@@ -317,6 +317,36 @@ export interface RunnerSnapshot {
  */
 export const GROVE_ID = "grove";
 
+/**
+ * One dryad tending several worktrees at once, so it can carry what it learned
+ * in the old system across into the new one.
+ *
+ * The id *is* the membership — `circle-<id>-<id>` — rather than a key into a
+ * registry somewhere. Nothing to store, nothing to garbage-collect, and picking
+ * the same set of worktrees again lands you back in the same conversation,
+ * because the transcript was keyed by this id all along.
+ */
+export const CIRCLE_PREFIX = "circle-";
+
+/** Build the id for a set of worktrees. Order doesn't matter; the id is stable. */
+export function circleId(worktreeIds: string[]): string {
+  return CIRCLE_PREFIX + [...new Set(worktreeIds)].sort().join("-");
+}
+
+/** The worktrees behind a circle id, or null when this isn't one. */
+export function circleMembers(id: string): string[] | null {
+  if (!id.startsWith(CIRCLE_PREFIX)) return null;
+  const members = id.slice(CIRCLE_PREFIX.length).split("-").filter(Boolean);
+  // One worktree is not a circle — it is just that worktree, and treating it as
+  // one would fork its conversation into a second transcript.
+  return members.length >= 2 ? members : null;
+}
+
+/** True for any id that names a session rather than a plain worktree. */
+export function isSharedTarget(id: string): boolean {
+  return id === GROVE_ID || circleMembers(id) !== null;
+}
+
 /** A reusable prompt snippet, appended to whatever is already typed. */
 export interface SavedPrompt {
   id: string;

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
 import { useRepos } from "../lib/queries";
 import { useSylva } from "../state/store";
@@ -27,9 +28,12 @@ export function MainPanel({
 
   // Tell the server which worktrees have to stay live. Without this the second
   // pane is a still photograph: no file feed, no git status, no refresh.
+  //
+  // A circle is expanded into its members: the circle id names a session, not a
+  // worktree, and the server can only watch things that exist on disk.
   const openIds = panes
-    .map((p) => p.worktreeId)
-    .filter((id): id is string => id !== null)
+    .flatMap((p) => (p.worktreeId ? (circleMembers(p.worktreeId) ?? [p.worktreeId]) : []))
+    .filter((id) => id !== GROVE_ID)
     .join(",");
   useEffect(() => {
     void api.setOpenWorktrees(openIds ? openIds.split(",") : []).catch(() => {});

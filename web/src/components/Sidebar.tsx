@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
-import type { Repo, Worktree } from "sylva-shared";
+import {
+  Check,
+  FolderGit2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sparkles,
+  Users,
+  X,
+} from "lucide-react";
+import { circleMembers, type Repo, type Worktree } from "sylva-shared";
 import { api } from "../lib/api";
 import { confirm } from "../lib/confirm";
+import { useLongPress } from "../lib/useLongPress";
 import { useInvalidate, useRepos, useWorktrees } from "../lib/queries";
 import { spriteStateFor, useSylva } from "../state/store";
 import { Sprite } from "../sprites/Sprite";
@@ -16,23 +26,57 @@ function WorktreeRow({
   worktree: Worktree;
   onRemove: (worktree: Worktree) => void;
 }) {
-  // "Open" now means "held by a pane", which can be more than one at a time.
-  const open = useSylva((s) => s.panes.some((p) => p.worktreeId === worktree.id));
+  // "Open" now means "held by a pane" — as itself, or inside a circle.
+  const open = useSylva((s) =>
+    s.panes.some(
+      (p) =>
+        p.worktreeId === worktree.id ||
+        (p.worktreeId ? (circleMembers(p.worktreeId)?.includes(worktree.id) ?? false) : false),
+    ),
+  );
   const spriteState = useSylva((s) => spriteStateFor(s, worktree.id));
   const unseen = useSylva((s) => s.unseenActivity[worktree.id] ?? false);
+  const selection = useSylva((s) => s.selection);
   const dirtyCount = useSylva((s) => {
     const st = s.statuses[worktree.id];
     return st ? st.staged.length + st.unstaged.length + st.untracked.length : 0;
   });
 
+  const selecting = selection !== null;
+  const picked = selection?.includes(worktree.id) ?? false;
+  const press = useLongPress(() => useSylva.getState().beginSelection(worktree.id));
+
+  const activate = (e: { metaKey: boolean; ctrlKey: boolean }) => {
+    const store = useSylva.getState();
+    // Already picking, or asked to pick with a modifier: this click means
+    // "add to the set", not "take me there".
+    if (selecting) store.toggleSelection(worktree.id);
+    else if (e.metaKey || e.ctrlKey) store.beginSelection(worktree.id);
+    else store.openWorktree(worktree.id);
+  };
+
   return (
-    <div className={`wt-row ${open ? "focused" : ""}`}>
+    <div className={`wt-row ${open ? "focused" : ""} ${picked ? "wt-picked" : ""}`}>
       <button
         className="wt-open"
-        onClick={() => useSylva.getState().openWorktree(worktree.id)}
-        data-tip="Open this worktree in the active pane"
+        onClick={activate}
+        {...press}
+        aria-pressed={selecting ? picked : undefined}
+        data-tip={
+          selecting
+            ? picked
+              ? "Picked — click to drop it from the set"
+              : "Click to add this worktree to the shared dryad"
+            : "Open this worktree · hold, or ⌘-click, to share a dryad between several"
+        }
       >
-        <Sprite state={spriteState} scale={1} title={worktree.branch ?? "detached"} />
+        {selecting ? (
+          <span className={`wt-check ${picked ? "wt-check-on" : ""}`} aria-hidden>
+            {picked ? <Check size={12} strokeWidth={3} /> : null}
+          </span>
+        ) : (
+          <Sprite state={spriteState} scale={1} title={worktree.branch ?? "detached"} />
+        )}
         <span className="wt-name" data-tip="Branch checked out in this worktree">
           {worktree.branch ?? `${worktree.head.slice(0, 7)} (detached)`}
           {worktree.isMain && (
@@ -151,16 +195,81 @@ function RepoGroup({ repo }: { repo: Repo }) {
   );
 }
 
+/**
+ * What to do with the worktrees you've picked. Appears only while picking, and
+ * says how many, because "share a dryad" is meaningless with one.
+ */
+function SelectionBar() {
+  const selection = useSylva((s) => s.selection);
+  if (!selection) return null;
+
+  const enough = selection.length >= 2;
+  return (
+    <div className="selection-bar">
+      <span className="selection-count">
+        <Users size={13} />
+        {selection.length} picked
+      </span>
+      <button
+        className="btn-primary"
+        disabled={!enough}
+        onClick={() => useSylva.getState().openCircle(selection)}
+        data-tip={
+          enough
+            ? "One dryad tends all of these, and can carry what it learns between them"
+            : "Pick at least two worktrees to share a dryad"
+        }
+      >
+        Share a dryad
+      </button>
+      <button
+        className="ghost"
+        onClick={() => useSylva.getState().clearSelection()}
+        aria-label="Stop picking"
+        data-tip="Stop picking worktrees"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const repos = useRepos();
   const [showRegister, setShowRegister] = useState(false);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
+  const collapsed = useSylva((s) => s.sidebarCollapsed);
   const invalidate = useInvalidate();
+
+  if (collapsed) {
+    return (
+      <aside className="sidebar sidebar-collapsed">
+        <button
+          className="sidebar-toggle"
+          onClick={() => useSylva.getState().toggleSidebar()}
+          aria-label="Show the sidebar"
+          data-tip="Show the forest"
+        >
+          <PanelLeftOpen size={16} />
+        </button>
+      </aside>
+    );
+  }
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-label" data-tip="Every repository you've registered with Sylva">
-        forest
+      <div className="sidebar-head">
+        <span className="sidebar-label" data-tip="Every repository you've registered with Sylva">
+          forest
+        </span>
+        <button
+          className="sidebar-toggle"
+          onClick={() => useSylva.getState().toggleSidebar()}
+          aria-label="Hide the sidebar"
+          data-tip="Hide the forest and give the space to your work"
+        >
+          <PanelLeftClose size={15} />
+        </button>
       </div>
       <div className="sidebar-scroll">
         {repos.data?.map((r) => <RepoGroup key={r.id} repo={r} />)}
@@ -169,19 +278,20 @@ export function Sidebar() {
         )}
       </div>
       <div className="sidebar-foot">
+        <SelectionBar />
         <button
           className="btn-primary"
           onClick={() => setShowNewWorktree(true)}
           data-tip="Check out a branch in its own folder and open it"
         >
-          ✦ New worktree
+          <Sparkles size={13} /> New worktree
         </button>
         <button
           className="btn-quiet"
           onClick={() => setShowRegister(true)}
           data-tip="Add a git repository from this machine to Sylva"
         >
-          + Register repo
+          <FolderGit2 size={13} /> Add repository
         </button>
       </div>
       <RegisterRepoDialog

@@ -3644,3 +3644,115 @@ button:disabled {
 .run-clear {
   flex-shrink: 0;
 }
+
+/* ---------- picking worktrees for a shared dryad ---------- */
+
+.wt-check {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 1px solid var(--moss-dim);
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pine-0);
+}
+
+.wt-check-on {
+  background: var(--firefly);
+  border-color: var(--firefly);
+}
+
+.wt-picked {
+  background: rgb(255 180 84 / 0.09);
+}
+
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  padding: var(--pad-2);
+  margin-bottom: var(--pad-2);
+  border: 1px solid var(--firefly-dim);
+  border-radius: var(--radius);
+  background: rgb(255 180 84 / 0.08);
+}
+
+.selection-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-1);
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--firefly);
+}
+
+/* ---------- a circle of worktrees ---------- */
+
+.wt-circle-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+}
+
+.wt-members {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-0);
+}
+
+.wt-member {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 1px var(--pad-2);
+  border-radius: 3px;
+  color: var(--moss);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-member:hover {
+  color: var(--moon);
+}
+
+.wt-member-on {
+  background: var(--pine-3);
+  color: var(--moon);
+}
+
+/* ---------- collapsing the sidebar ---------- */
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-2);
+}
+
+.sidebar-toggle {
+  color: var(--moss-dim);
+  padding: var(--pad-1);
+  border-radius: var(--radius);
+  display: inline-flex;
+}
+
+.sidebar-toggle:hover {
+  color: var(--moon);
+  background: var(--pine-2);
+}
+
+.sidebar-collapsed {
+  width: auto;
+  min-width: 0;
+  padding: var(--pad-2);
+  align-items: center;
+}

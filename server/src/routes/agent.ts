@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { GROVE_ID, type Attachment } from "sylva-shared";
+import { circleMembers, GROVE_ID, type Attachment } from "sylva-shared";
 import type { AppContext } from "../context.js";
 import { badRequest } from "../lib/errors.js";
 import { openExternal } from "../services/open.js";
@@ -77,6 +77,12 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
    */
   const requireTarget = async (targetId: string): Promise<void> => {
     if (targetId === GROVE_ID) return;
+    const members = circleMembers(targetId);
+    if (members) {
+      // Every member has to be real, or the circle isn't the one you asked for.
+      for (const id of members) await workspace.resolveWorktree(id);
+      return;
+    }
     await workspace.resolveWorktree(targetId);
   };
 

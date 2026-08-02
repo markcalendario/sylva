@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AboutDialog } from "./components/dialogs/AboutDialog";
 import { HelpDialog } from "./components/dialogs/HelpDialog";
 import { RegisterRepoDialog } from "./components/dialogs/RegisterRepoDialog";
+import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "./lib/api";
 import { startWs } from "./lib/ws";
 import { useSylva } from "./state/store";
@@ -52,8 +53,8 @@ function Shell() {
       // The server watches what the panes hold; a reconnect has to say so again.
       const open = useSylva
         .getState()
-        .panes.map((p) => p.worktreeId)
-        .filter((id): id is string => id !== null);
+        .panes.flatMap((p) => (p.worktreeId ? (circleMembers(p.worktreeId) ?? [p.worktreeId]) : []))
+        .filter((id) => id !== GROVE_ID);
       void api.setOpenWorktrees(open).catch(() => {});
     });
   }, [qc]);

@@ -10,6 +10,7 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
+  circleMembers,
   GROVE_ID,
   type AgentAvailability,
   type AgentEvent,
@@ -93,6 +94,15 @@ interface SessionTarget {
   label: string | null;
   repoId: string;
   isGrove: boolean;
+  /**
+   * Worktrees this session can reach beyond its cwd. Empty for an ordinary
+   * worktree; the rest of the circle for a shared one.
+   */
+  extraDirs: string[];
+  /** Worktree ids to keep watched while this session lives. */
+  watch: { worktreeId: string; path: string }[];
+  /** Appended to the system prompt when the session needs explaining. */
+  brief: string | null;
 }
 
 interface ActiveSession {
@@ -100,6 +110,7 @@ interface ActiveSession {
   worktreePath: string;
   repoId: string;
   isGrove: boolean;
+  watch: { worktreeId: string; path: string }[];
   input: InputStream;
   q: Query | null;
   alwaysAllow: Set<string>;
@@ -379,8 +390,21 @@ export class SessionManager {
     if (targetId === GROVE_ID) {
       const cwd = this.store.groveDir;
       await mkdir(cwd, { recursive: true });
-      return { id: targetId, cwd, label: null, repoId: "", isGrove: true };
+      return {
+        id: targetId,
+        cwd,
+        label: null,
+        repoId: "",
+        isGrove: true,
+        extraDirs: [],
+        watch: [],
+        brief: await this.groveBrief(),
+      };
     }
+
+    const members = circleMembers(targetId);
+    if (members) return this.resolveCircle(targetId, members);
+
     const { repo, worktree } = await this.workspace.resolveWorktree(targetId);
     return {
       id: targetId,
@@ -388,6 +412,49 @@ export class SessionManager {
       label: worktree.branch,
       repoId: repo.id,
       isGrove: false,
+      extraDirs: [],
+      watch: [{ worktreeId: targetId, path: worktree.path }],
+      brief: null,
+    };
+  }
+
+  /**
+   * One dryad across several worktrees. The first is the working directory and
+   * the rest are handed over as additional roots, which is what lets it read
+   * the old system and write the new one in the same turn — the whole reason
+   * for sharing a session rather than running two.
+   */
+  private async resolveCircle(targetId: string, memberIds: string[]): Promise<SessionTarget> {
+    const resolved = [];
+    for (const id of memberIds) {
+      const found = await this.workspace.tryResolveWorktree(id);
+      // A circle is defined by its members; silently dropping one would give
+      // the agent a quietly different job from the one you asked for.
+      if (!found) throw notFound(`worktree ${id} in this circle`);
+      resolved.push(found);
+    }
+
+    const [primary, ...rest] = resolved;
+    if (!primary) throw badRequest("A shared dryad needs at least two worktrees");
+
+    const describe = resolved
+      .map(({ repo, worktree }) => `- ${repo.name} / ${worktree.branch ?? "detached"}: ${worktree.path}`)
+      .join("\n");
+
+    return {
+      id: targetId,
+      cwd: primary.worktree.path,
+      label: resolved.map(({ worktree }) => worktree.branch ?? "detached").join(" + "),
+      repoId: primary.repo.id,
+      isGrove: false,
+      extraDirs: rest.map(({ worktree }) => worktree.path),
+      watch: resolved.map(({ worktree }) => ({ worktreeId: worktree.id, path: worktree.path })),
+      brief: [
+        `You are working across ${resolved.length} git worktrees at once, so that what you learn in one can be carried into another.`,
+        `Your working directory is ${primary.worktree.path}. These are all available to you:`,
+        describe,
+        "Use absolute paths when working outside the working directory. Say which worktree you are changing when you change one.",
+      ].join("\n\n"),
     };
   }
 
@@ -396,7 +463,7 @@ export class SessionManager {
    * are. Built fresh at session creation, which is also what makes a repository
    * registered mid-conversation visible to the next turn.
    */
-  private async groveSystemPrompt(): Promise<string> {
+  private async groveBrief(): Promise<string> {
     const repos = (await this.workspace.listRepos()).filter((r) => r.available);
     const lines = repos.map((r) => `- ${r.name}: ${r.path}`).join("\n");
     return [
@@ -435,6 +502,7 @@ export class SessionManager {
       worktreePath: target.cwd,
       repoId: target.repoId,
       isGrove: target.isGrove,
+      watch: target.watch,
       input: new InputStream(),
       q: null,
       alwaysAllow: new Set(),
@@ -450,12 +518,15 @@ export class SessionManager {
       ...(prefs.model ? { model: prefs.model } : {}),
       ...(prefs.effort ? { effort: prefs.effort } : {}),
       ...(info.sdkSessionId ? { resume: info.sdkSessionId } : {}),
-      ...(target.isGrove
+      // Reaching beyond cwd is what makes one dryad across two worktrees work
+      // at all; without it the extra roots are simply invisible to it.
+      ...(target.extraDirs.length ? { additionalDirectories: target.extraDirs } : {}),
+      ...(target.brief
         ? {
             systemPrompt: {
               type: "preset" as const,
               preset: "claude_code" as const,
-              append: await this.groveSystemPrompt(),
+              append: target.brief,
             },
           }
         : {}),
@@ -479,8 +550,11 @@ export class SessionManager {
 
     session.q = query({ prompt: session.input, options });
     session.loopDone = this.runLoop(session).catch(() => {});
-    // The grove is nobody's worktree, so there is no file feed to keep live.
-    if (!target.isGrove) this.watchers.addSessionWatch(worktreeId, target.cwd);
+    // A session keeps every worktree it can touch live — one for an ordinary
+    // session, all of them for a circle, none for the grove.
+    for (const entry of target.watch) {
+      this.watchers.addSessionWatch(entry.worktreeId, entry.path);
+    }
     await this.persist(session);
     return session;
   }
@@ -518,7 +592,7 @@ export class SessionManager {
         pending.resolve("timeout");
       }
       session.pendingPermissions.clear();
-      if (!session.isGrove) this.watchers.removeSessionWatch(session.info.worktreeId);
+      for (const entry of session.watch) this.watchers.removeSessionWatch(entry.worktreeId);
       this.sessions.delete(session.info.id);
       this.byWorktree.delete(session.info.worktreeId);
       await this.persist(session);
