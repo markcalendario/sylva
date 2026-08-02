@@ -13,7 +13,6 @@ import {
 import { circleMembers, type Repo, type Worktree } from "sylva-shared";
 import { api } from "../lib/api";
 import { confirm } from "../lib/confirm";
-import { useLongPress } from "../lib/useLongPress";
 import { useInvalidate, useRepos, useWorktrees } from "../lib/queries";
 import { spriteStateFor, useSylva } from "../state/store";
 import { Sprite } from "../sprites/Sprite";
@@ -43,17 +42,20 @@ function WorktreeRow({
     const st = s.statuses[worktree.id];
     return st ? st.staged.length + st.unstaged.length + st.untracked.length : 0;
   });
+  // Live status wins over the fetched list: it arrives first after a checkout.
+  const liveBranch = useSylva((s) => s.statuses[worktree.id]?.branch);
+  const branch = liveBranch ?? worktree.branch;
 
   const selecting = selection !== null;
   const picked = selection?.includes(worktree.id) ?? false;
-  const press = useLongPress(() => useSylva.getState().beginSelection(worktree.id));
 
-  const activate = (e: { metaKey: boolean; ctrlKey: boolean }) => {
+  const activate = (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
     const store = useSylva.getState();
-    // Already picking, or asked to pick with a modifier: this click means
-    // "add to the set", not "take me there".
+    const wantsSet = e.shiftKey || e.metaKey || e.ctrlKey;
+    // Once picking, a plain click keeps picking — you are mid-gesture, and
+    // making you hold shift for every one of them would be tiresome.
     if (selecting) store.toggleSelection(worktree.id);
-    else if (e.metaKey || e.ctrlKey) store.beginSelection(worktree.id);
+    else if (wantsSet) store.beginSelection(worktree.id);
     else store.openWorktree(worktree.id);
   };
 
@@ -62,14 +64,13 @@ function WorktreeRow({
       <button
         className="wt-open"
         onClick={activate}
-        {...press}
         aria-pressed={selecting ? picked : undefined}
         data-tip={
           selecting
             ? picked
               ? "Picked — click to drop it from the set"
               : "Click to add this worktree to the shared dryad"
-            : "Open this worktree · hold, or ⌘-click, to share a dryad between several"
+            : "Open this worktree · shift-click to share one dryad between several"
         }
       >
         {selecting ? (
@@ -77,10 +78,10 @@ function WorktreeRow({
             {picked ? <Check size={12} strokeWidth={3} /> : null}
           </span>
         ) : (
-          <Sprite state={spriteState} scale={1} title={worktree.branch ?? "detached"} />
+          <Sprite state={spriteState} scale={1} title={branch ?? "detached"} />
         )}
         <span className="wt-name" data-tip="Branch checked out in this worktree">
-          {worktree.branch ?? `${worktree.head.slice(0, 7)} (detached)`}
+          {branch ?? `${worktree.head.slice(0, 7)} (detached)`}
           {worktree.isMain && (
             <span className="wt-main-tag" data-tip="The repository's original checkout">
               main worktree
@@ -197,6 +198,68 @@ function RepoGroup({ repo }: { repo: Repo }) {
   );
 }
 
+/** One shared dryad in the sidebar: which trees it tends, and a way back in. */
+function CircleRow({ id }: { id: string }) {
+  const members = circleMembers(id) ?? [];
+  const index = useSylva((s) => s.worktreeIndex);
+  const open = useSylva((s) => s.panes.some((p) => p.worktreeId === id));
+  const spriteState = useSylva((s) => spriteStateFor(s, id));
+  const unseen = useSylva((s) => s.unseenActivity[id] ?? false);
+
+  const names = members.map((m) => index[m]?.branch ?? m.slice(0, 7));
+
+  return (
+    <div className={`wt-row ${open ? "focused" : ""}`}>
+      <button
+        className="wt-open"
+        onClick={() => useSylva.getState().openCircle(members)}
+        data-tip={members.map((m) => `${index[m]?.repoName ?? "?"} / ${index[m]?.branch ?? m}`).join("\n")}
+      >
+        <Sprite state={spriteState} scale={1} title={names.join(" + ")} />
+        <span className="wt-name circle-name">{names.join(" + ")}</span>
+      </button>
+      <span className="wt-meta">
+        {unseen && !open && (
+          <span className="unseen-dot" data-tip="New agent activity you haven't looked at" />
+        )}
+        <span className="circle-count" data-tip="Worktrees this dryad tends">
+          {members.length}
+        </span>
+      </span>
+      <button
+        className="ghost wt-remove"
+        onClick={() => useSylva.getState().forgetCircle(id)}
+        aria-label={`Forget the shared dryad for ${names.join(" and ")}`}
+        data-tip="Take this off the list. The conversation is kept — picking the same worktrees again returns to it."
+      >
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+/** Shared dryads, above the repositories: they span all of them. */
+function SharedGroup() {
+  const circles = useSylva((s) => s.knownCircles);
+  if (circles.length === 0) return null;
+
+  return (
+    <div className="repo-group">
+      <div className="repo-head">
+        <span className="repo-toggle repo-shared-head">
+          <Users size={13} />
+          <span className="repo-name">shared</span>
+        </span>
+      </div>
+      <div className="wt-list">
+        {circles.map((id) => (
+          <CircleRow key={id} id={id} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * What to do with the worktrees you've picked. Appears only while picking, and
  * says how many, because "share a dryad" is meaningless with one.
@@ -274,6 +337,7 @@ export function Sidebar() {
         </button>
       </div>
       <div className="sidebar-scroll">
+        <SharedGroup />
         {repos.data?.map((r) => <RepoGroup key={r.id} repo={r} />)}
         {repos.data?.length === 0 && (
           <div className="side-note">No repositories yet — plant one below.</div>

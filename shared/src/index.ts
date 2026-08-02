@@ -537,6 +537,13 @@ export type ServerEvent =
   | { type: "file.batch"; worktreeId: string; events: FileEvent[]; truncated: boolean }
   | { type: "git.status"; status: WorktreeStatus }
   | { type: "focus.changed"; worktreeId: string | null }
+  /**
+   * HEAD moved in a worktree — a checkout, a branch rename, a rebase. Sent
+   * alongside git.status because the branch *name* is carried by the worktree
+   * list, which is fetched rather than streamed and so would otherwise stay
+   * stale until a reload.
+   */
+  | { type: "worktrees.changed"; repoId: string | null }
   | { type: "runner.state"; state: RunnerState }
   | { type: "runner.output"; worktreeId: string; lines: RunnerLine[] };
 

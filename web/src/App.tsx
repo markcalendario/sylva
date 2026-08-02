@@ -27,6 +27,16 @@ function Shell() {
   const [showRegister, setShowRegister] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
+  // A branch switch means the fetched worktree list is out of date. The status
+  // stream carries the new branch, but the *name* shown in the sidebar comes
+  // from this list — which is why a checkout used to need a reload.
+  const worktreesRevision = useSylva((s) => s.worktreesRevision);
+  useEffect(() => {
+    if (worktreesRevision === 0) return;
+    void qc.invalidateQueries({ queryKey: ["worktrees"] });
+    void qc.invalidateQueries({ queryKey: ["branches"] });
+  }, [worktreesRevision, qc]);
+
   useEffect(() => {
     startWs(() => {
       // Reconnected: the world may have moved on. Resync everything.

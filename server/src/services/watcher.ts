@@ -8,6 +8,8 @@ import type { GitOps } from "./gitOps.js";
 import type { WsHub } from "../ws/hub.js";
 
 const DEBOUNCE_MS = 100;
+/** A checkout touches HEAD several times; wait for it to settle. */
+const HEAD_DEBOUNCE_MS = 150;
 const MAX_EVENTS_PER_BATCH = 500;
 
 const IGNORED_SEGMENTS = new Set([
@@ -31,10 +33,13 @@ export function isIgnored(relPath: string): boolean {
 
 interface Watched {
   close: () => void;
+  /** Closes the HEAD watch, which is separate because .git is ignored. */
+  closeHead: () => void;
   reasons: Set<"focus" | "session">;
   pending: Map<string, FileEvent>;
   dropped: number;
   timer: NodeJS.Timeout | null;
+  headTimer: NodeJS.Timeout | null;
 }
 
 /**
@@ -92,12 +97,15 @@ export class WatcherManager {
 
     const state: Watched = {
       close: () => {},
+      closeHead: () => {},
       reasons: new Set([reason]),
       pending: new Map(),
       dropped: 0,
       timer: null,
+      headTimer: null,
     };
     this.watched.set(worktreeId, state);
+    void this.watchHead(worktreeId, state);
 
     const record = (relPath: string, change: FileEvent["change"]) => {
       if (isIgnored(relPath)) return;
@@ -153,13 +161,65 @@ export class WatcherManager {
     }
   }
 
+  /**
+   * Watch HEAD, so a branch switch shows up without a reload.
+   *
+   * The file watcher deliberately ignores `.git` — watching it would flood the
+   * feed with object churn on every commit — but that also made a checkout
+   * invisible, which is the one thing inside `.git` worth hearing about. So
+   * HEAD gets its own watch.
+   *
+   * Watches the *directory* rather than the file: git replaces HEAD by writing
+   * a temp file and renaming over it, which breaks a watch held on the old
+   * inode.
+   */
+  private async watchHead(worktreeId: string, state: Watched): Promise<void> {
+    let gitDir: string;
+    try {
+      gitDir = await this.gitOps.gitDir(worktreeId);
+    } catch {
+      return; // worktree vanished between being opened and being watched
+    }
+    // Dropped while we were asking.
+    if (this.watched.get(worktreeId) !== state) return;
+
+    try {
+      const watcher = fsWatch(gitDir, { persistent: true });
+      watcher.on("change", (_event, filename) => {
+        if (!filename || filename.toString() !== "HEAD") return;
+        // git writes HEAD more than once during a checkout; answer the last.
+        if (state.headTimer) clearTimeout(state.headTimer);
+        state.headTimer = setTimeout(() => void this.headMoved(worktreeId), HEAD_DEBOUNCE_MS);
+      });
+      watcher.on("error", () => {});
+      state.closeHead = () => watcher.close();
+    } catch {
+      // No watch available here; the panel still refreshes on file changes.
+    }
+  }
+
+  private async headMoved(worktreeId: string): Promise<void> {
+    try {
+      const status = await this.gitOps.status(worktreeId);
+      this.hub.broadcast({ type: "git.status", status });
+      // The branch *name* lives in the worktree list, which is fetched rather
+      // than streamed — so say the list is stale, or the sidebar keeps showing
+      // the branch that was checked out when the page loaded.
+      this.hub.broadcast({ type: "worktrees.changed", repoId: null });
+    } catch {
+      // Mid-rebase, or the worktree is gone; the next event will catch up.
+    }
+  }
+
   private dropReason(worktreeId: string, reason: "focus" | "session"): void {
     const state = this.watched.get(worktreeId);
     if (!state) return;
     state.reasons.delete(reason);
     if (state.reasons.size === 0) {
       if (state.timer) clearTimeout(state.timer);
+      if (state.headTimer) clearTimeout(state.headTimer);
       state.close();
+      state.closeHead();
       this.watched.delete(worktreeId);
     }
   }
@@ -185,7 +245,9 @@ export class WatcherManager {
   async closeAll(): Promise<void> {
     for (const [id, state] of this.watched) {
       if (state.timer) clearTimeout(state.timer);
+      if (state.headTimer) clearTimeout(state.headTimer);
       state.close();
+      state.closeHead();
       this.watched.delete(id);
     }
   }

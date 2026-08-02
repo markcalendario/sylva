@@ -4352,3 +4352,26 @@ a svg,
 .browse-row-repo .browse-icon {
   color: var(--sapling);
 }
+
+/* ---------- shared dryads in the sidebar ---------- */
+
+.repo-shared-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  color: var(--moss-dim);
+  cursor: default;
+}
+
+.circle-name {
+  font-size: var(--text-xs);
+}
+
+.circle-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  color: var(--moss-dim);
+  background: var(--pine-2);
+  border-radius: 999px;
+  padding: 0 5px;
+}

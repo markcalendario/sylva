@@ -14,7 +14,7 @@ Working on three things at once means three worktrees, three terminals, and no i
 
 - **A worktree per task.** Name a branch and Sylva creates the worktree, registers it, and opens it. Remove it when you're done and the branch and directory go with it. New repositories can be started from inside Sylva too — initialized, committed, and ready for worktrees.
 - **Two at once.** Split the workspace and keep an old system and a new one open side by side, each with its own Agent, Files, Git and Run tabs. Both stay live.
-- **One dryad, several worktrees.** Hold a worktree in the sidebar to start picking, choose a few more, and they share a single agent — so it can read the old system and write the new one in the same turn, remembering both.
+- **One dryad, several worktrees.** Shift-click a worktree in the sidebar, pick a few more, and they share a single agent — so it can read the old system and write the new one in the same turn, remembering both.
 - **One Claude session per worktree.** Sessions are independent — separate transcripts, separate costs, separate settings — and resume across server restarts.
 - **The grove.** A dryad bound to no worktree at all, which knows where every registered repository lives. For the questions that span all of them.
 - **Permissions you can actually see.** Tool requests appear inline with Allow / Allow always this session / Deny. There's an opt-in "skip all permissions" mode behind an explicit confirmation.
@@ -72,7 +72,7 @@ npm start          # everything on http://localhost:4611
 2. **Grow a worktree** — **✦ New worktree**, then name a branch (`feature/whatever`). Sylva creates the worktree and opens it.
 3. **Prompt the dryad** — the **Agent** tab. Prompts sent while a turn is in flight queue up rather than interrupting.
 4. **Watch it work** — **Files** streams changes live and searches by name or by what's written inside; **Git** shows what's staged, lists open pull requests, and lets you commit; **Run** starts the project.
-5. **Work on two things** — the split control in the worktree header opens a second pane; the sidebar loads into whichever pane is active. To put two worktrees under *one* dryad instead, hold one in the sidebar and pick the rest.
+5. **Work on two things** — the split control in the worktree header opens a second pane; the sidebar loads into whichever pane is active. To put two worktrees under *one* dryad instead, shift-click them in the sidebar; they appear together under **shared**.
 6. **Step back** — **⌂ Forest** shows every worktree at once. **✿ Grove** talks to the dryad that belongs to none of them.
 
 Sessions persist to `~/.sylva/sessions/` and resume through the Agent SDK, so restarting the server doesn't lose a conversation. Settings live on their own page behind **⚙ Settings**, including the run command each repository uses.

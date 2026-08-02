@@ -500,6 +500,17 @@ export class GitOps {
   }
 
   /**
+   * Where this worktree's git metadata lives. Not always `<worktree>/.git`: in
+   * a linked worktree that is a *file* pointing at
+   * `<repo>/.git/worktrees/<name>`, which is where its HEAD really is.
+   */
+  async gitDir(worktreeId: string): Promise<string> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const { stdout } = await this.git.run(worktree.path, ["rev-parse", "--absolute-git-dir"]);
+    return stdout.trim();
+  }
+
+  /**
    * Search inside files, not just their names.
    *
    * `git grep` rather than a hand-rolled walk: it already skips .gitignore'd

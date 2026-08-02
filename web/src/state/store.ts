@@ -71,6 +71,24 @@ export interface WorktreePlace {
 
 const PANES_KEY = "sylva.panes";
 const SIDEBAR_KEY = "sylva.sidebarCollapsed";
+const CIRCLES_KEY = "sylva.circles";
+
+function loadList(key: string): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveList(key: string, value: string[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Private mode or a full quota; the list just won't survive a reload.
+  }
+}
 
 /** Small booleans that should outlive a reload. Failing to read one is fine. */
 function loadFlag(key: string): boolean {
@@ -151,6 +169,12 @@ interface SylvaState {
    */
   drafts: Record<string, Draft>;
 
+  /**
+   * Bumped whenever the server says the worktree list is stale — a checkout, a
+   * branch rename. Anything holding a fetched list watches this and refetches.
+   */
+  worktreesRevision: number;
+
   /** Layout of the main area. */
   panes: Pane[];
   activePaneId: string;
@@ -182,10 +206,19 @@ interface SylvaState {
 
   /**
    * Worktrees picked for a shared dryad, or null when not picking. Selection is
-   * modal because the ordinary click already means "open this" — long-pressing
+   * modal because the ordinary click already means "open this" — shift-clicking
    * is how you say you meant something else.
    */
   selection: string[] | null;
+  /**
+   * Circles you've made, newest first. Kept because a circle is only an id —
+   * there is nothing on the server to list — so without this a shared dryad
+   * would vanish from the sidebar the moment you opened something else, even
+   * though its conversation is still there waiting.
+   */
+  knownCircles: string[];
+  rememberCircle: (id: string) => void;
+  forgetCircle: (id: string) => void;
   beginSelection: (worktreeId: string) => void;
   toggleSelection: (worktreeId: string) => void;
   clearSelection: () => void;
@@ -225,6 +258,8 @@ export const useSylva = create<SylvaState>((set, get) => ({
   celebrating: {},
   unseenActivity: {},
   drafts: {},
+
+  worktreesRevision: 0,
 
   panes: initialPanes,
   activePaneId: initialPanes[0]?.id ?? "",
@@ -325,6 +360,7 @@ export const useSylva = create<SylvaState>((set, get) => ({
     const id = circleId(worktreeIds);
     const paneId = s.panes.find((p) => p.id === s.activePaneId)?.id ?? s.panes[0]?.id;
     if (paneId) s.setPaneWorktree(paneId, id);
+    s.rememberCircle(id);
     set({ selection: null, view: "workspace" });
     // Focus the first member so the status strip and the watcher have a
     // worktree to talk about; the circle itself is not one.
@@ -333,6 +369,22 @@ export const useSylva = create<SylvaState>((set, get) => ({
   },
 
   selection: null,
+
+  knownCircles: loadList(CIRCLES_KEY),
+
+  rememberCircle: (id) =>
+    set((s) => {
+      const knownCircles = [id, ...s.knownCircles.filter((c) => c !== id)].slice(0, 12);
+      saveList(CIRCLES_KEY, knownCircles);
+      return { knownCircles };
+    }),
+
+  forgetCircle: (id) =>
+    set((s) => {
+      const knownCircles = s.knownCircles.filter((c) => c !== id);
+      saveList(CIRCLES_KEY, knownCircles);
+      return { knownCircles };
+    }),
 
   beginSelection: (worktreeId) => set({ selection: [worktreeId] }),
 
@@ -495,6 +547,9 @@ export const useSylva = create<SylvaState>((set, get) => ({
         break;
       case "focus.changed":
         s.setFocus(event.worktreeId);
+        break;
+      case "worktrees.changed":
+        set((st) => ({ worktreesRevision: st.worktreesRevision + 1 }));
         break;
       case "runner.state":
         s.setRunner(event.state);
