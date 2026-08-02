@@ -2,7 +2,8 @@ import { useQueries } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useRepos } from "../lib/queries";
 import { spriteStateFor, useSylva } from "../state/store";
-import { ForestScene, type Plot } from "./ForestScene";
+import { circleMembers } from "sylva-shared";
+import { ForestScene, type CirclePlot, type Plot } from "./ForestScene";
 
 /**
  * The clearing: every worktree across every repository, living in one scene.
@@ -43,6 +44,7 @@ export function ForestView() {
   // A worktree counts as open when any pane holds it, not just the primary one.
   const paneWorktreeIds = useSylva((s) => s.panes.map((p) => p.worktreeId).join(","));
   const unseenMap = useSylva((s) => s.unseenActivity);
+  const knownCircles = useSylva((s) => s.knownCircles);
 
   const plots: Plot[] = pairs.map(({ repo, worktree }, i) => {
     const status = live[worktree.id] ?? statusQueries[i]?.data;
@@ -57,6 +59,27 @@ export function ForestView() {
       unseen: unseenMap[worktree.id] ?? false,
       focused: paneWorktreeIds.includes(worktree.id),
     };
+  });
+
+  /**
+   * Shared dryads stand on the map too. A circle whose worktrees aren't all
+   * present is left off rather than drawn short — half a circle would say
+   * something untrue about what the dryad can reach.
+   */
+  const byId = new Map(pairs.map(({ repo, worktree }) => [worktree.id, { repo, worktree }]));
+  const circlePlots: CirclePlot[] = knownCircles.flatMap((id) => {
+    const ids = circleMembers(id) ?? [];
+    const members = ids.map((m) => byId.get(m)).filter((m): m is NonNullable<typeof m> => !!m);
+    if (members.length !== ids.length || members.length < 2) return [];
+    return [
+      {
+        id,
+        members,
+        state: spriteStateFor({ sessions, pendingPermissions, celebrating }, id),
+        unseen: unseenMap[id] ?? false,
+        focused: paneWorktreeIds.includes(id),
+      },
+    ];
   });
 
   const busy = plots.filter((p) => p.state === "working").length;
@@ -84,7 +107,12 @@ export function ForestView() {
 
       {plots.length > 0 && (
         <>
-          <ForestScene plots={plots} onOpen={(id) => useSylva.getState().openWorktree(id)} />
+          <ForestScene
+            plots={plots}
+            circles={circlePlots}
+            onOpen={(id) => useSylva.getState().openWorktree(id)}
+            onOpenCircle={(ids) => useSylva.getState().openCircle(ids)}
+          />
 
           {/* The facts live here rather than on the map, so the plane stays a
               scene and the numbers stay scannable. */}

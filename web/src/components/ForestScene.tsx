@@ -75,6 +75,36 @@ export interface Plot {
   focused: boolean;
 }
 
+/**
+ * A shared dryad on the map: several trees tended by one agent, so several
+ * sprites travelling together as one. Its station comes from the shared
+ * session's state, not from any one member's.
+ */
+export interface CirclePlot {
+  id: string;
+  members: { worktree: Worktree; repo: Repo }[];
+  state: SpriteState;
+  unseen: boolean;
+  focused: boolean;
+}
+
+/**
+ * Anything that stands somewhere and walks. A lone dryad has a crew of one, a
+ * circle has one per worktree — which keeps the station claiming, the walking
+ * and the thought bubbles from ever needing to know which they are looking at.
+ */
+interface SceneActor {
+  id: string;
+  state: SpriteState;
+  unseen: boolean;
+  focused: boolean;
+  /** How many dryads to draw. More than one is drawn inside a bubble. */
+  crew: number;
+  label: string;
+  tip: string;
+  onOpen: () => void;
+}
+
 const STATE_STATION: Record<SpriteState, StationKey> = {
   idle: "camp",
   working: "workshop",
@@ -208,7 +238,17 @@ const standing = new Map<string, StationKey>();
  * width of this panel, so it fits without scrolling sideways at any window
  * size, and grows downwards instead as worktrees are added.
  */
-export function ForestScene({ plots, onOpen }: { plots: Plot[]; onOpen: (id: string) => void }) {
+export function ForestScene({
+  plots,
+  circles = [],
+  onOpen,
+  onOpenCircle,
+}: {
+  plots: Plot[];
+  circles?: CirclePlot[];
+  onOpen: (id: string) => void;
+  onOpenCircle?: (worktreeIds: string[]) => void;
+}) {
   const wrap = useRef<HTMLDivElement>(null);
   const [viewWidth, setViewWidth] = useState(0);
 
@@ -226,13 +266,23 @@ export function ForestScene({ plots, onOpen }: { plots: Plot[]; onOpen: (id: str
   }, []);
 
   const layout = useMemo(
-    () => (viewWidth > 0 ? computeLayout(viewWidth, plots.length) : null),
-    [viewWidth, plots.length],
+    // Circles stand on the map too, so they count towards how much of it
+    // there needs to be.
+    () => (viewWidth > 0 ? computeLayout(viewWidth, plots.length + circles.length) : null),
+    [viewWidth, plots.length, circles.length],
   );
 
   return (
     <div className="overworld-wrap" ref={wrap}>
-      {layout && <Plane layout={layout} plots={plots} onOpen={onOpen} />}
+      {layout && (
+        <Plane
+          layout={layout}
+          plots={plots}
+          circles={circles}
+          onOpen={onOpen}
+          {...(onOpenCircle ? { onOpenCircle } : {})}
+        />
+      )}
     </div>
   );
 }
@@ -240,11 +290,15 @@ export function ForestScene({ plots, onOpen }: { plots: Plot[]; onOpen: (id: str
 function Plane({
   layout,
   plots,
+  circles,
   onOpen,
+  onOpenCircle,
 }: {
   layout: Layout;
   plots: Plot[];
+  circles: CirclePlot[];
   onOpen: (id: string) => void;
+  onOpenCircle?: (worktreeIds: string[]) => void;
 }) {
   const plane = useMemo(() => renderPlane(layout), [layout]);
   const { stations } = layout;
@@ -281,18 +335,57 @@ function Plane({
   // its own, show that instead; the roster and the tooltip keep the full name.
   const labels = useMemo(() => byLeafSegment(plots), [plots]);
 
+  /**
+   * Circles first: they are the fewest and the most consequential, so when two
+   * actors land on the same slot the shared one keeps the nearer place.
+   */
+  const actors: SceneActor[] = useMemo(() => {
+    const fromCircles = circles.map((circle) => {
+      const names = circle.members.map(
+        (m) => m.worktree.branch ?? m.worktree.head.slice(0, 7),
+      );
+      return {
+        id: circle.id,
+        state: circle.state,
+        unseen: circle.unseen,
+        focused: circle.focused,
+        crew: circle.members.length,
+        label: `${circle.members.length} trees`,
+        tip: `one dryad, ${circle.members.length} worktrees — ${names.join(" + ")} · ${STATE_WORD[circle.state]} · click to open`,
+        onOpen: () => onOpenCircle?.(circle.members.map((m) => m.worktree.id)),
+      } satisfies SceneActor;
+    });
+
+    const fromPlots = plots.map((plot) => {
+      const name = fullName(plot);
+      return {
+        id: plot.worktree.id,
+        state: plot.state,
+        unseen: plot.unseen,
+        focused: plot.focused,
+        crew: 1,
+        label: labels.get(plot.worktree.id) || name,
+        tip: `${name} — ${STATE_WORD[plot.state]} · ${plot.repo.name} · click to open`,
+        onOpen: () => onOpen(plot.worktree.id),
+      } satisfies SceneActor;
+    });
+
+    return [...fromCircles, ...fromPlots];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plots, circles, labels]);
+
   // Position comes from where each dryad is *painted*, which lags where its
   // state says it should be until the walk has been kicked off below. A CSS
   // transition needs a value to move from, so rendering an actor straight into
   // its destination — which is what happens when you open the forest after
   // starting an agent elsewhere — teleports it instead of walking it.
   const [painted, setPainted] = useState<Record<string, StationKey>>(() =>
-    Object.fromEntries(plots.map((p) => [p.worktree.id, standing.get(p.worktree.id) ?? "camp"])),
+    Object.fromEntries(actors.map((a) => [a.id, standing.get(a.id) ?? "camp"])),
   );
-  const stationFor = (plot: Plot): StationKey =>
-    painted[plot.worktree.id] ?? standing.get(plot.worktree.id) ?? "camp";
+  const stationFor = (actor: SceneActor): StationKey =>
+    painted[actor.id] ?? standing.get(actor.id) ?? "camp";
 
-  const destinations = plots.map((p) => `${p.worktree.id}:${STATE_STATION[p.state]}`).join(",");
+  const destinations = actors.map((a) => `${a.id}:${STATE_STATION[a.state]}`).join(",");
   useEffect(() => {
     // Two frames deep: the first commit has to reach the screen at the old
     // station before the new one is applied, or the browser folds both into a
@@ -303,11 +396,11 @@ function Plane({
         setPainted((current) => {
           let moved = false;
           const next = { ...current };
-          for (const plot of plots) {
-            const target = STATE_STATION[plot.state];
-            standing.set(plot.worktree.id, target);
-            if (next[plot.worktree.id] !== target) {
-              next[plot.worktree.id] = target;
+          for (const actor of actors) {
+            const target = STATE_STATION[actor.state];
+            standing.set(actor.id, target);
+            if (next[actor.id] !== target) {
+              next[actor.id] = target;
               moved = true;
             }
           }
@@ -320,7 +413,7 @@ function Plane({
       cancelAnimationFrame(outer);
       cancelAnimationFrame(inner);
     };
-    // `plots` is read inside; `destinations` is what decides if it matters.
+    // `actors` is read inside; `destinations` is what decides if it matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destinations]);
 
@@ -328,12 +421,12 @@ function Plane({
   const bubbles = useBubbles(sources);
 
   const taken = new Map<StationKey, number>();
-  const placed = [...plots]
-    .sort((a, b) => a.worktree.id.localeCompare(b.worktree.id))
-    .map((plot) => {
+  const placed = [...actors]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((actor) => {
       // Claimed against the painted station, so a dryad reserves its place the
       // moment it sets off and no two ever glide onto the same spot.
-      const key = stationFor(plot);
+      const key = stationFor(actor);
       const station = stations[key];
       const next = taken.get(key) ?? 0;
       taken.set(key, next + 1);
@@ -343,7 +436,7 @@ function Plane({
       // so heading for a central station means "along, then up"; heading for a
       // lateral one means "down, then along". Either way it is a right angle.
       const alongFirst = key === "grove" || key === "board";
-      return { plot, x: slot.x, y: slot.y, alongFirst };
+      return { actor, x: slot.x, y: slot.y, alongFirst };
     });
 
   // Everything in the world that could make a sound, plus everyone in it who
@@ -352,7 +445,7 @@ function Plane({
     ...placed.map((p) => ({
       x: p.x,
       y: p.y - 34,
-      phrases: THOUGHTS[p.plot.state],
+      phrases: THOUGHTS[p.actor.state],
       thought: true,
     })),
     ...layout.trees.map((t) => ({
@@ -730,16 +823,8 @@ function Plane({
       ))}
 
       {/* The dryads. */}
-      {placed.map(({ plot, x, y, alongFirst }) => (
-        <Actor
-          key={plot.worktree.id}
-          plot={plot}
-          label={labels.get(plot.worktree.id) ?? ""}
-          x={x}
-          y={y}
-          alongFirst={alongFirst}
-          onOpen={onOpen}
-        />
+      {placed.map(({ actor, x, y, alongFirst }) => (
+        <Actor key={actor.id} actor={actor} x={x} y={y} alongFirst={alongFirst} />
       ))}
 
       {/* Thoughts and noises. Above the props, below the signs. */}
@@ -859,22 +944,18 @@ function byLeafSegment(plots: Plot[]): Map<string, string> {
 }
 
 function Actor({
-  plot,
-  label,
+  actor,
   x,
   y,
   alongFirst,
-  onOpen,
 }: {
-  plot: Plot;
-  label: string;
+  actor: SceneActor;
   x: number;
   y: number;
   alongFirst: boolean;
-  onOpen: (id: string) => void;
 }) {
-  const { worktree, repo, state, unseen, focused } = plot;
-  const name = fullName(plot);
+  const { state, unseen, focused, crew, label, tip } = actor;
+  const shared = crew > 1;
 
   // The two axes are separate elements so each can carry its own transition.
   // Delaying one by the other's duration turns what would be a diagonal glide
@@ -883,37 +964,42 @@ function Actor({
     <button
       className={`ow-actor ow-lane-${alongFirst ? "x-first" : "y-first"} ${focused ? "ow-focused" : ""}`}
       style={{ transform: `translateX(${x * SCALE}px)`, zIndex: Math.round(y) + 1 }}
-      onClick={() => onOpen(worktree.id)}
+      onClick={actor.onOpen}
       // No expand-on-hover: the plate is centred on the dryad, so growing it
       // slides the name sideways under the pointer. The tooltip already has
       // the full branch, and it doesn't move anything to show it.
-      data-tip={`${name} — ${STATE_WORD[state]} · ${repo.name} · click to open`}
+      data-tip={tip}
     >
       <span
         className={`ow-actor-lift ow-${state}`}
         style={{ transform: `translateY(${(y + SKY) * SCALE}px)` }}
       >
-      <span className="actor-name">
-        {label || name}
-        {unseen && !focused && <span className="actor-dot" />}
-      </span>
-      <span className="ow-body">
-        <Sprite state={state} scale={2} />
-      </span>
-      {state === "idle" && (
-        <>
-          <span className="zzz zzz-a">z</span>
-          <span className="zzz zzz-b">z</span>
-        </>
-      )}
-      {state === "working" && <span className="ow-firefly" />}
-      {state === "success" && (
-        <>
-          <span className="ow-spark ow-spark-a" />
-          <span className="ow-spark ow-spark-b" />
-        </>
-      )}
-      {state === "error" && <span className="ow-alert">!</span>}
+        <span className="actor-name">
+          {label}
+          {unseen && !focused && <span className="actor-dot" />}
+        </span>
+        {/* A shared dryad is several sprites travelling as one, so they are
+            ringed together — the ring is the thing that says "these are not
+            four dryads who happen to be standing near each other". */}
+        <span className={`ow-body ${shared ? "ow-crew" : ""}`}>
+          {Array.from({ length: crew }, (_, i) => (
+            <Sprite key={i} state={state} scale={2} />
+          ))}
+        </span>
+        {state === "idle" && (
+          <>
+            <span className="zzz zzz-a">z</span>
+            <span className="zzz zzz-b">z</span>
+          </>
+        )}
+        {state === "working" && <span className="ow-firefly" />}
+        {state === "success" && (
+          <>
+            <span className="ow-spark ow-spark-a" />
+            <span className="ow-spark ow-spark-b" />
+          </>
+        )}
+        {state === "error" && <span className="ow-alert">!</span>}
       </span>
     </button>
   );

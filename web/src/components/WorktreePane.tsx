@@ -177,10 +177,7 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
             </span>
           </div>
         </div>
-        {/* Opening "the worktree" in an editor needs one worktree. For a
-            circle, that action lives per-section in the Git tab, where the
-            worktree it belongs to is already named. */}
-        {!circle && members[0] && <OpenExternallyButtons worktreeId={members[0]} />}
+        <OpenExternallyButtons members={members} />
         <div className="pane-controls">
           {split ? (
             <button

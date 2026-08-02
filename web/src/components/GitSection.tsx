@@ -7,7 +7,6 @@ import { confirm } from "../lib/confirm";
 import { useInvalidate, useStatusQuery } from "../lib/queries";
 import { useSylva, type DiffSelection } from "../state/store";
 import { CreatePrButton } from "./CreatePrButton";
-import { OpenExternallyButtons } from "./OpenExternallyButton";
 
 const KIND_GLYPH: Record<StatusEntry["kind"], string> = {
   added: "+",
@@ -232,8 +231,6 @@ export function GitSection({
               <ArrowUp size={13} /> Push
             </button>
             <CreatePrButton worktreeId={worktreeId} branch={status.branch} />
-            {/* Per-worktree because "open the worktree" needs one worktree. */}
-            <OpenExternallyButtons worktreeId={worktreeId} />
           </div>
 
           {changed === 0 ? (

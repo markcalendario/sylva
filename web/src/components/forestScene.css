@@ -866,3 +866,43 @@
     animation: none;
   }
 }
+
+/* ── A shared dryad ──────────────────────────────────────────────────────────
+   Several sprites travelling as one. The ring is what says "these are not
+   four dryads standing near each other" — without it a circle at the camp is
+   indistinguishable from a crowd. */
+
+.ow-crew {
+  display: inline-flex;
+  align-items: flex-end;
+  /* Overlapped rather than spaced: they are one thing, and a row of separated
+     sprites reads as a queue. */
+  gap: 0;
+  padding: 2px 5px 1px;
+  border: 1px solid var(--firefly-dim);
+  border-radius: 999px;
+  background: rgb(255 180 84 / 0.1);
+  box-shadow: 0 0 10px rgb(255 180 84 / 0.14);
+}
+
+.ow-crew > * + * {
+  margin-left: -7px;
+}
+
+/* The ring picks up whatever the station means, so a shared dryad waiting on a
+   decision is as loud as a lone one. */
+.ow-error .ow-crew {
+  border-color: var(--ember);
+  background: rgb(255 107 91 / 0.12);
+  box-shadow: 0 0 10px rgb(255 107 91 / 0.18);
+}
+
+.ow-success .ow-crew {
+  border-color: var(--sapling);
+  background: rgb(127 208 104 / 0.12);
+  box-shadow: 0 0 10px rgb(127 208 104 / 0.18);
+}
+
+.ow-working .ow-crew {
+  border-color: var(--firefly);
+}
