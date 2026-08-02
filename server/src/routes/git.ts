@@ -6,6 +6,7 @@ import { createPullRequest } from "../services/pr.js";
 
 const treeQuerySchema = z.object({ path: z.string().max(1000).optional() });
 const fileQuerySchema = z.object({ path: z.string().min(1).max(1000) });
+const searchQuerySchema = z.object({ q: z.string().max(200).optional() });
 const prSchema = z
   .object({
     draft: z.boolean().default(false),
@@ -111,6 +112,12 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     const { worktreeId } = req.params as { worktreeId: string };
     const { path } = treeQuerySchema.parse(req.query);
     return gitOps.tree(worktreeId, path ?? "");
+  });
+
+  app.get("/api/worktrees/:worktreeId/search-files", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { q } = searchQuerySchema.parse(req.query);
+    return gitOps.searchFiles(worktreeId, q ?? "");
   });
 
   app.get("/api/worktrees/:worktreeId/file", async (req) => {

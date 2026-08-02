@@ -4,10 +4,13 @@ import type {
   BaseDivergence,
   BranchInfo,
   CommitGraph,
+  CommitStats,
   FileChangeKind,
   FileContent,
   FileDiff,
   FileEvent,
+  FileSearchResponse,
+  FileSearchResult,
   GraphCommit,
   TreeEntry,
   TreeListing,
@@ -18,6 +21,61 @@ import { parseBranches, parseDiff, parseStatusV2 } from "../lib/parse.js";
 import type { GitService } from "./git.js";
 import { isIgnored } from "./watcher.js";
 import type { Workspace } from "./workspace.js";
+
+/** `--shortstat`'s one line, e.g. " 3 files changed, 12 insertions(+), 4 deletions(-)". */
+const SHORTSTAT = /^\s*(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?\s*$/;
+
+/**
+ * The body field arrives with the shortstat line appended, because git prints
+ * the stat after the formatted record. Peel it back off.
+ */
+function splitBodyAndStats(raw: string): { body: string; stats?: CommitStats } {
+  const lines = raw.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line || !line.trim()) continue;
+    const match = SHORTSTAT.exec(line);
+    if (!match) break; // last non-blank line isn't a stat line: no stats here
+    lines.splice(i, 1);
+    return {
+      body: lines.join("\n").trim(),
+      stats: {
+        files: Number(match[1] ?? 0),
+        insertions: Number(match[2] ?? 0),
+        deletions: Number(match[3] ?? 0),
+      },
+    };
+  }
+  return { body: raw.trim() };
+}
+
+/**
+ * How well a path answers a query. Ranked so that typing a file's name finds
+ * that file, typing a folder finds its contents, and typing initials still
+ * gets there — `apnl` should reach AgentPanel.tsx.
+ */
+function scorePath(path: string, name: string, needle: string): number {
+  const lowerPath = path.toLowerCase();
+  const lowerName = name.toLowerCase();
+
+  if (lowerName === needle) return 1000;
+  if (lowerName.startsWith(needle)) return 900 - lowerName.length;
+  if (lowerName.includes(needle)) return 800 - lowerName.length;
+  if (lowerPath.includes(needle)) return 700 - lowerPath.length;
+  // Scattered letters, in order: the fuzzy fallback.
+  return isSubsequence(needle, lowerName) ? 600 - lowerName.length
+    : isSubsequence(needle, lowerPath) ? 500 - lowerPath.length
+    : 0;
+}
+
+function isSubsequence(needle: string, haystack: string): boolean {
+  let i = 0;
+  for (const char of haystack) {
+    if (char === needle[i]) i++;
+    if (i === needle.length) return true;
+  }
+  return needle.length === 0;
+}
 
 /** Everyday git operations on a worktree. All mutations go through the exclusive queue. */
 export class GitOps {
@@ -285,33 +343,119 @@ export class GitOps {
     };
   }
 
-  /** git log with a record format that survives subjects containing anything. */
+  /**
+   * git log with a record format that survives subjects containing anything.
+   *
+   * The body and the two identities cost nothing extra here, and `--shortstat`
+   * gets the diffstat in the same invocation — one process for the whole range,
+   * rather than one per commit, which is what makes it affordable to show this
+   * much detail on hover.
+   */
   private async log(cwd: string, args: string[]): Promise<GraphCommit[]> {
     const FIELD = "\x1f";
-    const RECORD = "\x1e";
+    // NUL separates commits because git forbids it inside a commit message —
+    // it is the one byte that cannot appear, so commits can never be lost or
+    // merged into each other however strange the messages are. Fields use a
+    // control character, which a determined message *could* contain; that
+    // degrades one commit's metadata rather than corrupting the list.
+    const RECORD = "\0";
+    const format = [
+      "%H", "%h", "%s", "%an", "%ar", "%ae", "%aI", "%cn", "%ce", "%cI", "%b",
+    ].join(FIELD);
     try {
       const { stdout } = await this.git.run(cwd, [
         "log",
-        `--format=%H${FIELD}%h${FIELD}%s${FIELD}%an${FIELD}%ar${RECORD}`,
+        // `%x00` rather than a literal NUL: the byte we want git to *emit*
+        // cannot itself be passed inside an argv string.
+        `--format=%x00${format}`,
+        "--shortstat",
         ...args,
       ]);
+      // Leading RECORD rather than trailing: --shortstat prints its line *after*
+      // the formatted record, so the delimiter has to open each commit for the
+      // stat line to land inside it rather than on the next one.
       return stdout
         .split(RECORD)
-        .map((record) => record.replace(/^\n/, ""))
         .filter((record) => record.trim().length > 0)
         .map((record) => {
-          const [sha, short, subject, author, relative] = record.split(FIELD);
+          const fields = record.split(FIELD);
+          const [sha, short, subject, author, relative, authorEmail, authorDate, committer, committerEmail, committerDate] =
+            fields;
+          // The body is the last field, so anything past it is a field
+          // separator that appeared inside the message — put it back.
+          const { body, stats } = splitBodyAndStats(fields.slice(10).join(FIELD));
           return {
             sha: sha ?? "",
             short: short ?? "",
             subject: subject ?? "",
             author: author ?? "",
             relative: relative ?? "",
+            authorEmail: authorEmail ?? "",
+            authorDate: authorDate ?? "",
+            committer: committer ?? "",
+            committerEmail: committerEmail ?? "",
+            committerDate: committerDate ?? "",
+            body,
+            ...(stats ? { stats } : {}),
           };
         });
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Find files by name anywhere in the worktree.
+   *
+   * Walks rather than asking git: `git ls-files` misses untracked files, and
+   * those are exactly the ones an agent has just created — the files you are
+   * most likely to be looking for.
+   */
+  async searchFiles(
+    worktreeId: string,
+    query: string,
+    { maxResults = 200, maxVisited = 20_000 } = {},
+  ): Promise<FileSearchResponse> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const needle = query.trim().toLowerCase();
+    if (!needle) return { query, results: [], truncated: false };
+
+    const results: FileSearchResult[] = [];
+    const queue: string[] = [""];
+    let visited = 0;
+    let truncated = false;
+
+    // Breadth-first, so a shallow match is found before a deep walk finishes.
+    while (queue.length > 0) {
+      const rel = queue.shift() as string;
+      if (visited >= maxVisited) {
+        truncated = true;
+        break;
+      }
+      let dirents;
+      try {
+        dirents = await readdir(rel ? join(worktree.path, rel) : worktree.path, {
+          withFileTypes: true,
+        });
+      } catch {
+        continue; // unreadable directory; the rest of the walk is still useful
+      }
+      for (const dirent of dirents) {
+        const childRel = rel ? `${rel}/${dirent.name}` : dirent.name;
+        if (isIgnored(childRel)) continue;
+        visited++;
+        if (dirent.isDirectory()) {
+          queue.push(childRel);
+        } else if (dirent.isFile()) {
+          const score = scorePath(childRel, dirent.name, needle);
+          if (score > 0) results.push({ path: childRel, name: dirent.name, score });
+        }
+      }
+    }
+
+    results.sort((a, b) => b.score - a.score || a.path.length - b.path.length);
+    if (results.length > maxResults) truncated = true;
+    return { query, results: results.slice(0, maxResults), truncated };
   }
 
   /**
