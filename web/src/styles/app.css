@@ -571,19 +571,20 @@
 
 /* ---------- settings sections ---------- */
 
+/* Separation comes from the parent's gap; the rule is only a divider. Carrying
+   its own margin as well is what made two adjacent sections sit further apart
+   than a section and the thing above it. */
 .settings-section {
   display: flex;
   flex-direction: column;
   gap: var(--pad-3);
   padding-bottom: var(--pad-4);
-  margin-bottom: var(--pad-3);
   border-bottom: 1px solid var(--pine-3);
 }
 
 .settings-section:last-of-type {
   border-bottom: none;
   padding-bottom: 0;
-  margin-bottom: var(--pad-2);
 }
 
 .settings-heading {
@@ -631,7 +632,6 @@
   display: flex;
   justify-content: center;
   gap: var(--pad-4);
-  padding: var(--pad-2) 0 var(--pad-4);
 }
 
 .credits {
@@ -640,7 +640,6 @@
   padding: var(--pad-4);
   background: var(--pine-0);
   text-align: center;
-  margin-bottom: var(--pad-3);
 }
 
 .credits-name {
@@ -2262,7 +2261,15 @@ button:disabled {
   background: rgb(6 10 8 / 0.7);
 }
 
+/* One flow gap for every dialog, rather than each element bringing its own
+   margin. Three steps, and only three: --pad-4 between the parts of a dialog,
+   --pad-3 between fields, --pad-1 between a control and its own hint. That last
+   one is what makes a hint read as belonging to the field above it rather than
+   floating between two. */
 .dialog-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-4);
   padding: var(--pad-4);
 }
 
@@ -2270,7 +2277,6 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--pad-3);
 }
 
 .dialog-head h2 {
@@ -2281,7 +2287,7 @@ button:disabled {
 .dialog-hint {
   color: var(--moss);
   font-size: var(--text-sm);
-  margin: 0 0 var(--pad-3);
+  margin: 0;
 }
 
 .dialog form {

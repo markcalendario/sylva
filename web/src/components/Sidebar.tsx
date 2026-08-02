@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Repo, Worktree } from "sylva-shared";
 import { api } from "../lib/api";
+import { confirm } from "../lib/confirm";
 import { useInvalidate, useRepos, useWorktrees } from "../lib/queries";
 import { spriteStateFor, useSylva } from "../state/store";
 import { Sprite } from "../sprites/Sprite";
@@ -100,9 +101,14 @@ function RepoGroup({ repo }: { repo: Repo }) {
               className="ghost"
               data-tip="Forget this repo — the folder on disk is untouched"
               onClick={() => {
-                if (confirm(`Remove ${repo.name} from Sylva? The repository on disk is untouched.`)) {
-                  void api.removeRepo(repo.id).then(() => invalidate.repos());
-                }
+                void confirm({
+                  title: `Forget ${repo.name}?`,
+                  body: "Sylva stops tracking this repository. The folder on disk, its branches and its worktrees are all left exactly as they are.",
+                  confirmLabel: "Forget it",
+                  tone: "danger",
+                }).then((ok) => {
+                  if (ok) void api.removeRepo(repo.id).then(() => invalidate.repos());
+                });
               }}
             >
               ✕

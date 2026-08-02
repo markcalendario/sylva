@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { StatusEntry } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
+import { confirm } from "../lib/confirm";
 import { useDiff, useInvalidate, useStatusQuery } from "../lib/queries";
 import { useSylva } from "../state/store";
 import { CommitGraph } from "./CommitGraph";
@@ -123,10 +124,16 @@ export function GitPanel({
       invalidate.diffs();
     } catch (e) {
       if (e instanceof ApiFailure && e.message === "no-upstream") {
-        if (confirm(`${e.detail}. Push with --set-upstream origin?`)) {
+        const ok = await confirm({
+          title: "This branch has no upstream",
+          body: `${e.detail}. Push it with --set-upstream origin, so this branch tracks the remote from now on?`,
+          confirmLabel: "Push and set upstream",
+        });
+        if (ok) {
           await run(() => api.push(worktreeId, true), "Pushed with upstream set.");
           return;
         }
+        setFeedback("Not pushed — the branch still has no upstream.");
       } else {
         setFeedback(e instanceof ApiFailure ? (e.detail ?? e.message) : String(e));
       }

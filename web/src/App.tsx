@@ -7,6 +7,7 @@ import { RegisterRepoDialog } from "./components/dialogs/RegisterRepoDialog";
 import { api } from "./lib/api";
 import { startWs } from "./lib/ws";
 import { useSylva } from "./state/store";
+import { ConfirmHost } from "./components/ConfirmDialog";
 import { Sidebar } from "./components/Sidebar";
 import { MainPanel } from "./components/MainPanel";
 import { StatusStrip } from "./components/StatusStrip";
@@ -76,6 +77,7 @@ function Shell() {
       />
 
       <TooltipLayer />
+      <ConfirmHost />
     </div>
   );
 }
