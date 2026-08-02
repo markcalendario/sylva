@@ -3756,3 +3756,159 @@ button:disabled {
   padding: var(--pad-2);
   align-items: center;
 }
+
+/* ---------- text search results ---------- */
+
+.tree-search-mode {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.hit-group {
+  list-style: none;
+  margin-bottom: var(--pad-2);
+}
+
+.hit-file {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  padding: var(--pad-1) var(--pad-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.hit-row {
+  display: flex;
+  gap: var(--pad-2);
+  width: 100%;
+  text-align: left;
+  padding: 1px var(--pad-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.hit-row:hover {
+  background: var(--pine-2);
+}
+
+.hit-row-on {
+  background: var(--pine-2);
+}
+
+.hit-line {
+  color: var(--moss-dim);
+  flex-shrink: 0;
+  min-width: 3ch;
+  text-align: right;
+}
+
+.hit-text {
+  color: var(--moon);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tree-file-line {
+  display: block;
+}
+
+/* The line you came here to see, marked so it isn't lost in the file. */
+.tree-file-line-hit {
+  background: rgb(255 180 84 / 0.14);
+  box-shadow: inset 2px 0 0 var(--firefly);
+}
+
+/* ---------- open pull requests ---------- */
+
+.git-pulls-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+}
+
+.pr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.pr-row {
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: var(--pad-2) var(--pad-3);
+  background: var(--pine-0);
+}
+
+.pr-row-current {
+  border-color: var(--firefly-dim);
+}
+
+.pr-link {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  color: var(--moon);
+  min-width: 0;
+}
+
+.pr-number {
+  font-family: var(--font-mono);
+  color: var(--moss-dim);
+  flex-shrink: 0;
+}
+
+.pr-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  margin-top: var(--pad-1);
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+}
+
+.pr-branch {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 24ch;
+}
+
+.pr-tag {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  padding: 1px var(--pad-2);
+  border-radius: 3px;
+  background: var(--pine-2);
+}
+
+.pr-tag-current {
+  color: var(--firefly);
+  background: rgb(255 180 84 / 0.12);
+}
+
+.pr-author {
+  margin-left: auto;
+}

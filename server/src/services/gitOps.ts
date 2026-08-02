@@ -9,6 +9,8 @@ import type {
   FileContent,
   FileDiff,
   FileEvent,
+  ContentMatch,
+  ContentSearchResponse,
   FileSearchResponse,
   FileSearchResult,
   GraphCommit,
@@ -495,6 +497,73 @@ export class GitOps {
       a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "dir" ? -1 : 1,
     );
     return { path: rel, entries };
+  }
+
+  /**
+   * Search inside files, not just their names.
+   *
+   * `git grep` rather than a hand-rolled walk: it already skips .gitignore'd
+   * paths and binaries, it is far faster than reading every file through Node,
+   * and `--untracked` covers the files an agent has just created, which a plain
+   * `git grep` would miss.
+   */
+  async searchContent(
+    worktreeId: string,
+    query: string,
+    { maxMatches = 200 } = {},
+  ): Promise<ContentSearchResponse> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const needle = query.trim();
+    if (!needle) return { query, matches: [], fileCount: 0, truncated: false };
+
+    let stdout = "";
+    try {
+      // -F: a literal search, so a stray ( or * is a character rather than a
+      // syntax error. -I: skip binaries. -n: line numbers.
+      const res = await this.git.run(worktree.path, [
+        "grep",
+        "--no-color",
+        "-F",
+        "-I",
+        "-n",
+        "-i",
+        "--untracked",
+        "--max-count",
+        "20",
+        "-e",
+        needle,
+      ]);
+      stdout = res.stdout;
+    } catch (e) {
+      // git grep exits 1 when nothing matched, which is an answer, not a fault.
+      if (e instanceof GitError && e.exitCode === 1) return { query, matches: [], fileCount: 0, truncated: false };
+      throw e;
+    }
+
+    const matches: ContentMatch[] = [];
+    for (const raw of stdout.split("\n")) {
+      if (!raw) continue;
+      // path:line:text — a path can contain a colon, so split from the left
+      // only as far as the two fields we need.
+      const first = raw.indexOf(":");
+      if (first === -1) continue;
+      const second = raw.indexOf(":", first + 1);
+      if (second === -1) continue;
+      const path = raw.slice(0, first);
+      const line = Number(raw.slice(first + 1, second));
+      if (!Number.isFinite(line)) continue;
+      if (isIgnored(path)) continue;
+      const text = raw.slice(second + 1).trim();
+      matches.push({ path, line, text: text.length > 400 ? `${text.slice(0, 399)}…` : text });
+      if (matches.length >= maxMatches) break;
+    }
+
+    return {
+      query,
+      matches,
+      fileCount: new Set(matches.map((m) => m.path)).size,
+      truncated: matches.length >= maxMatches,
+    };
   }
 
   /** A file's text, capped, with binaries reported rather than streamed. */

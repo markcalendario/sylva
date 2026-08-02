@@ -10,6 +10,7 @@ import type {
   FileContent,
   FileDiff,
   FileEvent,
+  ContentSearchResponse,
   FileSearchResponse,
   OpenKind,
   RunnerSnapshot,
@@ -25,6 +26,24 @@ import type {
   WorktreeSettings,
   WorktreeStatus,
 } from "sylva-shared";
+
+/** Mirrors the server's OpenPullRequests; kept here to avoid a shared-type churn. */
+export interface OpenPullRequests {
+  pulls:
+    | {
+        number: number;
+        title: string;
+        url: string;
+        draft: boolean;
+        branch: string;
+        author: string;
+        updatedAt: string;
+        isCurrent: boolean;
+      }[]
+    | null;
+  fallbackUrl: string | null;
+  reason: string | null;
+}
 
 export class ApiFailure extends Error {
   status: number;
@@ -163,6 +182,12 @@ export const api = {
     request<TreeListing>(`/api/worktrees/${worktreeId}/tree?path=${encodeURIComponent(path)}`),
   fileContent: (worktreeId: string, path: string) =>
     request<FileContent>(`/api/worktrees/${worktreeId}/file?path=${encodeURIComponent(path)}`),
+  searchContent: (worktreeId: string, q: string) =>
+    request<ContentSearchResponse>(
+      `/api/worktrees/${worktreeId}/search-content?q=${encodeURIComponent(q)}`,
+    ),
+  openPulls: (worktreeId: string) =>
+    request<OpenPullRequests>(`/api/worktrees/${worktreeId}/pulls`),
   searchFiles: (worktreeId: string, q: string) =>
     request<FileSearchResponse>(
       `/api/worktrees/${worktreeId}/search-files?q=${encodeURIComponent(q)}`,

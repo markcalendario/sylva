@@ -7,6 +7,7 @@ import { useDiff, useInvalidate, useStatusQuery } from "../lib/queries";
 import { useSylva } from "../state/store";
 import { CommitGraph } from "./CommitGraph";
 import { CreatePrButton } from "./CreatePrButton";
+import { OpenPullsButton } from "./OpenPullsButton";
 import { DiffView } from "./DiffView";
 
 const KIND_GLYPH: Record<StatusEntry["kind"], string> = {
@@ -152,6 +153,7 @@ function GitToolbar({
           ↑ Push
         </button>
         <CreatePrButton worktreeId={status.worktreeId} branch={status.branch} />
+        <OpenPullsButton worktreeId={status.worktreeId} />
       </div>
     </div>
   );

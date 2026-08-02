@@ -83,3 +83,96 @@ export async function createPullRequest(
   }
   return { url: compareUrl(https, opts.base, opts.head, opts.draft), via: "compare", draft: opts.draft };
 }
+
+export interface OpenPullRequest {
+  number: number;
+  title: string;
+  url: string;
+  draft: boolean;
+  branch: string;
+  author: string;
+  updatedAt: string;
+  /** True when this PR is the one for the branch you're standing on. */
+  isCurrent: boolean;
+}
+
+export interface OpenPullRequests {
+  /** Null when `gh` couldn't answer; `fallbackUrl` is then the way through. */
+  pulls: OpenPullRequest[] | null;
+  /** The repository's pull request page, when the remote is recognisable. */
+  fallbackUrl: string | null;
+  /** Why the list is missing, in a sentence, when it is. */
+  reason: string | null;
+}
+
+/**
+ * Open pull requests for this worktree's repository.
+ *
+ * Needs `gh` to list them — the compare URL trick works for *creating* a PR
+ * without an API, but there is no way to read a list out of a plain git remote.
+ * So when `gh` can't answer, this hands back the page instead of nothing.
+ */
+export async function listPullRequests(cwd: string, branch: string | null): Promise<OpenPullRequests> {
+  const { stdout: remote } = await run("git", ["remote", "get-url", "origin"], { cwd }).catch(
+    () => ({ stdout: "" }),
+  );
+  const https = remote ? remoteToHttps(remote) : null;
+  const fallbackUrl = https ? `${https}/pulls` : null;
+
+  try {
+    const { stdout } = await run(
+      "gh",
+      [
+        "pr",
+        "list",
+        "--state",
+        "open",
+        "--limit",
+        "30",
+        "--json",
+        "number,title,url,isDraft,headRefName,author,updatedAt",
+      ],
+      { cwd, timeout: 30_000 },
+    );
+    const raw = JSON.parse(stdout || "[]") as {
+      number: number;
+      title: string;
+      url: string;
+      isDraft: boolean;
+      headRefName: string;
+      author?: { login?: string };
+      updatedAt: string;
+    }[];
+
+    const pulls = raw.map((pr) => ({
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      draft: pr.isDraft,
+      branch: pr.headRefName,
+      author: pr.author?.login ?? "",
+      updatedAt: pr.updatedAt,
+      isCurrent: branch !== null && pr.headRefName === branch,
+    }));
+    // Yours first: you opened this panel from a worktree, and the PR for the
+    // branch you're on is the one you came to look at.
+    pulls.sort((a, b) =>
+      a.isCurrent === b.isCurrent ? b.updatedAt.localeCompare(a.updatedAt) : a.isCurrent ? -1 : 1,
+    );
+    return { pulls, fallbackUrl, reason: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Order matters: gh's "not logged in" advice appears in the output of
+    // several unrelated failures, so the more specific causes are tested first.
+    const reason = /ENOENT|command not found|spawn gh/i.test(message)
+      ? "`gh` isn't installed, so Sylva can't read the list."
+      : /no git remote|none of the git remotes|not a git repository|could not determine/i.test(
+            message,
+          )
+        ? "This repository has no GitHub remote."
+        : /auth|login|gh auth/i.test(message)
+          ? "`gh` isn't logged in — run `gh auth login`."
+          : "Couldn't read pull requests from this repository.";
+    return { pulls: null, fallbackUrl, reason };
+  }
+}

@@ -142,6 +142,23 @@ export interface FileSearchResponse {
   truncated: boolean;
 }
 
+/** One line inside a file that matched a content search. */
+export interface ContentMatch {
+  /** Worktree-relative path. */
+  path: string;
+  line: number;
+  /** The matching line, trimmed and capped. */
+  text: string;
+}
+
+export interface ContentSearchResponse {
+  query: string;
+  matches: ContentMatch[];
+  /** Distinct files represented in `matches`. */
+  fileCount: number;
+  truncated: boolean;
+}
+
 export interface PullRequestResult {
   url: string;
   /** "gh" when the PR was created, "compare" when we could only open a form. */

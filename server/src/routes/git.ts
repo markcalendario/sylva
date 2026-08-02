@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { badRequest } from "../lib/errors.js";
-import { createPullRequest } from "../services/pr.js";
+import { createPullRequest, listPullRequests } from "../services/pr.js";
 
 const treeQuerySchema = z.object({ path: z.string().max(1000).optional() });
 const fileQuerySchema = z.object({ path: z.string().min(1).max(1000) });
@@ -120,10 +120,23 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     return gitOps.searchFiles(worktreeId, q ?? "");
   });
 
+  app.get("/api/worktrees/:worktreeId/search-content", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { q } = searchQuerySchema.parse(req.query);
+    return gitOps.searchContent(worktreeId, q ?? "");
+  });
+
   app.get("/api/worktrees/:worktreeId/file", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     const { path } = fileQuerySchema.parse(req.query);
     return gitOps.fileContent(worktreeId, path);
+  });
+
+  /** Pull requests already open on this repository. */
+  app.get("/api/worktrees/:worktreeId/pulls", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { worktree } = await ctx.workspace.resolveWorktree(worktreeId);
+    return listPullRequests(worktree.path, worktree.branch);
   });
 
   /**
