@@ -39,6 +39,24 @@ export function MainPanel({
     void api.setOpenWorktrees(openIds ? openIds.split(",") : []).catch(() => {});
   }, [openIds]);
 
+  /**
+   * Whatever is on screen has been seen. Runs on every change to what that is —
+   * a pane loading something, the view switching — and again when the tab comes
+   * back, since a dryad celebrating into a background tab hasn't been seen by
+   * anyone.
+   */
+  useEffect(() => {
+    useSylva.getState().acknowledgeVisible();
+  }, [openIds, view]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (!document.hidden) useSylva.getState().acknowledgeVisible();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
+
   if (view === "settings") {
     return (
       <main className="main main-scroll">

@@ -12,7 +12,7 @@ import type {
   Worktree,
   WorktreeStatus,
 } from "sylva-shared";
-import { circleId, circleMembers } from "sylva-shared";
+import { circleId, circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
 
 const FEED_CAP = 200;
@@ -246,6 +246,8 @@ interface SylvaState {
   seedFileFeed: (worktreeId: string, events: FileEvent[]) => void;
   setAvailability: (a: AgentAvailability) => void;
   celebrate: (worktreeId: string) => void;
+  /** Clear the "look at me" state of everything currently on screen. */
+  acknowledgeVisible: () => void;
   applyServerEvent: (event: ServerEvent) => void;
 }
 
@@ -446,19 +448,16 @@ export const useSylva = create<SylvaState>((set, get) => ({
       return { fileFeed: { ...s.fileFeed, [worktreeId]: merged.slice(0, FEED_CAP) } };
     }),
 
-  setFocus: (focusedWorktreeId) =>
-    set((s) => {
-      if (!focusedWorktreeId) return { focusedWorktreeId };
-      // Opening a worktree is the acknowledgement. Its dryad heads back to the
-      // camp the next time you look at the forest.
-      const celebrating = { ...s.celebrating };
-      delete celebrating[focusedWorktreeId];
-      return {
-        focusedWorktreeId,
-        unseenActivity: { ...s.unseenActivity, [focusedWorktreeId]: false },
-        celebrating,
-      };
-    }),
+  /**
+   * Focus is now only "which worktree the server should treat as primary". It
+   * used to double as the acknowledgement, which broke twice over once panes
+   * existed: focus stays put while the Forest or Settings covers the screen, so
+   * a finished turn was never celebrated; and re-opening an already-focused
+   * worktree changes nothing, so the server never broadcasts and a celebration
+   * that had started was never cleared. Acknowledgement lives in
+   * acknowledgeVisible now, which asks what is actually on screen.
+   */
+  setFocus: (focusedWorktreeId) => set({ focusedWorktreeId }),
 
   setTranscript: (worktreeId, events) =>
     set((s) => ({ transcripts: { ...s.transcripts, [worktreeId]: events } })),
@@ -483,10 +482,39 @@ export const useSylva = create<SylvaState>((set, get) => ({
     set((s) =>
       // Already looking at it? Then you watched it finish, and sending its
       // dryad to the grove to be acknowledged would be asking twice.
-      s.focusedWorktreeId === worktreeId
+      isWatching(s, worktreeId)
         ? {}
         : { celebrating: { ...s.celebrating, [worktreeId]: true } },
     ),
+
+  /**
+   * Acknowledge everything on screen. Called whenever what's on screen changes
+   * — a pane loads something, the view switches, the tab comes back — because
+   * that is the moment the news is actually delivered.
+   */
+  acknowledgeVisible: () =>
+    set((s) => {
+      const seen = [...s.panes.map((p) => p.worktreeId), GROVE_ID].filter(
+        (id): id is string => id !== null && isWatching(s, id),
+      );
+      if (seen.length === 0) return {};
+
+      const celebrating = { ...s.celebrating };
+      const unseenActivity = { ...s.unseenActivity };
+      let changed = false;
+      for (const id of seen) {
+        if (celebrating[id]) {
+          delete celebrating[id];
+          changed = true;
+        }
+        if (unseenActivity[id]) {
+          unseenActivity[id] = false;
+          changed = true;
+        }
+      }
+      // Same objects back when nothing moved: this runs on every pane change.
+      return changed ? { celebrating, unseenActivity } : {};
+    }),
 
   applyServerEvent: (event) => {
     const s = get();
@@ -497,7 +525,7 @@ export const useSylva = create<SylvaState>((set, get) => ({
         if (event.event.kind === "result" && event.event.outcome === "success") {
           s.celebrate(event.worktreeId);
         }
-        if (event.worktreeId !== s.focusedWorktreeId) {
+        if (!isWatching(s, event.worktreeId)) {
           set((st) => ({ unseenActivity: { ...st.unseenActivity, [event.worktreeId]: true } }));
         }
         break;
@@ -529,10 +557,9 @@ export const useSylva = create<SylvaState>((set, get) => ({
         const next = [...event.events].reverse().concat(list).slice(0, FEED_CAP);
         set((st) => ({
           fileFeed: { ...st.fileFeed, [event.worktreeId]: next },
-          unseenActivity:
-            event.worktreeId !== st.focusedWorktreeId
-              ? { ...st.unseenActivity, [event.worktreeId]: true }
-              : st.unseenActivity,
+          unseenActivity: isWatching(st, event.worktreeId)
+            ? st.unseenActivity
+            : { ...st.unseenActivity, [event.worktreeId]: true },
         }));
         break;
       }
@@ -558,6 +585,24 @@ export const useSylva = create<SylvaState>((set, get) => ({
     }
   },
 }));
+
+/**
+ * Is the user actually looking at this target right now?
+ *
+ * Focus used to answer this and no longer can. A pane keeps holding a worktree
+ * while the Forest map or the Settings page fills the main area, and the whole
+ * tab can be in the background — in all of which the worktree is focused and
+ * quite invisible.
+ */
+export function isWatching(
+  s: Pick<SylvaState, "view" | "panes">,
+  targetId: string,
+): boolean {
+  if (typeof document !== "undefined" && document.hidden) return false;
+  if (targetId === GROVE_ID) return s.view === "grove";
+  if (s.view !== "workspace") return false;
+  return s.panes.some((p) => p.worktreeId === targetId);
+}
 
 /** Derive the sprite state for a worktree from live state. */
 export function spriteStateFor(
