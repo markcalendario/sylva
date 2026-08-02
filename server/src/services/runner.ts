@@ -55,9 +55,11 @@ export class RunnerService {
   async snapshot(worktreeId: string): Promise<RunnerSnapshot> {
     const existing = this.runners.get(worktreeId);
     if (existing) return { state: existing.state, lines: existing.lines };
+    const { repo } = await this.workspace.resolveWorktree(worktreeId);
     return {
       state: {
         worktreeId,
+        repoId: repo.id,
         status: "idle",
         command: await this.commandFor(worktreeId),
         pid: null,
@@ -81,7 +83,7 @@ export class RunnerService {
       throw conflict("A command is already running in this worktree");
     }
 
-    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const { repo, worktree } = await this.workspace.resolveWorktree(worktreeId);
     const command = await this.commandFor(worktreeId);
     if (!command) throw badRequest("No run command is configured for this repository");
 
@@ -92,12 +94,15 @@ export class RunnerService {
       cwd: worktree.path,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, FORCE_COLOR: "0" },
+      // Colour is the point: piping makes tools assume a dumb terminal and
+      // strip it, so ask for it explicitly and render the codes ourselves.
+      env: { ...process.env, FORCE_COLOR: "1", TERM: "xterm-256color" },
     });
 
     const runner: Runner = {
       state: {
         worktreeId,
+        repoId: repo.id,
         status: "running",
         command,
         pid: child.pid ?? null,

@@ -2701,29 +2701,47 @@ button:disabled {
   margin-bottom: 2px;
 }
 
-.graph-lane {
+/* The rail is drawn *inside* the content box, directly under the dots, rather
+   than as a border with the dots hung outside it on a negative margin. The old
+   way put the dots in the overflow region, and the scroll container clips it —
+   `overflow-y: auto` computes `overflow-x` to `auto` as well — so each dot lost
+   its left half and read as a crescent. */
+.graph-lane,
+.graph-common {
   list-style: none;
   margin: 0;
-  padding: 0;
-  /* The rail the dots sit on. */
-  border-left: 1px solid var(--pine-3);
-  padding-left: var(--pad-2);
+  padding: 0 0 0 var(--pad-2);
+  position: relative;
 }
 
-.graph-lane-yours {
-  border-left-color: var(--sapling-dim);
+.graph-lane::before,
+.graph-common::before {
+  content: "";
+  position: absolute;
+  /* Centred on the dot: padding-left (8px) + half a 7px dot, less half a px. */
+  left: calc(var(--pad-2) + 3px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pine-3);
 }
 
-.graph-lane-theirs {
-  border-left-color: var(--stream);
+.graph-lane-yours::before {
+  background: var(--sapling-dim);
 }
 
+.graph-lane-theirs::before {
+  background: var(--stream);
+}
+
+/* Centred, not baseline: a dot has no text in it, so baseline alignment drops
+   it below the line it belongs to. */
 .graph-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--pad-2);
   font-size: var(--text-xs);
-  padding: 2px 0;
+  padding: 3px 0;
   min-width: 0;
 }
 
@@ -2732,8 +2750,11 @@ button:disabled {
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-left: -12px;
   background: var(--moss-dim);
+  /* Sits over the rail rather than beside it. */
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 0 0 2px var(--pine-0);
 }
 
 .graph-dot-yours {
@@ -2790,6 +2811,10 @@ button:disabled {
   padding-left: var(--pad-2);
 }
 
+.graph-join .graph-dot {
+  box-shadow: none;
+}
+
 .graph-join-rail {
   flex-shrink: 0;
   width: 0;
@@ -2801,10 +2826,6 @@ button:disabled {
 }
 
 .graph-common {
-  list-style: none;
-  margin: 0;
-  padding: 0 0 0 var(--pad-2);
-  border-left: 1px solid var(--pine-3);
   opacity: 0.72;
 }
 
@@ -3564,4 +3585,62 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 55%;
+}
+
+/* ---------- terminal output ---------- */
+
+.ansi-bold {
+  font-weight: 700;
+}
+
+.ansi-dim {
+  opacity: 0.62;
+}
+
+.ansi-italic {
+  font-style: italic;
+}
+
+.ansi-underline {
+  text-decoration: underline;
+}
+
+.run-command-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--pad-1);
+}
+
+.run-command {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.run-command-saved {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  color: var(--sapling);
+}
+
+.run-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  flex-shrink: 0;
+}
+
+.run-url {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-1);
+  flex-shrink: 0;
+}
+
+.run-clear {
+  flex-shrink: 0;
 }

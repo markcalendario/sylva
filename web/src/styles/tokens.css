@@ -63,4 +63,24 @@
   --radius-lg: 10px;
 
   --shadow-raise: 0 4px 24px rgb(0 0 0 / 0.45);
+
+  /* Terminal colours for the Run tab. Tuned warmer and less saturated than raw
+     ANSI so a dev server's output sits in the forest rather than shouting over
+     it — but still the eight colours everyone's eyes already know. */
+  --ansi-black: #2a352e;
+  --ansi-red: #ff6b5b;
+  --ansi-green: #7fd068;
+  --ansi-yellow: #ffb454;
+  --ansi-blue: #7fb7c9;
+  --ansi-magenta: #c69ae0;
+  --ansi-cyan: #6fd3c4;
+  --ansi-white: #cdd8c8;
+  --ansi-bright-black: #5d6f63;
+  --ansi-bright-red: #ff9182;
+  --ansi-bright-green: #a6e694;
+  --ansi-bright-yellow: #ffcd85;
+  --ansi-bright-blue: #a6d3e0;
+  --ansi-bright-magenta: #dcbaf0;
+  --ansi-bright-cyan: #99e8dc;
+  --ansi-bright-white: #f2f7ef;
 }

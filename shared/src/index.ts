@@ -282,6 +282,8 @@ export type RunnerStatus = "idle" | "running" | "exited";
 
 export interface RunnerState {
   worktreeId: string;
+  /** Repository whose command this is — the one an edit would save against. */
+  repoId: string;
   status: RunnerStatus;
   /** The command as it will be, or was, run. */
   command: string;

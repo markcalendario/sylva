@@ -2,7 +2,7 @@
   "name": "sylva",
   "private": true,
   "version": "0.1.0",
-  "description": "Sylva — a local mission control for git worktrees and Claude agents",
+  "description": "Sylva \u2014 a local mission control for git worktrees and Claude agents",
   "workspaces": [
     "shared",
     "server",
@@ -12,7 +12,7 @@
     "dev": "concurrently -n server,web -c green,cyan \"npm run dev -w server\" \"npm run dev -w web\"",
     "build": "npm run build -w shared && npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
-    "test": "npm run test -w server"
+    "test": "npm run test -w server && npm run test -w web"
   },
   "engines": {
     "node": ">=20"
