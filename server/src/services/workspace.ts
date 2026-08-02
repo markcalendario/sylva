@@ -1,7 +1,7 @@
-import { access, stat } from "node:fs/promises";
+import { access, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Repo, Worktree } from "sylva-shared";
-import { badRequest, conflict, notFound } from "../lib/errors.js";
+import { badRequest, conflict, HttpError, notFound } from "../lib/errors.js";
 import { pathId } from "../lib/id.js";
 import { parseWorktreeList } from "../lib/parse.js";
 import type { GitService } from "./git.js";
@@ -67,6 +67,72 @@ export class Workspace {
     return { ...repo, available: true };
   }
 
+  /**
+   * Start a repository rather than adopt one. `git init` alone leaves HEAD
+   * unborn, and `git worktree add` refuses to work against an unborn HEAD — so
+   * a repository created here would be registered, visible, and unable to do
+   * the one thing Sylva is for. The initial commit is what makes it usable.
+   */
+  async createRepo(parentPath: string, rawName: string): Promise<Repo> {
+    if (!isAbsolute(parentPath)) throw badRequest("Path must be absolute");
+    const name = rawName.trim();
+    if (!name) throw badRequest("Repository name is required");
+    if (name.startsWith("-")) throw badRequest("Repository name cannot start with a dash");
+    if (name === "." || name === ".." || /[/\\]/.test(name)) {
+      throw badRequest("Repository name cannot contain a path separator");
+    }
+
+    const parent = resolve(parentPath);
+    try {
+      const info = await stat(parent);
+      if (!info.isDirectory()) throw badRequest(`Not a directory: ${parent}`);
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw badRequest(`Path does not exist: ${parent}`);
+    }
+
+    const path = join(parent, name);
+    try {
+      await access(path);
+      throw conflict(`${path} already exists`);
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      // ENOENT is the good case: nothing is in the way.
+    }
+
+    let created = false;
+    try {
+      await mkdir(path);
+      created = true;
+      await this.git.runExclusive(path, ["init", "-b", "main"]);
+      await writeFile(
+        join(path, "README.md"),
+        `# ${name}\n\nStarted with Sylva.\n`,
+        "utf8",
+      );
+      await this.git.runExclusive(path, ["add", "README.md"]);
+      try {
+        await this.git.runExclusive(path, ["commit", "-m", "Initial commit"]);
+      } catch (err) {
+        // git's own words here are a wall of configuration advice ending in a
+        // fatal; say the one thing that fixes it.
+        const message = err instanceof Error ? err.message : String(err);
+        if (/user\.email|user\.name|author identity/i.test(message)) {
+          throw badRequest(
+            "git doesn't know who you are yet",
+            'Set your identity first: git config --global user.name "Your Name" and git config --global user.email "you@example.com".',
+          );
+        }
+        throw err;
+      }
+      return await this.registerRepo(path);
+    } catch (err) {
+      // Half a repository is worse than none: leave the disk as we found it.
+      if (created) await rm(path, { recursive: true, force: true }).catch(() => {});
+      throw err;
+    }
+  }
+
   async removeRepo(repoId: string): Promise<void> {
     this.requireRepo(repoId);
     if (this.focusedWorktreeId) {
@@ -111,8 +177,14 @@ export class Workspace {
     }
     await this.git.runExclusive(repo.path, args);
 
+    // git reports worktrees by their real path, so an exact string match fails
+    // whenever any part of the path is a symlink — /tmp on macOS, an external
+    // volume, a symlinked home. The worktree is created and then reported
+    // missing, which reads as a much worse failure than it is.
     const worktrees = await this.listWorktrees(repoId);
-    const created = worktrees.find((w) => w.path === targetPath);
+    const wanted = await realpath(targetPath).catch(() => targetPath);
+    const created =
+      worktrees.find((w) => w.path === targetPath) ?? worktrees.find((w) => w.path === wanted);
     if (!created) throw new Error("worktree created but not found in list");
     return created;
   }

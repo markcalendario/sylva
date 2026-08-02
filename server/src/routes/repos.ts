@@ -3,6 +3,10 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 
 const registerSchema = z.object({ path: z.string().min(1) });
+const createRepoSchema = z.object({
+  parentPath: z.string().min(1),
+  name: z.string().min(1).max(100),
+});
 const createWorktreeSchema = z.object({
   branch: z.string().min(1),
   baseRef: z.string().min(1).optional(),
@@ -22,6 +26,14 @@ export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.post("/api/repos", async (req, reply) => {
     const body = registerSchema.parse(req.body);
     const repo = await workspace.registerRepo(body.path);
+    reply.code(201);
+    return repo;
+  });
+
+  /** Start a new repository on disk and register it, ready for worktrees. */
+  app.post("/api/repos/create", async (req, reply) => {
+    const body = createRepoSchema.parse(req.body);
+    const repo = await workspace.createRepo(body.parentPath, body.name);
     reply.code(201);
     return repo;
   });
