@@ -7,8 +7,15 @@ import { Dialog } from "../Dialog";
  * Folder picker backed by the server's filesystem. A browser file input only
  * ever yields relative names, so choosing a repository has to be done by
  * browsing the machine Sylva runs on.
+ *
+ * Two modes over the same browser: adopt a repository that already exists, or
+ * start one that doesn't. Registering leads, because it is what you do more
+ * often — but "I want to begin something" previously meant leaving for a
+ * terminal to run `git init`.
  */
 export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [mode, setMode] = useState<"register" | "create">("register");
+  const [newName, setNewName] = useState("");
   const [listing, setListing] = useState<DirListing | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,13 +59,58 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
     }
   };
 
+  const create = async () => {
+    if (!listing) return;
+    setBusy(true);
+    setError(null);
+    setDetail(null);
+    try {
+      await api.createRepo(listing.path, newName.trim());
+      setNewName("");
+      onClose();
+    } catch (e) {
+      if (e instanceof ApiFailure) {
+        setError(e.message);
+        setDetail(e.detail ?? null);
+      } else {
+        setError("Couldn't create that repository");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const visible = (listing?.entries ?? []).filter((e) => showHidden || !e.hidden);
   const hiddenCount = (listing?.entries.length ?? 0) - visible.length;
+  const creating = mode === "create";
 
   return (
-    <Dialog title="Register a repository" open={open} onClose={onClose}>
+    <Dialog
+      title={creating ? "Start a repository" : "Register a repository"}
+      open={open}
+      onClose={onClose}
+    >
+      <div className="seg" role="group" aria-label="Repository mode">
+        <button
+          className={!creating ? "seg-on" : ""}
+          onClick={() => setMode("register")}
+          data-tip="Add a git repository that already exists on this machine"
+        >
+          Register existing
+        </button>
+        <button
+          className={creating ? "seg-on" : ""}
+          onClick={() => setMode("create")}
+          data-tip="Start a new git repository, ready for worktrees"
+        >
+          Create new
+        </button>
+      </div>
+
       <p className="dialog-hint">
-        Pick a folder on this machine. Repositories are marked; open a folder to look inside it.
+        {creating
+          ? "Browse to the folder the new repository should live in, then name it. Sylva initializes it with a first commit, so you can grow a worktree straight away."
+          : "Pick a folder on this machine. Repositories are marked; open a folder to look inside it."}
       </p>
 
       <div className="browse-path">
@@ -96,7 +148,7 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
                 </span>
                 <span className="browse-name">{entry.name}</span>
               </button>
-              {entry.isRepo && (
+              {entry.isRepo && !creating && (
                 <button
                   className="btn-primary browse-pick"
                   disabled={busy}
@@ -130,9 +182,36 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
         </div>
       )}
 
+      {creating && (
+        <form
+          className="browse-manual"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void create();
+          }}
+        >
+          <label className="field">
+            Name the new repository
+            <div className="browse-manual-row">
+              <input
+                className="mono-input"
+                placeholder="my-project"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                data-tip="A folder with this name is created in the folder above"
+              />
+            </div>
+            <span className="field-hint">
+              Created at <code>{listing?.path ?? "…"}/{newName.trim() || "name"}</code>
+            </span>
+          </label>
+        </form>
+      )}
+
       {/* Browsing can fail on folders you can still use — macOS blocks listing
           Desktop and Documents unless the terminal is granted access — so
           typing a path stays available as the reliable route. */}
+      {!creating && (
       <form
         className="browse-manual"
         onSubmit={(e) => {
@@ -161,6 +240,7 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
           </div>
         </label>
       </form>
+      )}
 
       <div className="dialog-actions">
         <button
@@ -172,19 +252,35 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
         >
           Cancel
         </button>
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={busy || !listing?.isRepo}
-          onClick={() => listing && void register(listing.path)}
-          data-tip={
-            listing?.isRepo
-              ? "Register the folder you're currently in"
-              : "The current folder isn't a git repository"
-          }
-        >
-          {busy ? "Checking…" : "Register this folder"}
-        </button>
+        {creating ? (
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || !newName.trim() || !listing}
+            onClick={() => void create()}
+            data-tip={
+              newName.trim()
+                ? "Create the repository here and register it"
+                : "Name the repository first"
+            }
+          >
+            {busy ? "Creating…" : "Create repository"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || !listing?.isRepo}
+            onClick={() => listing && void register(listing.path)}
+            data-tip={
+              listing?.isRepo
+                ? "Register the folder you're currently in"
+                : "The current folder isn't a git repository"
+            }
+          >
+            {busy ? "Checking…" : "Register this folder"}
+          </button>
+        )}
       </div>
     </Dialog>
   );

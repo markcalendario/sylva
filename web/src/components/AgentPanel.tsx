@@ -3,6 +3,7 @@ import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { ensureNotifyPermission } from "../lib/notify";
+import { AgentSettingsButton } from "./AgentSettingsButton";
 import { SavedPromptsButton } from "./SavedPromptsButton";
 import { EMPTY_DRAFT, NO_EVENTS, useSylva } from "../state/store";
 import { Markdown } from "./Markdown";
@@ -301,18 +302,63 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
 
   return (
     <div className="agent-panel">
-      <div className="agent-meta">
-        {session && (
-          <>
-            <span data-tip="What this worktree's agent session has cost so far">
-              ${session.totalCostUsd.toFixed(3)}
+      {/* One row that answers what you'd otherwise hover four things to learn:
+          who you're talking to, what it's doing, what it's thinking with, and
+          what it has cost. */}
+      <div className="chat-header">
+        <span className={`chat-state chat-state-${running ? "working" : session?.status ?? "idle"}`}>
+          <span className="chat-state-dot" />
+          <span
+            data-tip={
+              running
+                ? "A turn is in flight right now"
+                : session?.status === "errored"
+                  ? "The last turn ended in an error"
+                  : session
+                    ? "Waiting for your next prompt"
+                    : "Nothing has been asked here yet"
+            }
+          >
+            {running
+              ? "working"
+              : session?.status === "errored"
+                ? "hit trouble"
+                : session
+                  ? "resting"
+                  : "not started"}
+          </span>
+        </span>
+
+        <span className="chat-header-facts">
+          {session ? (
+            <>
+              <span data-tip="What this session has cost so far">
+                ${session.totalCostUsd.toFixed(3)}
+              </span>
+              <span className="chat-header-sep">·</span>
+              <span data-tip="Tokens read and written across this session">
+                {session.totalTokens.toLocaleString()} tokens
+              </span>
+            </>
+          ) : (
+            <span className="chat-header-quiet" data-tip="Costs appear once a turn has run">
+              no cost yet
             </span>
-            <span className="agent-meta-sep">·</span>
-            <span data-tip="Tokens read and written across this session">
-              {session.totalTokens.toLocaleString()} tokens
-            </span>
-          </>
-        )}
+          )}
+        </span>
+
+        <div className="chat-header-actions">
+          {running && (
+            <button
+              className="btn-danger"
+              onClick={() => void api.interrupt(worktreeId)}
+              data-tip="Interrupt the dryad's current turn"
+            >
+              Stop
+            </button>
+          )}
+          <AgentSettingsButton worktreeId={worktreeId} />
+        </div>
       </div>
       <div className="agent-body">
         <div

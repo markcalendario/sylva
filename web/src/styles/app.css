@@ -1198,18 +1198,67 @@ button:disabled {
   min-height: 0;
 }
 
-.agent-meta {
+.chat-header {
   display: flex;
-  justify-content: flex-end;
-  gap: var(--pad-2);
-  padding: var(--pad-1) var(--pad-4);
-  font-family: var(--font-mono);
+  align-items: center;
+  gap: var(--pad-3);
+  padding: var(--pad-2) var(--pad-4);
+  border-bottom: 1px solid var(--pine-3);
   font-size: var(--text-xs);
+  color: var(--moss);
+}
+
+.chat-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+}
+
+.chat-state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--moss-dim);
+}
+
+.chat-state-working {
+  color: var(--firefly);
+}
+
+.chat-state-working .chat-state-dot {
+  background: var(--firefly);
+  box-shadow: 0 0 6px var(--firefly);
+  animation: blocked-pulse 1.6s ease-in-out infinite;
+}
+
+.chat-state-errored {
+  color: var(--ember);
+}
+
+.chat-state-errored .chat-state-dot {
+  background: var(--ember);
+}
+
+.chat-header-facts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-family: var(--font-mono);
+}
+
+.chat-header-sep,
+.chat-header-quiet {
   color: var(--moss-dim);
 }
 
-.agent-meta-sep {
-  color: var(--pine-3);
+.chat-header-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
 }
 
 .agent-body {
@@ -2032,21 +2081,101 @@ button:disabled {
   min-height: 0;
 }
 
+/* The column itself no longer scrolls — only the file lists inside it do — so
+   a worktree with sixty changed files can't push the commit box off the
+   bottom of the screen. */
 .git-side {
-  width: 320px;
+  width: 340px;
   flex-shrink: 0;
-  overflow-y: auto;
   border-right: 1px solid var(--pine-3);
   padding: var(--pad-3);
   display: flex;
   flex-direction: column;
   gap: var(--pad-3);
+  min-height: 0;
 }
 
-.git-actions {
+.git-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-4);
+}
+
+.git-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+  padding-bottom: var(--pad-3);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.git-toolbar-branch {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pad-2);
+  flex-wrap: wrap;
+}
+
+.git-branch-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  color: var(--moon);
+}
+
+.git-upstream {
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-upstream-none {
+  color: var(--firefly-dim);
+}
+
+.git-divergence {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--pad-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.git-toolbar-actions {
   display: flex;
   gap: var(--pad-2);
   flex-wrap: wrap;
+}
+
+.git-group-all {
+  margin-left: auto;
+  font-size: var(--text-xxs);
+  color: var(--moss-dim);
+}
+
+.git-group-all:hover {
+  color: var(--firefly);
+}
+
+.git-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sticky rather than merely last: it stays reachable while the lists above it
+   scroll, which is the whole point of moving the scroll inside. */
+.commit-form {
+  border-top: 1px solid var(--pine-3);
+  padding-top: var(--pad-3);
+}
+
+.diff-close {
+  margin-left: auto;
 }
 
 .git-clean {

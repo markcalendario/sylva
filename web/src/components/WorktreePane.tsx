@@ -6,7 +6,6 @@ import { AgentPanel } from "./AgentPanel";
 import { FilesPanel } from "./FilesPanel";
 import { GitPanel } from "./GitPanel";
 import { RunPanel } from "./RunPanel";
-import { AgentSettingsButton } from "./AgentSettingsButton";
 import { OpenExternallyButtons } from "./OpenExternallyButton";
 
 const TAB_LABEL: Record<Tab, string> = {
@@ -136,7 +135,6 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
           </div>
         </div>
         <OpenExternallyButtons worktreeId={worktreeId} />
-        {pane.tab === "agent" && <AgentSettingsButton worktreeId={worktreeId} />}
         <div className="pane-controls">
           {split ? (
             <button

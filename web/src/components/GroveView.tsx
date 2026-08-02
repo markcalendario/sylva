@@ -3,7 +3,6 @@ import { useRepos } from "../lib/queries";
 import { Sprite } from "../sprites/Sprite";
 import { spriteStateFor, useSylva } from "../state/store";
 import { AgentPanel } from "./AgentPanel";
-import { AgentSettingsButton } from "./AgentSettingsButton";
 
 /**
  * The dryad that belongs to no worktree.
@@ -45,7 +44,6 @@ export function GroveView() {
             </span>
           </div>
         </div>
-        <AgentSettingsButton worktreeId={GROVE_ID} />
       </div>
 
       <AgentPanel worktreeId={GROVE_ID} />

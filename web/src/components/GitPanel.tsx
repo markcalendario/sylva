@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { StatusEntry } from "sylva-shared";
+import type { StatusEntry, WorktreeStatus } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { confirm } from "../lib/confirm";
@@ -8,6 +8,14 @@ import { useSylva } from "../state/store";
 import { CommitGraph } from "./CommitGraph";
 import { CreatePrButton } from "./CreatePrButton";
 import { DiffView } from "./DiffView";
+
+const KIND_GLYPH: Record<StatusEntry["kind"], string> = {
+  added: "+",
+  untracked: "+",
+  deleted: "−",
+  renamed: "→",
+  modified: "~",
+};
 
 function FileList({
   title,
@@ -18,6 +26,8 @@ function FileList({
   actionTip,
   onSelect,
   selectedPath,
+  onActAll,
+  actAllLabel,
 }: {
   title: string;
   /** What this group of files means, for the header tooltip. */
@@ -28,6 +38,8 @@ function FileList({
   actionTip: string;
   onSelect: (path: string, staged: boolean) => void;
   selectedPath: string | null;
+  onActAll?: () => void;
+  actAllLabel?: string;
 }) {
   if (entries.length === 0) return null;
   const staged = title === "Staged";
@@ -40,6 +52,15 @@ function FileList({
         <span className="git-count" data-tip="Files in this group">
           {entries.length}
         </span>
+        {onActAll && (
+          <button
+            className="ghost git-group-all"
+            onClick={onActAll}
+            data-tip={`${actAllLabel} every file in this group`}
+          >
+            {actAllLabel}
+          </button>
+        )}
       </header>
       {entries.map((entry) => (
         <div
@@ -52,15 +73,11 @@ function FileList({
             data-tip="Show this file's diff"
           >
             <span className={`chg chg-${entry.kind}`} data-tip={`This file was ${entry.kind}`}>
-              {entry.kind === "added" || entry.kind === "untracked"
-                ? "+"
-                : entry.kind === "deleted"
-                  ? "−"
-                  : entry.kind === "renamed"
-                    ? "→"
-                    : "~"}
+              {KIND_GLYPH[entry.kind]}
             </span>
-            {entry.renamedFrom ? `${entry.renamedFrom} → ${entry.path}` : entry.path}
+            <span className="git-file-path">
+              {entry.renamedFrom ? `${entry.renamedFrom} → ${entry.path}` : entry.path}
+            </span>
           </button>
           <button
             className="ghost git-file-action"
@@ -72,6 +89,71 @@ function FileList({
         </div>
       ))}
     </section>
+  );
+}
+
+/** Branch, divergence and the remote actions — where the branch sits, and what to do about it. */
+function GitToolbar({
+  status,
+  busy,
+  onPull,
+  onPush,
+}: {
+  status: WorktreeStatus;
+  busy: boolean;
+  onPull: () => void;
+  onPush: () => void;
+}) {
+  return (
+    <div className="git-toolbar">
+      <div className="git-toolbar-branch">
+        <code className="git-branch-name" data-tip="Branch checked out in this worktree">
+          {status.branch ?? "detached"}
+        </code>
+        {status.upstream ? (
+          <span className="git-upstream" data-tip="Remote branch this one tracks">
+            {status.upstream}
+          </span>
+        ) : (
+          <span className="git-upstream git-upstream-none" data-tip="Nothing to push to yet">
+            no upstream
+          </span>
+        )}
+        {status.base && (
+          <span
+            className="git-divergence"
+            data-tip={`Commits ahead ↑ and behind ↓ ${status.base.branch}`}
+          >
+            <span className={status.base.ahead ? "div-ahead" : "div-zero"}>
+              ↑{status.base.ahead}
+            </span>
+            <span className={status.base.behind ? "div-behind" : "div-zero"}>
+              ↓{status.base.behind}
+            </span>
+          </span>
+        )}
+      </div>
+
+      <div className="git-toolbar-actions">
+        <button
+          className="btn-quiet"
+          disabled={busy}
+          onClick={onPull}
+          data-tip="Fetch and merge commits from the remote"
+        >
+          ↓ Pull
+        </button>
+        <button
+          className="btn-quiet"
+          disabled={busy}
+          onClick={onPush}
+          data-tip="Send your commits to the remote"
+        >
+          ↑ Push
+        </button>
+        <CreatePrButton worktreeId={status.worktreeId} branch={status.branch} />
+      </div>
+    </div>
   );
 }
 
@@ -150,35 +232,12 @@ export function GitPanel({
   return (
     <div className="git-panel">
       <div className="git-side">
-        <div className="git-actions">
-          <button
-            className="btn-quiet"
-            disabled={busy}
-            onClick={() => void run(() => api.pull(worktreeId), "Pulled.")}
-            data-tip="Fetch and merge commits from the remote"
-          >
-            ↓ Pull
-          </button>
-          <button
-            className="btn-quiet"
-            disabled={busy}
-            onClick={() => void run(() => api.push(worktreeId, false), "Pushed.")}
-            data-tip="Send your commits to the remote"
-          >
-            ↑ Push
-          </button>
-          {status.unstaged.length + status.untracked.length > 0 && (
-            <button
-              className="btn-quiet"
-              disabled={busy}
-              onClick={() => void run(() => api.stage(worktreeId, "all"))}
-              data-tip="Stage every change in this worktree"
-            >
-              Stage all
-            </button>
-          )}
-          <CreatePrButton worktreeId={worktreeId} branch={status.branch} />
-        </div>
+        <GitToolbar
+          status={status}
+          busy={busy}
+          onPull={() => void run(() => api.pull(worktreeId), "Pulled.")}
+          onPush={() => void run(() => api.push(worktreeId, false), "Pushed.")}
+        />
 
         {/* Two different questions — "what have I changed" and "where does this
             branch sit" — so they get a tab each rather than one long column.
@@ -200,48 +259,59 @@ export function GitPanel({
           </button>
         </div>
 
-        {view === "history" && <CommitGraph worktreeId={worktreeId} />}
+        {/* The lists scroll; the toolbar above and the commit box below stay put,
+            because a worktree with sixty changed files shouldn't push the thing
+            you came to press off the bottom of the screen. */}
+        <div className="git-scroll">
+          {view === "history" && <CommitGraph worktreeId={worktreeId} />}
 
-        {view === "changes" && clean && (
-          <div className="git-clean" data-tip="Nothing has changed since the last commit">
-            Clean canopy — nothing to commit.
-          </div>
-        )}
+          {view === "changes" && clean && (
+            <div className="git-clean" data-tip="Nothing has changed since the last commit">
+              Clean canopy — nothing to commit.
+            </div>
+          )}
 
-        {view === "changes" && (
-          <>
-        <FileList
-          title="Staged"
-          tip="Changes that will go into the next commit"
-          entries={status.staged}
-          actionLabel="unstage"
-          actionTip="Take this file back out of the next commit"
-          action={(p) => void run(() => api.unstage(worktreeId, [p]))}
-          onSelect={(path, staged) => setSelected({ path, staged })}
-          selectedPath={selected?.staged ? selected.path : null}
-        />
-        <FileList
-          title="Changes"
-          tip="Tracked files you've edited but not staged yet"
-          entries={status.unstaged}
-          actionLabel="stage"
-          actionTip="Add this file to the next commit"
-          action={(p) => void run(() => api.stage(worktreeId, [p]))}
-          onSelect={(path, staged) => setSelected({ path, staged })}
-          selectedPath={selected && !selected.staged ? selected.path : null}
-        />
-        <FileList
-          title="Untracked"
-          tip="New files git isn't following yet"
-          entries={status.untracked}
-          actionLabel="stage"
-          actionTip="Start tracking this file and add it to the next commit"
-          action={(p) => void run(() => api.stage(worktreeId, [p]))}
-          onSelect={(path) => setSelected({ path, staged: false })}
-          selectedPath={selected && !selected.staged ? selected.path : null}
-        />
+          {view === "changes" && (
+            <>
+              <FileList
+                title="Staged"
+                tip="Changes that will go into the next commit"
+                entries={status.staged}
+                actionLabel="unstage"
+                actionTip="Take this file back out of the next commit"
+                action={(p) => void run(() => api.unstage(worktreeId, [p]))}
+                onSelect={(path, staged) => setSelected({ path, staged })}
+                selectedPath={selected?.staged ? selected.path : null}
+                onActAll={() => void run(() => api.unstage(worktreeId, "all"))}
+                actAllLabel="unstage all"
+              />
+              <FileList
+                title="Changes"
+                tip="Tracked files you've edited but not staged yet"
+                entries={status.unstaged}
+                actionLabel="stage"
+                actionTip="Add this file to the next commit"
+                action={(p) => void run(() => api.stage(worktreeId, [p]))}
+                onSelect={(path, staged) => setSelected({ path, staged })}
+                selectedPath={selected && !selected.staged ? selected.path : null}
+                onActAll={() => void run(() => api.stage(worktreeId, "all"))}
+                actAllLabel="stage all"
+              />
+              <FileList
+                title="Untracked"
+                tip="New files git isn't following yet"
+                entries={status.untracked}
+                actionLabel="stage"
+                actionTip="Start tracking this file and add it to the next commit"
+                action={(p) => void run(() => api.stage(worktreeId, [p]))}
+                onSelect={(path) => setSelected({ path, staged: false })}
+                selectedPath={selected && !selected.staged ? selected.path : null}
+              />
+            </>
+          )}
+        </div>
 
-        {status.staged.length > 0 && (
+        {view === "changes" && status.staged.length > 0 && (
           <form
             className="commit-form"
             onSubmit={(e) => {
@@ -282,9 +352,6 @@ export function GitPanel({
           </form>
         )}
 
-          </>
-        )}
-
         {feedback && (
           <div className="git-feedback" data-tip="Result of the last git command">
             {feedback}
@@ -294,26 +361,36 @@ export function GitPanel({
 
       <div className="git-diff">
         {selected ? (
-          diff.data ? (
-            <>
-              <div className="diff-title">
-                <code data-tip="File you're looking at">{selected.path}</code>
-                <span
-                  className="pixel-label"
-                  data-tip={
-                    selected.staged
-                      ? "Showing the copy already staged for commit"
-                      : "Showing edits that aren't staged yet"
-                  }
-                >
-                  {selected.staged ? "staged" : "unstaged"}
-                </span>
-              </div>
+          <>
+            <div className="diff-title">
+              <code data-tip="File you're looking at">{selected.path}</code>
+              <span
+                className="pixel-label"
+                data-tip={
+                  selected.staged
+                    ? "Showing the copy already staged for commit"
+                    : "Showing edits that aren't staged yet"
+                }
+              >
+                {selected.staged ? "staged" : "unstaged"}
+              </span>
+              <button
+                className="ghost diff-close"
+                onClick={() => setSelected(null)}
+                aria-label="Close this diff"
+                data-tip="Close this diff"
+              >
+                ✕
+              </button>
+            </div>
+            {diff.data ? (
               <DiffView diff={diff.data} />
-            </>
-          ) : (
-            <div className="git-loading">{diff.isError ? "Couldn't load diff." : "Loading diff…"}</div>
-          )
+            ) : (
+              <div className="git-loading">
+                {diff.isError ? "Couldn't load diff." : "Loading diff…"}
+              </div>
+            )}
+          </>
         ) : (
           <div className="diff-placeholder">Select a file to see its diff.</div>
         )}
