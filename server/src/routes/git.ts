@@ -122,6 +122,18 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     return gitOps.graph(worktreeId);
   });
 
+  /** What one commit in the history actually changed. */
+  app.get("/api/worktrees/:worktreeId/commits/:sha", async (req) => {
+    const { worktreeId, sha } = req.params as { worktreeId: string; sha: string };
+    return gitOps.commitDetail(worktreeId, sha);
+  });
+
+  app.get("/api/worktrees/:worktreeId/commits/:sha/diff", async (req) => {
+    const { worktreeId, sha } = req.params as { worktreeId: string; sha: string };
+    const { path } = fileQuerySchema.parse(req.query);
+    return gitOps.commitDiff(worktreeId, sha, path);
+  });
+
   app.get("/api/worktrees/:worktreeId/tree", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     const { path } = treeQuerySchema.parse(req.query);

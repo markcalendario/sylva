@@ -8,29 +8,19 @@ import { badRequest } from "../lib/errors.js";
 import { openExternal } from "../services/open.js";
 
 const promptSchema = z.object({ text: z.string().min(1) });
-const openSchema = z.object({ kind: z.enum(["editor", "terminal"]) });
+const openSchema = z.object({ kind: z.enum(["editor"]) });
 const answerSchema = z.object({
   requestId: z.string().min(1),
   answer: z.enum(["allow", "allow-always", "deny"]),
 });
 const effortSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
 
-const openTargetSchema = z.enum([
-  "vscode",
-  "cursor",
-  "zed",
-  "terminal",
-  "iterm",
-  "warp",
-  "custom",
-  "none",
-]);
+const openTargetSchema = z.enum(["vscode", "cursor", "zed", "custom", "none"]);
 
 const preferencesSchema = z.object({
   editorTarget: openTargetSchema,
   editorCommand: z.string().max(500),
-  terminalTarget: openTargetSchema,
-  terminalCommand: z.string().max(500),
+  terminalShell: z.string().max(500),
   savedPrompts: z
     .array(
       z.object({
@@ -40,12 +30,6 @@ const preferencesSchema = z.object({
       }),
     )
     .max(50),
-  runner: z.object({
-    defaultCommand: z.string().min(1).max(500),
-    // Repo ids are path hashes, so the key space is ours; the value is the
-    // command that repository runs.
-    byRepo: z.record(z.string().min(1).max(64), z.string().min(1).max(500)).default({}),
-  }),
 });
 
 const globalSettingsSchema = z.object({
@@ -138,7 +122,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     return ctx.store.preferences;
   });
 
-  /** Hand the worktree directory to the configured editor or terminal. */
+  /** Hand the worktree directory to the configured editor. */
   app.post("/api/worktrees/:worktreeId/open", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     const { kind } = openSchema.parse(req.body ?? {});

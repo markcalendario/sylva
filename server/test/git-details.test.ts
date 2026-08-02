@@ -102,6 +102,81 @@ describe("commit details", () => {
   });
 });
 
+describe("what a commit changed", () => {
+  let ctx: Awaited<ReturnType<typeof repo>>;
+  let worktreeId: string;
+
+  beforeEach(async () => {
+    ctx = await repo();
+    worktreeId = await mainWorktreeId(ctx.gitOps, ctx.repo.id);
+  });
+
+  /** Commit whatever is in the worktree, and answer with the new HEAD. */
+  async function commit(message: string): Promise<string> {
+    await ctx.git.run(ctx.path, ["add", "--all"]);
+    await ctx.git.run(ctx.path, ["commit", "-m", message]);
+    const { stdout } = await ctx.git.run(ctx.path, ["rev-parse", "HEAD"]);
+    return stdout.trim();
+  }
+
+  it("lists every file, what happened to it, and how much moved", async () => {
+    await writeFile(join(ctx.path, "keep.txt"), "one\ntwo\n");
+    await writeFile(join(ctx.path, "goes.txt"), "gone\n");
+    await commit("Groundwork");
+
+    await writeFile(join(ctx.path, "keep.txt"), "one\ntwo\nthree\n");
+    await writeFile(join(ctx.path, "new.txt"), "fresh\n");
+    await ctx.git.run(ctx.path, ["rm", "goes.txt"]);
+    const sha = await commit("Move some things around");
+
+    const detail = await ctx.gitOps.commitDetail(worktreeId, sha);
+    expect(detail.commit.subject).toBe("Move some things around");
+
+    const byPath = new Map(detail.files.map((f) => [f.path, f]));
+    expect(byPath.get("keep.txt")).toMatchObject({ kind: "modified", insertions: 1, deletions: 0 });
+    expect(byPath.get("new.txt")).toMatchObject({ kind: "added", insertions: 1, deletions: 0 });
+    expect(byPath.get("goes.txt")).toMatchObject({ kind: "deleted", insertions: 0, deletions: 1 });
+  });
+
+  it("says where a renamed file came from", async () => {
+    await writeFile(join(ctx.path, "before.txt"), "a\nb\nc\nd\ne\n");
+    await commit("Add it");
+    await ctx.git.run(ctx.path, ["mv", "before.txt", "after.txt"]);
+    const sha = await commit("Rename it");
+
+    const detail = await ctx.gitOps.commitDetail(worktreeId, sha);
+    expect(detail.files).toHaveLength(1);
+    expect(detail.files[0]).toMatchObject({
+      path: "after.txt",
+      kind: "renamed",
+      renamedFrom: "before.txt",
+    });
+  });
+
+  it("hands back one file's diff as that commit made it", async () => {
+    await writeFile(join(ctx.path, "poem.txt"), "roses\n");
+    await commit("First line");
+    await writeFile(join(ctx.path, "poem.txt"), "roses\nviolets\n");
+    const sha = await commit("Second line");
+
+    const diff = await ctx.gitOps.commitDiff(worktreeId, sha, "poem.txt");
+    expect(diff.path).toBe("poem.txt");
+    const added = diff.hunks.flatMap((h) => h.lines).filter((l) => l.type === "add");
+    expect(added.map((l) => l.content)).toEqual(["violets"]);
+  });
+
+  it("refuses anything that isn't a commit id", async () => {
+    // The history panel only ever produces object names; a ref or a flag
+    // reaching git as a revision is a bug, not a feature.
+    await expect(ctx.gitOps.commitDetail(worktreeId, "--upload-pack=touch /tmp/x")).rejects.toThrow(
+      /commit id/i,
+    );
+    await expect(ctx.gitOps.commitDiff(worktreeId, "HEAD", "poem.txt")).rejects.toThrow(
+      /commit id/i,
+    );
+  });
+});
+
 describe("file search", () => {
   let ctx: Awaited<ReturnType<typeof repo>>;
   let worktreeId: string;

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   EDITOR_TARGETS,
-  TERMINAL_TARGETS,
   type AppPreferences,
   type OpenChoice,
   type SavedPrompt,
@@ -63,7 +62,7 @@ function TargetField({
   );
 }
 
-/** Where the two Open buttons send a worktree. */
+/** Where the Open button sends a worktree. */
 export function OpenTargetField({
   value,
   onChange,
@@ -81,15 +80,38 @@ export function OpenTargetField({
         onTarget={(editorTarget) => onChange({ ...value, editorTarget })}
         onCommand={(editorCommand) => onChange({ ...value, editorCommand })}
       />
-      <TargetField
-        title="Open in terminal"
-        choices={TERMINAL_TARGETS}
-        target={value.terminalTarget}
-        command={value.terminalCommand}
-        onTarget={(terminalTarget) => onChange({ ...value, terminalTarget })}
-        onCommand={(terminalCommand) => onChange({ ...value, terminalCommand })}
-      />
     </>
+  );
+}
+
+/**
+ * Which shell the Terminal tab opens. Empty means whatever you log in with,
+ * which is what almost everyone wants and nobody should have to state.
+ */
+export function TerminalShellField({
+  value,
+  onChange,
+}: {
+  value: AppPreferences;
+  onChange: (next: AppPreferences) => void;
+}) {
+  return (
+    <label className="field">
+      <span data-tip="The program each new terminal runs">Shell</span>
+      <input
+        className="mono-input"
+        value={value.terminalShell}
+        placeholder={"$SHELL"}
+        spellCheck={false}
+        onChange={(e) => onChange({ ...value, terminalShell: e.target.value })}
+        data-tip="Leave empty to use your login shell"
+      />
+      <span className="field-hint">
+        Leave this empty and Sylva uses your login shell. Give an absolute path —{" "}
+        <code>/opt/homebrew/bin/fish</code> — to use something else. Terminals already open keep
+        the shell they started with.
+      </span>
+    </label>
   );
 }
 

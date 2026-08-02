@@ -28,11 +28,35 @@ export function useStatusQuery(worktreeId: string | null) {
   });
 }
 
-export function useDiff(worktreeId: string | null, path: string | null, staged: boolean) {
+/**
+ * A file's diff — as it stands in the worktree, or as one commit left it.
+ * The same query either way, because it answers the same question and lands in
+ * the same panel; only where the patch comes from differs.
+ */
+export function useDiff(
+  worktreeId: string | null,
+  path: string | null,
+  staged: boolean,
+  commit?: string,
+) {
   return useQuery({
-    queryKey: ["diff", worktreeId, path, staged],
-    queryFn: () => api.diff(worktreeId as string, path as string, staged),
+    queryKey: ["diff", worktreeId, path, staged, commit ?? null],
+    queryFn: () =>
+      commit
+        ? api.commitDiff(worktreeId as string, commit, path as string)
+        : api.diff(worktreeId as string, path as string, staged),
     enabled: worktreeId !== null && path !== null,
+  });
+}
+
+/** What a commit changed. Fetched only once its row is opened. */
+export function useCommitDetail(worktreeId: string | null, sha: string | null) {
+  return useQuery({
+    queryKey: ["commit", worktreeId, sha],
+    queryFn: () => api.commitDetail(worktreeId as string, sha as string),
+    enabled: worktreeId !== null && sha !== null,
+    // A commit is immutable; once read there is nothing to refetch.
+    staleTime: Infinity,
   });
 }
 

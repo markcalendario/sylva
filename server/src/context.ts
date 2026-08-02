@@ -1,7 +1,7 @@
 import { CommitMessageService } from "./services/commitMessage.js";
 import { GitService } from "./services/git.js";
 import { GitOps } from "./services/gitOps.js";
-import { RunnerService } from "./services/runner.js";
+import { TerminalService } from "./services/terminals.js";
 import { SessionManager } from "./services/sessions.js";
 import { Store } from "./services/store.js";
 import { WatcherManager } from "./services/watcher.js";
@@ -18,7 +18,7 @@ export interface AppContext {
   watchers: WatcherManager;
   sessions: SessionManager;
   commitMessages: CommitMessageService;
-  runners: RunnerService;
+  terminals: TerminalService;
 }
 
 export async function createContext(baseDir?: string): Promise<AppContext> {
@@ -42,6 +42,9 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
 
   const sessions = new SessionManager(store, workspace, watchers, hub);
   const commitMessages = new CommitMessageService(git, workspace, store);
-  const runners = new RunnerService(store, workspace, hub);
-  return { store, git, hub, workspace, gitOps, watchers, sessions, commitMessages, runners };
+  const terminals = new TerminalService(store, workspace, hub);
+  // The socket carries keystrokes as well as events; terminals are the only
+  // thing a client ever sends up it.
+  hub.onClientEvent = (event) => terminals.handleClientEvent(event);
+  return { store, git, hub, workspace, gitOps, watchers, sessions, commitMessages, terminals };
 }

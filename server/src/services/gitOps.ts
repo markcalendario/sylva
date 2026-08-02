@@ -3,6 +3,7 @@ import { isAbsolute, join, normalize } from "node:path";
 import type {
   BaseDivergence,
   BranchInfo,
+  CommitDetail,
   CommitGraph,
   CommitManyResult,
   CommitOutcome,
@@ -21,7 +22,7 @@ import type {
   WorktreeStatus,
 } from "sylva-shared";
 import { badRequest, conflict, GitError, HttpError } from "../lib/errors.js";
-import { parseBranches, parseDiff, parseStatusV2 } from "../lib/parse.js";
+import { parseBranches, parseDiff, parseNameStatusZ, parseNumstatZ, parseStatusV2 } from "../lib/parse.js";
 import type { GitService } from "./git.js";
 import { isIgnored } from "./watcher.js";
 import type { Workspace } from "./workspace.js";
@@ -51,6 +52,19 @@ function splitBodyAndStats(raw: string): { body: string; stats?: CommitStats } {
     };
   }
   return { body: raw.trim() };
+}
+
+/**
+ * A revision, checked before it is handed to git as an argument.
+ *
+ * Only what the history panel can actually produce: a hex object name. It
+ * cannot start with a dash, so it can never be read as an option, and it cannot
+ * name a ref, so it can never mean something different tomorrow.
+ */
+function safeSha(sha: string): string {
+  const trimmed = sha.trim();
+  if (!/^[0-9a-f]{4,40}$/i.test(trimmed)) throw badRequest("That isn't a commit id");
+  return trimmed;
 }
 
 /**
@@ -370,6 +384,58 @@ export class GitOps {
       common,
       truncated: ahead.length > cap || behind.length > cap,
     };
+  }
+
+  /**
+   * One commit, opened up: what it says and every file it touched.
+   *
+   * Two calls rather than one. `--name-status` knows what happened to a file —
+   * added, deleted, renamed from where — and `--numstat` knows how much moved;
+   * neither says both, and asking git twice is cheaper than parsing the
+   * `{old => new}` path shorthand that a combined format would hand back.
+   */
+  async commitDetail(worktreeId: string, sha: string): Promise<CommitDetail> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const rev = safeSha(sha);
+
+    const [commit] = await this.log(worktree.path, ["-n", "1", rev]);
+    if (!commit) throw badRequest(`No commit ${sha} in this worktree`);
+
+    const [names, nums] = await Promise.all([
+      this.git.run(worktree.path, ["show", "--format=", "--name-status", "-z", "-m", "--first-parent", rev]),
+      this.git.run(worktree.path, ["show", "--format=", "--numstat", "-z", "-m", "--first-parent", rev]),
+    ]);
+
+    const counts = parseNumstatZ(nums.stdout);
+    const files = parseNameStatusZ(names.stdout).map((file) => ({
+      ...file,
+      insertions: counts.get(file.path)?.insertions ?? null,
+      deletions: counts.get(file.path)?.deletions ?? null,
+    }));
+
+    return { commit, files };
+  }
+
+  /** One file, as that commit changed it — the diff against its first parent. */
+  async commitDiff(worktreeId: string, sha: string, filePath: string): Promise<FileDiff> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const rev = safeSha(sha);
+    const rel = this.safeRelPath(filePath);
+    const { stdout } = await this.git.run(worktree.path, [
+      "show",
+      "--format=",
+      "--patch",
+      "--find-renames",
+      // A merge shown plainly prints nothing at all; against its first parent it
+      // prints what the merge brought in, which is what the row claims to be.
+      "-m",
+      "--first-parent",
+      rev,
+      "--",
+      rel,
+    ]);
+    const parsed = parseDiff(stdout);
+    return parsed[0] ?? { path: rel, binary: false, hunks: [] };
   }
 
   /**

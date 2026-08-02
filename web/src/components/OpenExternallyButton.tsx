@@ -1,25 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Code2, SquareTerminal } from "lucide-react";
-import type { OpenKind } from "sylva-shared";
+import { Code2 } from "lucide-react";
 import { api, ApiFailure } from "../lib/api";
 import { usePreferences } from "../lib/queries";
 import { useSylva } from "../state/store";
 
-const LABEL: Record<OpenKind, string> = { editor: "Code", terminal: "Shell" };
-const ICON: Record<OpenKind, typeof Code2> = { editor: Code2, terminal: SquareTerminal };
-const TIP: Record<OpenKind, string> = {
-  editor: "Open this worktree in your editor — pick which one in Settings",
-  terminal: "Open a terminal in this worktree — pick which one in Settings",
-};
-const TIP_MANY: Record<OpenKind, string> = {
-  editor: "Open one of these worktrees in your editor",
-  terminal: "Open a terminal in one of these worktrees",
-};
-
 /**
- * Hands a worktree directory to an external application. Two buttons rather
- * than one: opening the code and opening a shell are different intentions, and
- * having to visit Settings to switch between them made both worse.
+ * Hands a worktree directory to your editor.
+ *
+ * There used to be a second button beside it that opened a terminal somewhere
+ * else. The Terminal tab is that terminal now — already in the right worktree,
+ * already beside the diff — so the only thing left worth leaving for is the
+ * editor.
  *
  * A shared dryad tends several worktrees and "open the worktree" needs exactly
  * one — so with several the button asks which, rather than vanishing or picking
@@ -31,18 +22,18 @@ export function OpenExternallyButtons({ members }: { members: string[] }) {
   const index = useSylva((s) => s.worktreeIndex);
   const statuses = useSylva((s) => s.statuses);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<OpenKind | null>(null);
-  const [menu, setMenu] = useState<OpenKind | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState(false);
   const groupRef = useRef<HTMLDivElement>(null);
 
   // A menu that outlives the click which opened it is a menu you have to fight.
   useEffect(() => {
     if (!menu) return;
     const close = (e: MouseEvent) => {
-      if (!groupRef.current?.contains(e.target as Node)) setMenu(null);
+      if (!groupRef.current?.contains(e.target as Node)) setMenu(false);
     };
     const escape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenu(null);
+      if (e.key === "Escape") setMenu(false);
     };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", escape);
@@ -52,74 +43,71 @@ export function OpenExternallyButtons({ members }: { members: string[] }) {
     };
   }, [menu]);
 
-  const open = async (kind: OpenKind, worktreeId: string) => {
-    setBusy(kind);
+  const open = async (worktreeId: string) => {
+    setBusy(true);
     setError(null);
-    setMenu(null);
+    setMenu(false);
     try {
-      await api.openExternally(worktreeId, kind);
+      await api.openExternally(worktreeId, "editor");
     } catch (e) {
       setError(e instanceof ApiFailure ? e.message : "Couldn't open this worktree");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
-  const kinds: OpenKind[] = [];
-  if ((prefs.data?.editorTarget ?? "vscode") !== "none") kinds.push("editor");
-  if ((prefs.data?.terminalTarget ?? "terminal") !== "none") kinds.push("terminal");
-  if (kinds.length === 0 || members.length === 0) return null;
+  if ((prefs.data?.editorTarget ?? "vscode") === "none" || members.length === 0) return null;
 
   const many = members.length > 1;
   const nameOf = (id: string) => statuses[id]?.branch ?? index[id]?.branch ?? id.slice(0, 7);
 
   return (
     <div className="wt-launch-group" ref={groupRef}>
-      {kinds.map((kind) => {
-        const Icon = ICON[kind];
-        return (
-          <div key={kind} className="wt-launch-slot">
-            <button
-              className="btn-quiet wt-launch"
-              onClick={() => {
-                if (many) setMenu(menu === kind ? null : kind);
-                else if (members[0]) void open(kind, members[0]);
-              }}
-              disabled={busy !== null}
-              aria-haspopup={many ? "menu" : undefined}
-              aria-expanded={many ? menu === kind : undefined}
-              data-tip={many ? TIP_MANY[kind] : TIP[kind]}
-            >
-              <Icon size={13} />
-              {LABEL[kind]}
-              {many && (
-                <span className="wt-launch-caret" aria-hidden>
-                  ▾
-                </span>
-              )}
-            </button>
+      <div className="wt-launch-slot">
+        <button
+          className="btn-quiet wt-launch"
+          onClick={() => {
+            if (many) setMenu(!menu);
+            else if (members[0]) void open(members[0]);
+          }}
+          disabled={busy}
+          aria-haspopup={many ? "menu" : undefined}
+          aria-expanded={many ? menu : undefined}
+          data-tip={
+            many
+              ? "Open one of these worktrees in your editor"
+              : "Open this worktree in your editor — pick which one in Settings"
+          }
+        >
+          <Code2 size={13} />
+          Code
+          {many && (
+            <span className="wt-launch-caret" aria-hidden>
+              ▾
+            </span>
+          )}
+        </button>
 
-            {many && menu === kind && (
-              <div className="wt-launch-menu" role="menu">
-                {members.map((id) => (
-                  <button
-                    key={id}
-                    role="menuitem"
-                    className="wt-launch-item"
-                    onClick={() => void open(kind, id)}
-                    data-tip={index[id]?.repoName ?? id}
-                  >
-                    <span className="wt-launch-repo">{index[id]?.repoName ?? "worktree"}</span>
-                    <code className="wt-launch-branch">{nameOf(id)}</code>
-                  </button>
-                ))}
-              </div>
-            )}
+        {many && menu && (
+          <div className="wt-launch-menu" role="menu">
+            {members.map((id) => (
+              <button
+                key={id}
+                role="menuitem"
+                className="wt-launch-item"
+                onClick={() => void open(id)}
+                data-tip={index[id]?.repoName ?? id}
+              >
+                <span className="wt-launch-repo">{index[id]?.repoName ?? "worktree"}</span>
+                <code className="wt-launch-branch">{nameOf(id)}</code>
+              </button>
+            ))}
           </div>
-        );
-      })}
+        )}
+      </div>
+
       {error && (
-        <span className="wt-launch-error" role="alert" data-tip="Check the Open targets in Settings">
+        <span className="wt-launch-error" role="alert" data-tip="Check the editor in Settings">
           {error}
         </span>
       )}

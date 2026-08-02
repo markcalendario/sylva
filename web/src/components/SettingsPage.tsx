@@ -8,13 +8,13 @@ import { useSylva } from "../state/store";
 import { AudioControls } from "./AudioControls";
 import { TextSize } from "./TextSize";
 import { BypassWarning, EffortField, ModelField, PermissionField } from "./dialogs/settingsFields";
-import { OpenTargetField, SavedPromptsField } from "./dialogs/PreferenceFields";
+import { OpenTargetField, SavedPromptsField, TerminalShellField } from "./dialogs/PreferenceFields";
 
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "sound", label: "Sound" },
   { id: "workflow", label: "Workflow" },
-  { id: "runner", label: "Runner" },
+  { id: "terminal", label: "Terminal" },
   { id: "agent", label: "Agent defaults" },
   { id: "repos", label: "Repositories" },
   { id: "about", label: "About" },
@@ -171,9 +171,9 @@ export function SettingsPage({
           <SavedPromptsField value={prefs} onChange={setPrefs} />
         </section>
 
-        <section className="settings-section" id="settings-runner">
-          <h3 className="settings-heading">Runner</h3>
-          <RunnerFields value={prefs} onChange={setPrefs} />
+        <section className="settings-section" id="settings-terminal">
+          <h3 className="settings-heading">Terminal</h3>
+          <TerminalShellField value={prefs} onChange={setPrefs} />
         </section>
 
         <section className="settings-section" id="settings-agent">
@@ -251,71 +251,6 @@ export function SettingsPage({
         </button>
       </div>
     </div>
-  );
-}
-
-/** The one-click run command: a default, and an override per repository. */
-function RunnerFields({
-  value,
-  onChange,
-}: {
-  value: AppPreferences;
-  onChange: (next: AppPreferences) => void;
-}) {
-  const repos = useRepos();
-  const runner = value.runner;
-
-  const setDefault = (defaultCommand: string) =>
-    onChange({ ...value, runner: { ...runner, defaultCommand } });
-
-  const setForRepo = (repoId: string, command: string) => {
-    const byRepo = { ...runner.byRepo };
-    // An empty box means "use the default", not "run nothing".
-    if (command.trim()) byRepo[repoId] = command;
-    else delete byRepo[repoId];
-    onChange({ ...value, runner: { ...runner, byRepo } });
-  };
-
-  return (
-    <>
-      <label className="field">
-        Default command
-        <input
-          className="mono-input"
-          value={runner.defaultCommand}
-          placeholder="npm run dev"
-          onChange={(e) => setDefault(e.target.value)}
-          data-tip="What ▶ Run starts in a worktree, unless its repository says otherwise"
-        />
-        <span className="field-hint">
-          Run in the worktree directory through a shell, so pipes and arguments work. Stopping it
-          also stops whatever it started.
-        </span>
-      </label>
-
-      <div className="field">
-        <span data-tip="Repositories that need a different command">Per repository</span>
-        {(repos.data ?? []).length === 0 ? (
-          <span className="field-hint">No repositories registered yet.</span>
-        ) : (
-          <ul className="runner-repo-list">
-            {(repos.data ?? []).map((repo) => (
-              <li key={repo.id} className="runner-repo-row">
-                <span className="runner-repo-name">{repo.name}</span>
-                <input
-                  className="mono-input"
-                  value={runner.byRepo[repo.id] ?? ""}
-                  placeholder={runner.defaultCommand}
-                  onChange={(e) => setForRepo(repo.id, e.target.value)}
-                  data-tip={`What ▶ Run starts in ${repo.name}`}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-        <span className="field-hint">Leave one blank to use the default above.</span>
-      </div>
-    </>
   );
 }
 

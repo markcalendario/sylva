@@ -5,10 +5,9 @@ import type {
   Attachment,
   FileEvent,
   PermissionRequest,
-  RunnerLine,
-  RunnerState,
   ServerEvent,
   SessionInfo,
+  TerminalInfo,
   Worktree,
   WorktreeStatus,
 } from "sylva-shared";
@@ -16,8 +15,6 @@ import { circleId, circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
 
 const FEED_CAP = 200;
-/** Matches what the server retains, so both agree on what "the log" is. */
-const RUNNER_LINE_CAP = 2000;
 
 /** Stable empty arrays so selectors don't mint new references every render. */
 export const NO_EVENTS: never[] = [];
@@ -37,7 +34,7 @@ export const EMPTY_DRAFT: Draft = { text: "", attachments: [] };
 
 export type Connection = "connecting" | "connected" | "disconnected";
 
-export type Tab = "agent" | "files" | "git" | "run";
+export type Tab = "agent" | "files" | "git" | "terminal";
 
 /**
  * One side of the workspace. Migrating an old system to a new one means two
@@ -54,6 +51,11 @@ export interface DiffSelection {
   worktreeId: string;
   path: string;
   staged: boolean;
+  /**
+   * A commit, when the file is being read as that commit left it rather than as
+   * it is now. Absent for the working tree, which is the ordinary case.
+   */
+  commit?: string;
 }
 
 export interface Pane {
@@ -131,7 +133,14 @@ function loadPanes(): Pane[] {
     return parsed.slice(0, 2).map((p) => ({
       ...freshPane(typeof p.worktreeId === "string" ? p.worktreeId : null),
       ...(p.id ? { id: p.id } : {}),
-      tab: p.tab === "files" || p.tab === "git" || p.tab === "run" ? p.tab : "agent",
+      // "run" is what the terminal tab used to be called; a layout saved before
+      // the rename still means the same place.
+      tab:
+        p.tab === "files" || p.tab === "git" || p.tab === "terminal"
+          ? p.tab
+          : (p.tab as string) === "run"
+            ? "terminal"
+            : "agent",
       // A layout saved before selections carried their worktree has nothing
       // worth migrating — the path alone can't say which worktree it meant.
       diff: null,
@@ -185,9 +194,13 @@ interface SylvaState {
   panes: Pane[];
   activePaneId: string;
   view: View;
-  /** Runner state and retained output, by worktreeId. */
-  runners: Record<string, RunnerState>;
-  runnerOutput: Record<string, RunnerLine[]>;
+  /**
+   * Every terminal the server holds, by terminal id. Only what a tab strip
+   * needs — which worktree it belongs to, what it's called, whether its shell
+   * is still alive. The bytes on screen never come through here: they go
+   * straight from the socket to the emulator that draws them.
+   */
+  terminals: Record<string, TerminalInfo>;
   /**
    * Which repository each worktree belongs to. Worktrees are only ever listed
    * per repository, so anything that has a bare worktree id — the nav bar
@@ -231,9 +244,9 @@ interface SylvaState {
   /** Hidden sidebar, for when the work deserves the whole window. */
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
-  setRunner: (state: RunnerState) => void;
-  seedRunner: (worktreeId: string, state: RunnerState, lines: RunnerLine[]) => void;
-  clearRunnerOutput: (worktreeId: string) => void;
+  setTerminal: (info: TerminalInfo) => void;
+  removeTerminal: (terminalId: string) => void;
+  seedTerminals: (infos: TerminalInfo[]) => void;
 
   setConnection: (c: Connection) => void;
   setDraft: (worktreeId: string, patch: Partial<Draft>) => void;
@@ -271,8 +284,7 @@ export const useSylva = create<SylvaState>((set, get) => ({
   panes: initialPanes,
   activePaneId: initialPanes[0]?.id ?? "",
   view: "workspace",
-  runners: {},
-  runnerOutput: {},
+  terminals: {},
   worktreeIndex: {},
 
   indexWorktrees: (repo, worktrees) =>
@@ -406,17 +418,23 @@ export const useSylva = create<SylvaState>((set, get) => ({
       return { sidebarCollapsed };
     }),
 
-  setRunner: (state) =>
-    set((s) => ({ runners: { ...s.runners, [state.worktreeId]: state } })),
+  setTerminal: (info) => set((s) => ({ terminals: { ...s.terminals, [info.id]: info } })),
 
-  seedRunner: (worktreeId, state, lines) =>
-    set((s) => ({
-      runners: { ...s.runners, [worktreeId]: state },
-      runnerOutput: { ...s.runnerOutput, [worktreeId]: lines },
-    })),
+  removeTerminal: (terminalId) =>
+    set((s) => {
+      if (!s.terminals[terminalId]) return {};
+      const terminals = { ...s.terminals };
+      delete terminals[terminalId];
+      return { terminals };
+    }),
 
-  clearRunnerOutput: (worktreeId) =>
-    set((s) => ({ runnerOutput: { ...s.runnerOutput, [worktreeId]: [] } })),
+  /**
+   * Replace what we think exists with what the server says exists. Terminals
+   * live on the server and die with it, so a reconnect is the moment to stop
+   * believing anything we remember.
+   */
+  seedTerminals: (infos) =>
+    set(() => ({ terminals: Object.fromEntries(infos.map((info) => [info.id, info])) })),
 
   setConnection: (connection) => set({ connection }),
 
@@ -572,16 +590,17 @@ export const useSylva = create<SylvaState>((set, get) => ({
       case "worktrees.changed":
         set((st) => ({ worktreesRevision: st.worktreesRevision + 1 }));
         break;
-      case "runner.state":
-        s.setRunner(event.state);
+      case "terminal.state":
+        s.setTerminal(event.info);
         break;
-      case "runner.output": {
-        const list = s.runnerOutput[event.worktreeId] ?? [];
-        // Same cap the server retains, so the two agree on what "the log" is.
-        const next = [...list, ...event.lines].slice(-RUNNER_LINE_CAP);
-        set((st) => ({ runnerOutput: { ...st.runnerOutput, [event.worktreeId]: next } }));
+      case "terminal.closed":
+        s.removeTerminal(event.terminalId);
         break;
-      }
+      case "terminal.output":
+        // Handled where it is drawn, not here: pty output is a byte stream at
+        // keystroke frequency, and putting it through the store would re-render
+        // the application for every character echoed.
+        break;
     }
   },
 }));

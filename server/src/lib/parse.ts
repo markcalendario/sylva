@@ -1,7 +1,9 @@
 import type {
   BranchInfo,
+  CommitFile,
   DiffHunk,
   DiffLine,
+  FileChangeKind,
   FileDiff,
   StatusEntry,
   Worktree,
@@ -152,6 +154,69 @@ export function parseDiff(output: string): FileDiff[] {
     }
   }
   return files.filter((f) => f.path !== "");
+}
+
+// ---------- git show --name-status -z / --numstat -z ----------
+
+const STATUS_KIND: Record<string, FileChangeKind> = {
+  A: "added",
+  M: "modified",
+  T: "modified",
+  D: "deleted",
+  R: "renamed",
+  C: "added",
+};
+
+/**
+ * What a commit did to each file.
+ *
+ * `-z` rather than the readable form because a path may contain anything a
+ * filesystem allows, including the spaces and quotes the default output escapes
+ * — with NUL separators nothing needs unquoting, and a rename arrives as two
+ * plain paths instead of the `{old => new}` shorthand.
+ */
+export function parseNameStatusZ(output: string): Omit<CommitFile, "insertions" | "deletions">[] {
+  const tokens = output.split("\0").filter((t) => t.length > 0);
+  const files: Omit<CommitFile, "insertions" | "deletions">[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const status = tokens[i] ?? "";
+    const letter = status[0] ?? "";
+    const kind = STATUS_KIND[letter];
+    if (!kind) continue;
+    // R and C carry a similarity score and two paths; everything else, one.
+    if (letter === "R" || letter === "C") {
+      const from = tokens[++i];
+      const to = tokens[++i];
+      if (!to) break;
+      files.push({ path: to, kind, ...(from ? { renamedFrom: from } : {}) });
+    } else {
+      const path = tokens[++i];
+      if (!path) break;
+      files.push({ path, kind });
+    }
+  }
+  return files;
+}
+
+/** How much each file moved. `-` counts mean binary, where git counts nothing. */
+export function parseNumstatZ(output: string): Map<string, { insertions: number | null; deletions: number | null }> {
+  const tokens = output.split("\0").filter((t) => t.length > 0);
+  const counts = new Map<string, { insertions: number | null; deletions: number | null }>();
+  for (let i = 0; i < tokens.length; i++) {
+    const record = tokens[i] ?? "";
+    const parts = record.split("\t");
+    if (parts.length < 3) continue;
+    const [adds, dels, rest] = parts;
+    // A rename leaves the path field empty and puts old and new in the two
+    // tokens that follow.
+    const path = rest === "" ? ((i += 2), tokens[i]) : rest;
+    if (!path) continue;
+    counts.set(path, {
+      insertions: adds === "-" ? null : Number(adds),
+      deletions: dels === "-" ? null : Number(dels),
+    });
+  }
+  return counts;
 }
 
 // ---------- git branch list ----------

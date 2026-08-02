@@ -36,6 +36,7 @@ export function GitPanel({
     selection ? selection.worktreeId : null,
     selection?.path ?? null,
     selection?.staged ?? false,
+    selection?.commit,
   );
   const selectedPlace = useSylva((s) =>
     selection ? s.worktreeIndex[selection.worktreeId] : undefined,
@@ -71,7 +72,7 @@ export function GitPanel({
             members.map((id) => (
               <div key={id} className="git-history-lane">
                 {shared && <WorktreeLabel worktreeId={id} />}
-                <CommitGraph worktreeId={id} />
+                <CommitGraph worktreeId={id} selection={selection} onSelect={onSelect} />
               </div>
             ))}
 
@@ -110,12 +111,18 @@ export function GitPanel({
               <span
                 className="pixel-label"
                 data-tip={
-                  selection.staged
-                    ? "Showing the copy already staged for commit"
-                    : "Showing edits that aren't staged yet"
+                  selection.commit
+                    ? "Showing this file as that commit left it"
+                    : selection.staged
+                      ? "Showing the copy already staged for commit"
+                      : "Showing edits that aren't staged yet"
                 }
               >
-                {selection.staged ? "staged" : "unstaged"}
+                {selection.commit
+                  ? `commit ${selection.commit.slice(0, 7)}`
+                  : selection.staged
+                    ? "staged"
+                    : "unstaged"}
               </span>
               <button
                 className="ghost diff-close"
