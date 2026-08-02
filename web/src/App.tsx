@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { AboutDialog } from "./components/dialogs/AboutDialog";
-import { GlobalSettingsDialog } from "./components/dialogs/GlobalSettingsDialog";
 import { HelpDialog } from "./components/dialogs/HelpDialog";
 import { RegisterRepoDialog } from "./components/dialogs/RegisterRepoDialog";
 import { api } from "./lib/api";
@@ -24,7 +23,6 @@ const queryClient = new QueryClient({
 function Shell() {
   const qc = useQueryClient();
   const [showAbout, setShowAbout] = useState(false);
-  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
@@ -47,12 +45,22 @@ function Shell() {
           useSylva.getState().setPermissions(worktreeId, list);
         }
       });
+      // Runners keep going across a page reload, so pick them back up.
+      void api.listRunners().then((states) => {
+        for (const state of states) useSylva.getState().setRunner(state);
+      });
+      // The server watches what the panes hold; a reconnect has to say so again.
+      const open = useSylva
+        .getState()
+        .panes.map((p) => p.worktreeId)
+        .filter((id): id is string => id !== null);
+      void api.setOpenWorktrees(open).catch(() => {});
     });
   }, [qc]);
 
   return (
     <div className="shell">
-      <TopBar onAbout={() => setShowAbout(true)} onGlobalSettings={() => setShowGlobalSettings(true)} onHelp={() => setShowHelp(true)} />
+      <TopBar onAbout={() => setShowAbout(true)} onHelp={() => setShowHelp(true)} />
       <div className="shell-body">
         <Sidebar />
         <MainPanel
@@ -64,10 +72,6 @@ function Shell() {
 
       <AboutDialog open={showAbout} onClose={() => setShowAbout(false)} />
       <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />
-      <GlobalSettingsDialog
-        open={showGlobalSettings}
-        onClose={() => setShowGlobalSettings(false)}
-      />
       <RegisterRepoDialog
         open={showRegister}
         onClose={() => {

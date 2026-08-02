@@ -1,5 +1,4 @@
 import type { ServerEvent } from "sylva-shared";
-import { api } from "./api";
 import { useSylva } from "../state/store";
 
 /** Ask for notification permission the first time the user talks to an agent. */
@@ -23,15 +22,17 @@ function show(worktreeId: string, title: string, body: string): void {
   const n = new Notification(`Sylva — ${title}`, { body, tag: `sylva-${worktreeId}` });
   n.onclick = () => {
     window.focus();
-    void api.setFocus(worktreeId);
+    useSylva.getState().openWorktree(worktreeId);
     n.close();
   };
 }
 
 /** True when the user isn't already looking at this worktree. */
 function backgrounded(worktreeId: string): boolean {
-  const { focusedWorktreeId } = useSylva.getState();
-  return worktreeId !== focusedWorktreeId || document.hidden;
+  const { panes } = useSylva.getState();
+  // Held by a pane counts as being looked at — both halves of a split are
+  // on screen, so neither deserves an interruption.
+  return !panes.some((p) => p.worktreeId === worktreeId) || document.hidden;
 }
 
 /**

@@ -23,10 +23,22 @@
   background: var(--pine-1);
 }
 
-.topbar-left {
+.topbar-zone {
   display: flex;
   align-items: center;
   gap: var(--pad-3);
+  min-width: 0;
+}
+
+/* Identity may shrink; the other two zones hold their size, because a count of
+   waiting agents that gets squeezed out is the one thing you needed to see. */
+.topbar-identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.topbar-state {
+  justify-content: flex-end;
 }
 
 .wordmark {
@@ -2898,4 +2910,389 @@ button:disabled {
 .dialog a {
   color: var(--stream);
   word-break: break-all;
+}
+
+/* ---------- nav bar: where you are, where you can go ---------- */
+
+.topbar-where {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pad-1);
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--moss);
+}
+
+.topbar-where-repo {
+  color: var(--moss);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-where-sep {
+  color: var(--moss-dim);
+}
+
+.topbar-where-branch {
+  font-family: var(--font-mono);
+  color: var(--moon);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-destinations {
+  gap: var(--pad-1);
+}
+
+.topbar-dest {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  font-size: var(--text-xs);
+  padding: 4px var(--pad-3);
+  border-radius: var(--radius);
+  color: var(--moss);
+  border: 1px solid transparent;
+}
+
+.topbar-dest:hover {
+  color: var(--moon);
+  background: var(--pine-2);
+}
+
+.topbar-dest-on {
+  color: var(--moon);
+  background: var(--pine-2);
+  border-color: var(--pine-3);
+}
+
+.topbar-dest-glyph {
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+/* Below this the labels are the first thing that can go: the glyphs are
+   distinct enough to aim at, and every one of them keeps its tooltip. */
+@media (max-width: 1080px) {
+  .topbar-dest-label,
+  .conn-label {
+    display: none;
+  }
+
+  .topbar-where-repo,
+  .topbar-where-sep {
+    display: none;
+  }
+}
+
+/* ---------- panes ---------- */
+
+.main-split {
+  flex-direction: row;
+}
+
+.pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.main-split .pane + .pane {
+  border-left: 1px solid var(--pine-3);
+}
+
+/* Only marked when there are two: with one pane there is nothing to
+   distinguish it from, and a permanent highlight is just noise. */
+.pane-active .wt-header {
+  box-shadow: inset 2px 0 0 var(--firefly-dim);
+}
+
+.pane-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pad-3);
+  color: var(--moss);
+}
+
+.pane-empty p {
+  margin: 0;
+}
+
+.pane-empty-hint {
+  color: var(--moss-dim);
+  font-size: var(--text-sm);
+}
+
+.pane-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-1);
+}
+
+.tab-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--sapling);
+  margin-left: var(--pad-1);
+  vertical-align: middle;
+}
+
+/* ---------- runner ---------- */
+
+.run-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.run-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-3);
+  padding: var(--pad-3) var(--pad-4);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.run-command {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--moss);
+  background: var(--pine-0);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  padding: var(--pad-1) var(--pad-2);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.run-status {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+}
+
+.run-live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  color: var(--sapling);
+}
+
+.run-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sapling);
+  box-shadow: 0 0 6px var(--sapling);
+  animation: blocked-pulse 1.6s ease-in-out infinite;
+}
+
+.run-exit-ok {
+  color: var(--moss-dim);
+}
+
+.run-exit-bad {
+  color: var(--ember);
+}
+
+.run-url {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--stream);
+}
+
+.run-error {
+  color: var(--ember);
+  font-size: var(--text-sm);
+  padding: var(--pad-2) var(--pad-4);
+  border-bottom: 1px solid var(--pine-3);
+  white-space: pre-wrap;
+}
+
+.run-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--pad-3) var(--pad-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  background: var(--pine-0);
+}
+
+.run-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--moon);
+}
+
+.run-line-err {
+  color: var(--ember);
+}
+
+.run-empty {
+  color: var(--moss-dim);
+  font-family: var(--font-ui);
+}
+
+/* ---------- settings page ---------- */
+
+.settings-page {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: var(--pad-5);
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+  padding: var(--pad-5);
+  position: relative;
+}
+
+.settings-page-loading {
+  padding: var(--pad-5);
+  color: var(--moss);
+}
+
+.settings-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+  align-self: start;
+  position: sticky;
+  top: var(--pad-5);
+}
+
+.settings-rail nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settings-rail-item {
+  text-align: left;
+  padding: var(--pad-2) var(--pad-3);
+  border-radius: var(--radius);
+  color: var(--moss);
+  font-size: var(--text-sm);
+  border-left: 2px solid transparent;
+}
+
+.settings-rail-item:hover {
+  color: var(--moon);
+  background: var(--pine-1);
+}
+
+.settings-rail-on {
+  color: var(--moon);
+  background: var(--pine-1);
+  border-left-color: var(--firefly);
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-5);
+  padding-bottom: var(--pad-5);
+}
+
+/* Sits with the page rather than inside whichever section happens to be
+   dirty, because saving applies to all of them at once. */
+.settings-save {
+  position: sticky;
+  bottom: 0;
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--pad-3);
+  padding: var(--pad-3) 0;
+  background: linear-gradient(to top, var(--pine-0) 60%, transparent);
+}
+
+.settings-save-note {
+  font-size: var(--text-sm);
+  color: var(--moss-dim);
+}
+
+.settings-save-on .settings-save-note {
+  color: var(--firefly);
+}
+
+.settings-repo-list,
+.runner-repo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+}
+
+.settings-repo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-3);
+  padding: var(--pad-2) var(--pad-3);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-1);
+}
+
+.settings-repo-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  color: var(--moon);
+  font-size: var(--text-sm);
+  min-width: 120px;
+}
+
+.settings-repo-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runner-repo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-3);
+}
+
+.runner-repo-name {
+  min-width: 120px;
+  font-size: var(--text-sm);
+  color: var(--moon);
+}
+
+.runner-repo-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- grove ---------- */
+
+.grove-pane {
+  flex: 1;
+}
+
+.grove-scope {
+  color: var(--moss);
+  font-size: var(--text-sm);
 }

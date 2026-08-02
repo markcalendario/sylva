@@ -1,7 +1,11 @@
 import { useSylva } from "../state/store";
 
 export function StatusStrip() {
-  const worktreeId = useSylva((s) => s.focusedWorktreeId);
+  // Follows the active pane, which is what "the worktree you're looking at"
+  // means once there can be two of them.
+  const worktreeId = useSylva(
+    (s) => s.panes.find((p) => p.id === s.activePaneId)?.worktreeId ?? null,
+  );
   const status = useSylva((s) => (worktreeId ? s.statuses[worktreeId] : undefined));
   const session = useSylva((s) => (worktreeId ? s.sessions[worktreeId] : undefined));
 
@@ -11,7 +15,7 @@ export function StatusStrip() {
         className="statusstrip statusstrip-empty"
         data-tip="Open a worktree to see its git status here"
       >
-        no worktree focused
+        no worktree open
       </footer>
     );
   }

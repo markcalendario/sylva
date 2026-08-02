@@ -2,11 +2,13 @@ import { useState } from "react";
 import type { Repo } from "sylva-shared";
 import { api, ApiFailure } from "../../lib/api";
 import { useBranches, useInvalidate, useRepos } from "../../lib/queries";
+import { useSylva } from "../../state/store";
 import { Dialog } from "../Dialog";
 
 /**
- * The single way to grow a worktree. Creating one focuses it, so you land in
- * the new tree ready to prompt — but nothing is sent to an agent for you.
+ * The single way to grow a worktree. Creating one opens it in the active pane,
+ * so you land in the new tree ready to prompt — but nothing is sent to an agent
+ * for you.
  */
 export function NewWorktreeDialog({
   repo,
@@ -43,7 +45,7 @@ export function NewWorktreeDialog({
       });
       invalidate.worktrees(targetRepoId);
       invalidate.branches();
-      await api.setFocus(created.id);
+      useSylva.getState().openWorktree(created.id);
       setBranch("");
       setBaseRef("");
       onClose();

@@ -10,7 +10,10 @@ import type {
   FileContent,
   FileDiff,
   FileEvent,
+  FileSearchResponse,
   OpenKind,
+  RunnerSnapshot,
+  RunnerState,
   PullRequestResult,
   PermissionAnswer,
   PermissionRequest,
@@ -54,6 +57,11 @@ export const api = {
   listRepos: () => request<Repo[]>("/api/repos"),
   registerRepo: (path: string) =>
     request<Repo>("/api/repos", { method: "POST", body: JSON.stringify({ path }) }),
+  createRepo: (parentPath: string, name: string) =>
+    request<Repo>("/api/repos/create", {
+      method: "POST",
+      body: JSON.stringify({ parentPath, name }),
+    }),
   removeRepo: (repoId: string) => request<{ ok: true }>(`/api/repos/${repoId}`, { method: "DELETE" }),
 
   listWorktrees: (repoId: string) => request<Worktree[]>(`/api/repos/${repoId}/worktrees`),
@@ -70,6 +78,16 @@ export const api = {
     request<{ worktreeId: string | null }>("/api/focus", {
       method: "POST",
       body: JSON.stringify({ worktreeId }),
+    }),
+
+  /**
+   * Everything the panes hold. The server watches this set, so a worktree in
+   * the second pane streams as live as the one in the first.
+   */
+  setOpenWorktrees: (worktreeIds: string[]) =>
+    request<{ worktreeIds: string[] }>("/api/open-worktrees", {
+      method: "POST",
+      body: JSON.stringify({ worktreeIds }),
     }),
 
   status: (worktreeId: string) => request<WorktreeStatus>(`/api/worktrees/${worktreeId}/status`),
@@ -145,6 +163,24 @@ export const api = {
     request<TreeListing>(`/api/worktrees/${worktreeId}/tree?path=${encodeURIComponent(path)}`),
   fileContent: (worktreeId: string, path: string) =>
     request<FileContent>(`/api/worktrees/${worktreeId}/file?path=${encodeURIComponent(path)}`),
+  searchFiles: (worktreeId: string, q: string) =>
+    request<FileSearchResponse>(
+      `/api/worktrees/${worktreeId}/search-files?q=${encodeURIComponent(q)}`,
+    ),
+
+  runner: (worktreeId: string) =>
+    request<RunnerSnapshot>(`/api/worktrees/${worktreeId}/runner`),
+  startRunner: (worktreeId: string) =>
+    request<RunnerState>(`/api/worktrees/${worktreeId}/runner/start`, {
+      method: "POST",
+      body: "{}",
+    }),
+  stopRunner: (worktreeId: string) =>
+    request<RunnerState>(`/api/worktrees/${worktreeId}/runner/stop`, {
+      method: "POST",
+      body: "{}",
+    }),
+  listRunners: () => request<RunnerState[]>("/api/runners"),
   createPr: (worktreeId: string, opts: { draft: boolean; title?: string; body?: string }) =>
     request<PullRequestResult>(`/api/worktrees/${worktreeId}/pr`, {
       method: "POST",

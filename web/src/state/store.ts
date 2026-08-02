@@ -5,12 +5,18 @@ import type {
   Attachment,
   FileEvent,
   PermissionRequest,
+  RunnerLine,
+  RunnerState,
   ServerEvent,
   SessionInfo,
+  Worktree,
   WorktreeStatus,
 } from "sylva-shared";
+import { api } from "../lib/api";
 
 const FEED_CAP = 200;
+/** Matches what the server retains, so both agree on what "the log" is. */
+const RUNNER_LINE_CAP = 2000;
 
 /** Stable empty arrays so selectors don't mint new references every render. */
 export const NO_EVENTS: never[] = [];
@@ -29,6 +35,63 @@ export interface Draft {
 export const EMPTY_DRAFT: Draft = { text: "", attachments: [] };
 
 export type Connection = "connecting" | "connected" | "disconnected";
+
+export type Tab = "agent" | "files" | "git" | "run";
+
+/**
+ * One side of the workspace. Migrating an old system to a new one means two
+ * repositories open at once, so what used to be "the focused worktree" is now
+ * a small list of them — each with its own tab and its own selected diff,
+ * because a pane you switch to Git shouldn't drag the other pane along.
+ */
+export interface Pane {
+  id: string;
+  worktreeId: string | null;
+  tab: Tab;
+  diffPath: string | null;
+}
+
+/** What the main area is showing. Panes persist behind the other two. */
+export type View = "workspace" | "settings" | "grove";
+
+/** Where a worktree lives, for anything holding only its id. */
+export interface WorktreePlace {
+  repoId: string;
+  repoName: string;
+  branch: string;
+}
+
+const PANES_KEY = "sylva.panes";
+
+function freshPane(worktreeId: string | null = null): Pane {
+  return { id: Math.random().toString(36).slice(2, 9), worktreeId, tab: "agent", diffPath: null };
+}
+
+/** Pane layout outlives a reload; which view you were on does not. */
+function loadPanes(): Pane[] {
+  try {
+    const raw = localStorage.getItem(PANES_KEY);
+    if (!raw) return [freshPane()];
+    const parsed = JSON.parse(raw) as Pane[];
+    if (!Array.isArray(parsed) || parsed.length === 0) return [freshPane()];
+    return parsed.slice(0, 2).map((p) => ({
+      ...freshPane(typeof p.worktreeId === "string" ? p.worktreeId : null),
+      ...(p.id ? { id: p.id } : {}),
+      tab: p.tab === "files" || p.tab === "git" || p.tab === "run" ? p.tab : "agent",
+    }));
+  } catch {
+    return [freshPane()];
+  }
+}
+
+function savePanes(panes: Pane[]): void {
+  try {
+    localStorage.setItem(PANES_KEY, JSON.stringify(panes));
+  } catch {
+    // Private mode, or a full quota. The layout is a convenience, not state we
+    // can't run without.
+  }
+}
 
 interface SylvaState {
   connection: Connection;
@@ -55,6 +118,35 @@ interface SylvaState {
    */
   drafts: Record<string, Draft>;
 
+  /** Layout of the main area. */
+  panes: Pane[];
+  activePaneId: string;
+  view: View;
+  /** Runner state and retained output, by worktreeId. */
+  runners: Record<string, RunnerState>;
+  runnerOutput: Record<string, RunnerLine[]>;
+  /**
+   * Which repository each worktree belongs to. Worktrees are only ever listed
+   * per repository, so anything that has a bare worktree id — the nav bar
+   * saying where you are, the blocked-agent jump — has no way back to its repo
+   * without an index like this one. The sidebar fills it as it lists them.
+   */
+  worktreeIndex: Record<string, WorktreePlace>;
+  indexWorktrees: (repo: { id: string; name: string }, worktrees: Worktree[]) => void;
+
+  setView: (view: View) => void;
+  setActivePane: (paneId: string) => void;
+  setPaneWorktree: (paneId: string, worktreeId: string | null) => void;
+  setPaneTab: (paneId: string, tab: Tab) => void;
+  setPaneDiff: (paneId: string, diffPath: string | null, tab?: Tab) => void;
+  splitPane: () => void;
+  closePane: (paneId: string) => void;
+  /** Open a worktree in whichever pane is active — what the sidebar calls. */
+  openWorktree: (worktreeId: string) => void;
+  setRunner: (state: RunnerState) => void;
+  seedRunner: (worktreeId: string, state: RunnerState, lines: RunnerLine[]) => void;
+  clearRunnerOutput: (worktreeId: string) => void;
+
   setConnection: (c: Connection) => void;
   setDraft: (worktreeId: string, patch: Partial<Draft>) => void;
   clearDraft: (worktreeId: string) => void;
@@ -69,6 +161,8 @@ interface SylvaState {
   applyServerEvent: (event: ServerEvent) => void;
 }
 
+const initialPanes = loadPanes();
+
 export const useSylva = create<SylvaState>((set, get) => ({
   connection: "connecting",
   focusedWorktreeId: null,
@@ -81,6 +175,103 @@ export const useSylva = create<SylvaState>((set, get) => ({
   celebrating: {},
   unseenActivity: {},
   drafts: {},
+
+  panes: initialPanes,
+  activePaneId: initialPanes[0]?.id ?? "",
+  view: "workspace",
+  runners: {},
+  runnerOutput: {},
+  worktreeIndex: {},
+
+  indexWorktrees: (repo, worktrees) =>
+    set((s) => {
+      const next = { ...s.worktreeIndex };
+      let changed = false;
+      for (const wt of worktrees) {
+        const entry = next[wt.id];
+        const branch = wt.branch ?? `${wt.head.slice(0, 7)} (detached)`;
+        if (entry?.repoId === repo.id && entry.repoName === repo.name && entry.branch === branch) {
+          continue;
+        }
+        next[wt.id] = { repoId: repo.id, repoName: repo.name, branch };
+        changed = true;
+      }
+      // Bail without a new object when nothing moved: this runs on every
+      // worktree list refetch, and a fresh map each time re-renders the world.
+      return changed ? { worktreeIndex: next } : {};
+    }),
+
+  setView: (view) => set({ view }),
+
+  setActivePane: (activePaneId) => set({ activePaneId }),
+
+  setPaneWorktree: (paneId, worktreeId) =>
+    set((s) => {
+      const panes = s.panes.map((p) =>
+        // A pane pointed at a different worktree keeps its tab — you were on
+        // Git for a reason — but not its diff, which belonged to the old one.
+        p.id === paneId ? { ...p, worktreeId, diffPath: null } : p,
+      );
+      savePanes(panes);
+      return { panes };
+    }),
+
+  setPaneTab: (paneId, tab) =>
+    set((s) => {
+      const panes = s.panes.map((p) => (p.id === paneId ? { ...p, tab } : p));
+      savePanes(panes);
+      return { panes };
+    }),
+
+  setPaneDiff: (paneId, diffPath, tab) =>
+    set((s) => ({
+      panes: s.panes.map((p) =>
+        p.id === paneId ? { ...p, diffPath, ...(tab ? { tab } : {}) } : p,
+      ),
+    })),
+
+  /**
+   * Split by copying the active pane rather than opening an empty one: you
+   * split because you want to see two things, and one of them is already here.
+   */
+  splitPane: () =>
+    set((s) => {
+      if (s.panes.length >= 2) return {};
+      const active = s.panes.find((p) => p.id === s.activePaneId) ?? s.panes[0];
+      const created = freshPane(active?.worktreeId ?? null);
+      const panes = [...s.panes, created];
+      savePanes(panes);
+      return { panes, activePaneId: created.id };
+    }),
+
+  closePane: (paneId) =>
+    set((s) => {
+      if (s.panes.length <= 1) return {};
+      const panes = s.panes.filter((p) => p.id !== paneId);
+      savePanes(panes);
+      return { panes, activePaneId: panes[0]?.id ?? "" };
+    }),
+
+  openWorktree: (worktreeId) => {
+    const s = get();
+    const paneId = s.panes.find((p) => p.id === s.activePaneId)?.id ?? s.panes[0]?.id;
+    if (paneId) s.setPaneWorktree(paneId, worktreeId);
+    // Choosing a worktree is also a request to look at it.
+    if (s.view !== "workspace") set({ view: "workspace" });
+    void api.setFocus(worktreeId);
+  },
+
+  setRunner: (state) =>
+    set((s) => ({ runners: { ...s.runners, [state.worktreeId]: state } })),
+
+  seedRunner: (worktreeId, state, lines) =>
+    set((s) => ({
+      runners: { ...s.runners, [worktreeId]: state },
+      runnerOutput: { ...s.runnerOutput, [worktreeId]: lines },
+    })),
+
+  clearRunnerOutput: (worktreeId) =>
+    set((s) => ({ runnerOutput: { ...s.runnerOutput, [worktreeId]: [] } })),
 
   setConnection: (connection) => set({ connection }),
 
@@ -208,6 +399,16 @@ export const useSylva = create<SylvaState>((set, get) => ({
       case "focus.changed":
         s.setFocus(event.worktreeId);
         break;
+      case "runner.state":
+        s.setRunner(event.state);
+        break;
+      case "runner.output": {
+        const list = s.runnerOutput[event.worktreeId] ?? [];
+        // Same cap the server retains, so the two agree on what "the log" is.
+        const next = [...list, ...event.lines].slice(-RUNNER_LINE_CAP);
+        set((st) => ({ runnerOutput: { ...st.runnerOutput, [event.worktreeId]: next } }));
+        break;
+      }
     }
   },
 }));

@@ -40,7 +40,8 @@ export function ForestView() {
   const sessions = useSylva((s) => s.sessions);
   const pendingPermissions = useSylva((s) => s.pendingPermissions);
   const celebrating = useSylva((s) => s.celebrating);
-  const focusedId = useSylva((s) => s.focusedWorktreeId);
+  // A worktree counts as open when any pane holds it, not just the primary one.
+  const paneWorktreeIds = useSylva((s) => s.panes.map((p) => p.worktreeId).join(","));
   const unseenMap = useSylva((s) => s.unseenActivity);
 
   const plots: Plot[] = pairs.map(({ repo, worktree }, i) => {
@@ -54,7 +55,7 @@ export function ForestView() {
         ? { cost: sessions[worktree.id]?.totalCostUsd }
         : {}),
       unseen: unseenMap[worktree.id] ?? false,
-      focused: focusedId === worktree.id,
+      focused: paneWorktreeIds.includes(worktree.id),
     };
   });
 
@@ -83,7 +84,7 @@ export function ForestView() {
 
       {plots.length > 0 && (
         <>
-          <ForestScene plots={plots} onOpen={(id) => void api.setFocus(id)} />
+          <ForestScene plots={plots} onOpen={(id) => useSylva.getState().openWorktree(id)} />
 
           {/* The facts live here rather than on the map, so the plane stays a
               scene and the numbers stay scannable. */}
@@ -106,7 +107,7 @@ export function ForestView() {
                 <button
                   key={plot.worktree.id}
                   className={`ow-chip ${plot.focused ? "ow-chip-focused" : ""}`}
-                  onClick={() => void api.setFocus(plot.worktree.id)}
+                  onClick={() => useSylva.getState().openWorktree(plot.worktree.id)}
                   data-tip={`${plot.repo.name} · ${plot.worktree.path}`}
                 >
                   <span className="ow-chip-name">

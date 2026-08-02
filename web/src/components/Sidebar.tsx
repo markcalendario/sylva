@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Repo, Worktree } from "sylva-shared";
 import { api } from "../lib/api";
 import { confirm } from "../lib/confirm";
@@ -16,7 +16,8 @@ function WorktreeRow({
   worktree: Worktree;
   onRemove: (worktree: Worktree) => void;
 }) {
-  const focused = useSylva((s) => s.focusedWorktreeId) === worktree.id;
+  // "Open" now means "held by a pane", which can be more than one at a time.
+  const open = useSylva((s) => s.panes.some((p) => p.worktreeId === worktree.id));
   const spriteState = useSylva((s) => spriteStateFor(s, worktree.id));
   const unseen = useSylva((s) => s.unseenActivity[worktree.id] ?? false);
   const dirtyCount = useSylva((s) => {
@@ -25,11 +26,11 @@ function WorktreeRow({
   });
 
   return (
-    <div className={`wt-row ${focused ? "focused" : ""}`}>
+    <div className={`wt-row ${open ? "focused" : ""}`}>
       <button
         className="wt-open"
-        onClick={() => void api.setFocus(worktree.id)}
-        data-tip="Open this worktree and work in it"
+        onClick={() => useSylva.getState().openWorktree(worktree.id)}
+        data-tip="Open this worktree in the active pane"
       >
         <Sprite state={spriteState} scale={1} title={worktree.branch ?? "detached"} />
         <span className="wt-name" data-tip="Branch checked out in this worktree">
@@ -42,7 +43,7 @@ function WorktreeRow({
         </span>
       </button>
       <span className="wt-meta">
-        {unseen && !focused && (
+        {unseen && !open && (
           <span className="unseen-dot" data-tip="New agent activity you haven't looked at" />
         )}
         {dirtyCount > 0 && (
@@ -71,6 +72,13 @@ function RepoGroup({ repo }: { repo: Repo }) {
   const [removing, setRemoving] = useState<Worktree | null>(null);
   const worktrees = useWorktrees(repo.id);
   const invalidate = useInvalidate();
+
+  // The only place worktrees are listed, so the only place that can say which
+  // repository each one belongs to.
+  const listed = worktrees.data;
+  useEffect(() => {
+    if (listed) useSylva.getState().indexWorktrees(repo, listed);
+  }, [listed, repo.id, repo.name]);
 
   return (
     <div className="repo-group">
