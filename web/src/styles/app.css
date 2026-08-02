@@ -3296,3 +3296,143 @@ button:disabled {
   color: var(--moss);
   font-size: var(--text-sm);
 }
+
+/* ---------- hover cards ---------- */
+
+.hovercard {
+  position: fixed;
+  margin: 0;
+  inset: auto;
+  z-index: 60;
+  max-width: min(420px, 92vw);
+  padding: var(--pad-3);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius-lg);
+  background: var(--pine-1);
+  color: var(--moon);
+  box-shadow: var(--shadow-raise);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.hovercard[data-open] {
+  opacity: 1;
+  visibility: visible;
+}
+
+.hovercard:not([popover]) {
+  display: none;
+}
+
+.hovercard:not([popover])[data-open] {
+  display: block;
+}
+
+.commit-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+}
+
+.commit-card-subject {
+  font-size: var(--text-md);
+  line-height: var(--leading-snug);
+  color: var(--moon);
+}
+
+.commit-card-body {
+  white-space: pre-wrap;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--moss);
+  max-height: 30vh;
+  overflow-y: auto;
+  border-left: 2px solid var(--pine-3);
+  padding-left: var(--pad-2);
+}
+
+.commit-card-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--pad-1) var(--pad-3);
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+.commit-card-meta dt {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  color: var(--moss-dim);
+}
+
+.commit-card-meta dd {
+  margin: 0;
+  color: var(--moss);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.commit-card-email {
+  color: var(--moss-dim);
+}
+
+.commit-card-date {
+  display: block;
+  color: var(--moss-dim);
+}
+
+.commit-card-sha {
+  font-family: var(--font-mono);
+  color: var(--stream);
+}
+
+.commit-card-add {
+  color: var(--sapling);
+}
+
+.commit-card-del {
+  color: var(--ember);
+}
+
+.graph-row-wrap {
+  list-style: none;
+}
+
+.graph-row-anchor {
+  display: block;
+}
+
+.graph-row:focus-visible {
+  outline: 1px solid var(--firefly-dim);
+  outline-offset: -1px;
+  border-radius: var(--radius);
+}
+
+/* ---------- file search ---------- */
+
+.tree-search {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  padding: var(--pad-2);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.tree-search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-result-path {
+  margin-left: auto;
+  padding-left: var(--pad-2);
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+}

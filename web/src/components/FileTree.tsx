@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { TreeEntry } from "sylva-shared";
+import { useEffect, useState } from "react";
+import type { FileSearchResponse, TreeEntry } from "sylva-shared";
+import { api } from "../lib/api";
 import { useFileContent, useTree } from "../lib/queries";
 
 /**
@@ -9,11 +10,43 @@ import { useFileContent, useTree } from "../lib/queries";
  */
 export function FileTree({ worktreeId }: { worktreeId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const results = useFileSearch(worktreeId, query);
 
   return (
     <div className="tree-panel">
       <div className="tree-side">
-        <Directory worktreeId={worktreeId} path="" selected={selected} onSelect={setSelected} />
+        <div className="tree-search">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find a file…"
+            aria-label="Find a file by name"
+            data-tip="Search this worktree by file name or path fragment"
+          />
+          {query && (
+            <button
+              className="ghost"
+              onClick={() => setQuery("")}
+              aria-label="Clear the search"
+              data-tip="Clear the search and go back to the folder tree"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Searching replaces the tree rather than filtering it in place, so
+            clearing the box returns every folder you had expanded. */}
+        {query.trim() ? (
+          <SearchResults
+            state={results}
+            selected={selected}
+            onSelect={setSelected}
+          />
+        ) : (
+          <Directory worktreeId={worktreeId} path="" selected={selected} onSelect={setSelected} />
+        )}
       </div>
       <div className="tree-view">
         {selected ? (
@@ -24,6 +57,98 @@ export function FileTree({ worktreeId }: { worktreeId: string }) {
       </div>
     </div>
   );
+}
+
+interface SearchState {
+  loading: boolean;
+  data: FileSearchResponse | null;
+  failed: boolean;
+}
+
+/**
+ * Search as you type, debounced so a fast typist doesn't set a filesystem walk
+ * going for every keystroke. The previous results stay on screen while the next
+ * ones are fetched — blanking the list mid-typing makes it feel broken.
+ */
+function useFileSearch(worktreeId: string, query: string): SearchState {
+  const [state, setState] = useState<SearchState>({ loading: false, data: null, failed: false });
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setState({ loading: false, data: null, failed: false });
+      return;
+    }
+    setState((s) => ({ ...s, loading: true, failed: false }));
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api
+        .searchFiles(worktreeId, trimmed)
+        .then((data) => {
+          // A slow response for an old query must not overwrite a newer one.
+          if (!cancelled) setState({ loading: false, data, failed: false });
+        })
+        .catch(() => {
+          if (!cancelled) setState({ loading: false, data: null, failed: true });
+        });
+    }, 150);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [worktreeId, query]);
+
+  return state;
+}
+
+function SearchResults({
+  state,
+  selected,
+  onSelect,
+}: {
+  state: SearchState;
+  selected: string | null;
+  onSelect: (path: string) => void;
+}) {
+  if (state.failed) return <div className="tree-note">Couldn't search this worktree.</div>;
+  if (!state.data) return <div className="tree-note">Searching…</div>;
+  if (state.data.results.length === 0) {
+    return (
+      <div className="tree-note">
+        {state.loading ? "Searching…" : `Nothing matches “${state.data.query}”.`}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <ul className="tree-list">
+        {state.data.results.map((result) => (
+          <li key={result.path} className="tree-node">
+            <button
+              className={`tree-row ${selected === result.path ? "tree-row-on" : ""}`}
+              onClick={() => onSelect(result.path)}
+              data-tip={result.path}
+            >
+              <span className="tree-glyph">·</span>
+              <span className="tree-name">{result.name}</span>
+              <span className="tree-result-path">{dirOf(result.path)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {state.data.truncated && (
+        <div className="tree-note">Showing the closest matches only.</div>
+      )}
+    </>
+  );
+}
+
+/** The folder a result sits in, shown beside its name to tell duplicates apart. */
+function dirOf(path: string): string {
+  const cut = path.lastIndexOf("/");
+  return cut === -1 ? "" : path.slice(0, cut);
 }
 
 function Directory({
