@@ -1,6 +1,7 @@
 import { CommitMessageService } from "./services/commitMessage.js";
 import { GitService } from "./services/git.js";
 import { GitOps } from "./services/gitOps.js";
+import { RunnerService } from "./services/runner.js";
 import { SessionManager } from "./services/sessions.js";
 import { Store } from "./services/store.js";
 import { WatcherManager } from "./services/watcher.js";
@@ -17,6 +18,7 @@ export interface AppContext {
   watchers: WatcherManager;
   sessions: SessionManager;
   commitMessages: CommitMessageService;
+  runners: RunnerService;
 }
 
 export async function createContext(baseDir?: string): Promise<AppContext> {
@@ -40,5 +42,6 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
 
   const sessions = new SessionManager(store, workspace, watchers, hub);
   const commitMessages = new CommitMessageService(git, workspace, store);
-  return { store, git, hub, workspace, gitOps, watchers, sessions, commitMessages };
+  const runners = new RunnerService(store, workspace, hub);
+  return { store, git, hub, workspace, gitOps, watchers, sessions, commitMessages, runners };
 }
