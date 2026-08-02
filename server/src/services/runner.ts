@@ -25,6 +25,8 @@ interface Runner {
   timer: NodeJS.Timeout | null;
   /** Partial trailing line per stream, until its newline arrives. */
   carry: { stdout: string; stderr: string };
+  /** Waiters for the child's exit, so stop() can answer with the truth. */
+  exited: (() => void)[];
 }
 
 /**
@@ -112,6 +114,7 @@ export class RunnerService {
       pending: [],
       timer: null,
       carry: { stdout: "", stderr: "" },
+      exited: [],
     };
     this.runners.set(worktreeId, runner);
 
@@ -137,6 +140,13 @@ export class RunnerService {
       throw badRequest("Nothing is running in this worktree");
     }
     this.kill(runner);
+    // Wait for the child to actually go before answering. Returning the state
+    // as it was a microsecond before the signal means replying "running" to a
+    // request to stop — true at the instant of writing, and useless.
+    await Promise.race([
+      new Promise<void>((resolve) => runner.exited.push(resolve)),
+      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+    ]);
     return runner.state;
   }
 
@@ -168,6 +178,7 @@ export class RunnerService {
     runner.state.pid = null;
     runner.child = null;
     this.broadcastState(runner);
+    for (const waiter of runner.exited.splice(0)) waiter();
   }
 
   /**

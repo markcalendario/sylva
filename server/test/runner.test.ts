@@ -131,3 +131,15 @@ describe("runner", () => {
     expect((await runners.snapshot("wt1")).state.status).toBe("exited");
   });
 });
+
+describe("stop reports the truth", () => {
+  it("answers with the settled state, not the state before the signal", async () => {
+    const { runners } = await harness("sleep 30");
+    await runners.start("wt1");
+    const stopped = await runners.stop("wt1");
+    // Answering "running" to a request to stop is true for a microsecond and
+    // useless for everything after it.
+    expect(stopped.status).toBe("exited");
+    expect(stopped.pid).toBeNull();
+  });
+});
