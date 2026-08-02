@@ -45,6 +45,7 @@ describe("Store", () => {
       terminalTarget: "iterm",
       terminalCommand: "",
       savedPrompts: [{ id: "p1", label: "Ship it", text: "Run the tests, then commit." }],
+      runner: { defaultCommand: "npm run dev", byRepo: { r1: "pnpm dev" } },
     });
     await store.setGlobalSettings({ bypassPermissions: false, model: "claude-opus-5", effort: null });
 

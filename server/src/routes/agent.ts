@@ -40,6 +40,12 @@ const preferencesSchema = z.object({
       }),
     )
     .max(50),
+  runner: z.object({
+    defaultCommand: z.string().min(1).max(500),
+    // Repo ids are path hashes, so the key space is ours; the value is the
+    // command that repository runs.
+    byRepo: z.record(z.string().min(1).max(64), z.string().min(1).max(500)).default({}),
+  }),
 });
 
 const globalSettingsSchema = z.object({

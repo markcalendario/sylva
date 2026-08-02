@@ -124,6 +124,16 @@ export class Store {
         savedPrompts: Array.isArray(saved.savedPrompts)
           ? saved.savedPrompts
           : base.preferences.savedPrompts,
+        runner: {
+          defaultCommand:
+            typeof saved.runner?.defaultCommand === "string" && saved.runner.defaultCommand.trim()
+              ? saved.runner.defaultCommand
+              : base.preferences.runner.defaultCommand,
+          byRepo:
+            saved.runner?.byRepo && typeof saved.runner.byRepo === "object"
+              ? saved.runner.byRepo
+              : {},
+        },
       },
       prefs: source.prefs && typeof source.prefs === "object" ? source.prefs : {},
     };

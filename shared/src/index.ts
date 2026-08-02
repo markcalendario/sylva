@@ -53,7 +53,20 @@ export interface BaseDivergence {
   behind: number;
 }
 
-/** One commit in the branch diagram. */
+/** How much a commit moved, as `git log --shortstat` reports it. */
+export interface CommitStats {
+  files: number;
+  insertions: number;
+  deletions: number;
+}
+
+/**
+ * One commit in the branch diagram.
+ *
+ * Everything past `relative` is what the hover card shows and the row itself
+ * doesn't. Optional because a commit can genuinely lack a body, and because
+ * anything already reading this type predates the richer fields.
+ */
 export interface GraphCommit {
   sha: string;
   short: string;
@@ -61,6 +74,15 @@ export interface GraphCommit {
   author: string;
   /** Relative age, e.g. "2 hours ago" — formatted by git, not by us. */
   relative: string;
+  /** Message below the subject line, verbatim, or "" when there is none. */
+  body?: string;
+  authorEmail?: string;
+  /** Absolute author date, ISO 8601. */
+  authorDate?: string;
+  committer?: string;
+  committerEmail?: string;
+  committerDate?: string;
+  stats?: CommitStats;
 }
 
 /**
@@ -103,6 +125,21 @@ export interface FileContent {
   /** True when the file isn't text; content is then empty. */
   binary: boolean;
   size: number;
+}
+
+export interface FileSearchResult {
+  /** Worktree-relative path. */
+  path: string;
+  name: string;
+  /** Higher is a better match; the server sorts, the UI just renders. */
+  score: number;
+}
+
+export interface FileSearchResponse {
+  query: string;
+  results: FileSearchResult[];
+  /** True when the walk or the result list hit its cap. */
+  truncated: boolean;
 }
 
 export interface PullRequestResult {
@@ -223,6 +260,61 @@ export const TERMINAL_TARGETS: OpenChoice[] = [
   { id: "none", label: "Off", note: "hide the terminal button" },
 ];
 
+// ---------- Runner ----------
+
+/**
+ * The project command Sylva runs for you, so starting a dev server doesn't mean
+ * finding a terminal and remembering which folder it belongs in.
+ */
+export interface RunnerConfig {
+  /** Used by any repository that hasn't named its own. */
+  defaultCommand: string;
+  /** Per-repository overrides, keyed by repo id. */
+  byRepo: Record<string, string>;
+}
+
+export const RUNNER_DEFAULTS: RunnerConfig = {
+  defaultCommand: "npm run dev",
+  byRepo: {},
+};
+
+export type RunnerStatus = "idle" | "running" | "exited";
+
+export interface RunnerState {
+  worktreeId: string;
+  status: RunnerStatus;
+  /** The command as it will be, or was, run. */
+  command: string;
+  pid: number | null;
+  startedAt: string | null;
+  exitedAt: string | null;
+  /** Exit code, or null while running / never started. Negative means signalled. */
+  exitCode: number | null;
+  /** Most recent localhost URL seen in the output, if any. */
+  url: string | null;
+}
+
+export interface RunnerLine {
+  /** Monotonic within a runner, so the client can dedupe and order. */
+  seq: number;
+  stream: "stdout" | "stderr";
+  text: string;
+  at: string;
+}
+
+/** State plus whatever output is still retained, for opening the Run tab. */
+export interface RunnerSnapshot {
+  state: RunnerState;
+  lines: RunnerLine[];
+}
+
+/**
+ * The session that belongs to no worktree. A reserved id rather than a separate
+ * type: worktree ids are path hashes, so this cannot collide with one, and every
+ * map already keyed by worktree id keeps working untouched.
+ */
+export const GROVE_ID = "grove";
+
 /** A reusable prompt snippet, appended to whatever is already typed. */
 export interface SavedPrompt {
   id: string;
@@ -244,6 +336,8 @@ export interface AppPreferences {
   terminalTarget: OpenTarget;
   terminalCommand: string;
   savedPrompts: SavedPrompt[];
+  /** The one-click run command, globally and per repository. */
+  runner: RunnerConfig;
 }
 
 export const PREFERENCE_DEFAULTS: AppPreferences = {
@@ -251,6 +345,7 @@ export const PREFERENCE_DEFAULTS: AppPreferences = {
   editorCommand: "",
   terminalTarget: "terminal",
   terminalCommand: "",
+  runner: { ...RUNNER_DEFAULTS, byRepo: {} },
   savedPrompts: [
     {
       id: "review",
@@ -392,12 +487,29 @@ export type ServerEvent =
   | { type: "permission.resolved"; requestId: string; answer: PermissionAnswer | "timeout" }
   | { type: "file.batch"; worktreeId: string; events: FileEvent[]; truncated: boolean }
   | { type: "git.status"; status: WorktreeStatus }
-  | { type: "focus.changed"; worktreeId: string | null };
+  | { type: "focus.changed"; worktreeId: string | null }
+  | { type: "runner.state"; state: RunnerState }
+  | { type: "runner.output"; worktreeId: string; lines: RunnerLine[] };
 
 // ---------- REST payloads ----------
 
 export interface RegisterRepoRequest {
   path: string;
+}
+
+export interface CreateRepoRequest {
+  /** Directory the new repository's folder is created inside. */
+  parentPath: string;
+  /** Folder name; also the repository's name. */
+  name: string;
+}
+
+/**
+ * Every worktree a pane currently holds. The server watches this set, so a
+ * worktree in the second pane streams just as live as the one in the first.
+ */
+export interface OpenWorktreesRequest {
+  worktreeIds: string[];
 }
 
 export interface CreateWorktreeRequest {
