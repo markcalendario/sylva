@@ -1,5 +1,5 @@
 import { CircleHelp, Flower2, Settings, Trees } from "lucide-react";
-import { GROVE_ID } from "sylva-shared";
+import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
 import { useSylva, type View } from "../state/store";
 import { AudioControls } from "./AudioControls";
@@ -151,13 +151,26 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
  * Repository and branch for the active pane. The live git status is preferred
  * for the branch — it follows a checkout immediately — with the sidebar's index
  * as the fallback that also knows which repository it came from.
+ *
+ * A circle is neither: its id is in no index and has no status of its own, so
+ * asking those two questions about it returned "… / …", which is how the header
+ * ended up showing an ellipsis exactly when you were in a shared worktree.
  */
 function useWhere(worktreeId: string | null): { repo: string; branch: string } | null {
-  const place = useSylva((s) => (worktreeId ? s.worktreeIndex[worktreeId] : undefined));
-  const status = useSylva((s) => (worktreeId ? s.statuses[worktreeId] : undefined));
+  const index = useSylva((s) => s.worktreeIndex);
+  const statuses = useSylva((s) => s.statuses);
   if (!worktreeId) return null;
+
+  const members = circleMembers(worktreeId);
+  if (members) {
+    const names = members.map(
+      (id) => statuses[id]?.branch ?? index[id]?.branch ?? id.slice(0, 7),
+    );
+    return { repo: "shared", branch: names.join(" + ") };
+  }
+
   return {
-    repo: place?.repoName ?? "…",
-    branch: status?.branch ?? place?.branch ?? "…",
+    repo: index[worktreeId]?.repoName ?? "…",
+    branch: statuses[worktreeId]?.branch ?? index[worktreeId]?.branch ?? "…",
   };
 }

@@ -23,9 +23,14 @@ import { RemoveWorktreeDialog } from "./dialogs/RemoveWorktreeDialog";
 function WorktreeRow({
   worktree,
   onRemove,
+  collapsed = false,
+  repoName,
 }: {
   worktree: Worktree;
   onRemove: (worktree: Worktree) => void;
+  /** Just the dryad, in the narrow rail. */
+  collapsed?: boolean;
+  repoName?: string;
 }) {
   // "Open" now means "held by a pane" — as itself, or inside a circle.
   const open = useSylva((s) =>
@@ -58,6 +63,25 @@ function WorktreeRow({
     else if (wantsSet) store.beginSelection(worktree.id);
     else store.openWorktree(worktree.id);
   };
+
+  if (collapsed) {
+    // Collapsing hides the names, not the forest: the dryads are the part you
+    // watch, and losing them was losing the reason to glance left at all.
+    return (
+      <button
+        className={`rail-tree ${open ? "focused" : ""} ${picked ? "wt-picked" : ""}`}
+        onClick={activate}
+        aria-pressed={selecting ? picked : undefined}
+        data-tip={`${repoName ? `${repoName} / ` : ""}${branch ?? "detached"}${
+          selecting ? " · click to add to the shared dryad" : ""
+        }`}
+      >
+        <Sprite state={spriteState} scale={1} title={branch ?? "detached"} />
+        {unseen && !open && <span className="rail-dot" />}
+        {dirtyCount > 0 && <span className="rail-count">{dirtyCount}</span>}
+      </button>
+    );
+  }
 
   return (
     <div className={`wt-row ${open ? "focused" : ""} ${picked ? "wt-picked" : ""}`}>
@@ -113,7 +137,7 @@ function WorktreeRow({
   );
 }
 
-function RepoGroup({ repo }: { repo: Repo }) {
+function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolean }) {
   const [expanded, setExpanded] = useState(true);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
   const [removing, setRemoving] = useState<Worktree | null>(null);
@@ -126,6 +150,23 @@ function RepoGroup({ repo }: { repo: Repo }) {
   useEffect(() => {
     if (listed) useSylva.getState().indexWorktrees(repo, listed);
   }, [listed, repo.id, repo.name]);
+
+  if (collapsed) {
+    if (!repo.available) return null;
+    return (
+      <div className="rail-group" data-tip={repo.name}>
+        {worktrees.data?.map((wt) => (
+          <WorktreeRow
+            key={wt.id}
+            worktree={wt}
+            onRemove={() => {}}
+            collapsed
+            repoName={repo.name}
+          />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="repo-group">
@@ -199,7 +240,7 @@ function RepoGroup({ repo }: { repo: Repo }) {
 }
 
 /** One shared dryad in the sidebar: which trees it tends, and a way back in. */
-function CircleRow({ id }: { id: string }) {
+function CircleRow({ id, collapsed = false }: { id: string; collapsed?: boolean }) {
   const members = circleMembers(id) ?? [];
   const index = useSylva((s) => s.worktreeIndex);
   const open = useSylva((s) => s.panes.some((p) => p.worktreeId === id));
@@ -207,6 +248,20 @@ function CircleRow({ id }: { id: string }) {
   const unseen = useSylva((s) => s.unseenActivity[id] ?? false);
 
   const names = members.map((m) => index[m]?.branch ?? m.slice(0, 7));
+
+  if (collapsed) {
+    return (
+      <button
+        className={`rail-tree rail-circle ${open ? "focused" : ""}`}
+        onClick={() => useSylva.getState().openCircle(members)}
+        data-tip={`shared · ${names.join(" + ")}`}
+      >
+        <Sprite state={spriteState} scale={1} title={names.join(" + ")} />
+        <span className="rail-count rail-count-shared">{members.length}</span>
+        {unseen && !open && <span className="rail-dot" />}
+      </button>
+    );
+  }
 
   return (
     <div className={`wt-row ${open ? "focused" : ""}`}>
@@ -239,9 +294,19 @@ function CircleRow({ id }: { id: string }) {
 }
 
 /** Shared dryads, above the repositories: they span all of them. */
-function SharedGroup() {
+function SharedGroup({ collapsed = false }: { collapsed?: boolean }) {
   const circles = useSylva((s) => s.knownCircles);
   if (circles.length === 0) return null;
+
+  if (collapsed) {
+    return (
+      <div className="rail-group rail-group-shared" data-tip="Shared dryads">
+        {circles.map((id) => (
+          <CircleRow key={id} id={id} collapsed />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="repo-group">
@@ -317,6 +382,10 @@ export function Sidebar() {
         >
           <PanelLeftOpen size={16} />
         </button>
+        <div className="rail-scroll">
+          <SharedGroup collapsed />
+          {repos.data?.map((r) => <RepoGroup key={r.id} repo={r} collapsed />)}
+        </div>
       </aside>
     );
   }

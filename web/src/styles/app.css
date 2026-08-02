@@ -4375,3 +4375,94 @@ a svg,
   border-radius: 999px;
   padding: 0 5px;
 }
+
+/* ---------- the collapsed rail ---------- */
+
+.sidebar-collapsed {
+  width: auto;
+  min-width: 0;
+  padding: var(--pad-2) var(--pad-1);
+  align-items: center;
+  gap: var(--pad-2);
+}
+
+.rail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-3);
+  padding-bottom: var(--pad-2);
+  /* No scrollbar in a 44px rail; it would take a third of the width. */
+  scrollbar-width: none;
+}
+
+.rail-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Shared dryads sit above the repositories and are ruled off from them, the
+   same as in the open sidebar. */
+.rail-group-shared {
+  padding-bottom: var(--pad-3);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.rail-tree {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad-1);
+  border-radius: var(--radius);
+  border-left: 2px solid transparent;
+}
+
+.rail-tree:hover {
+  background: var(--pine-2);
+}
+
+.rail-tree.focused {
+  background: var(--pine-2);
+  border-left-color: var(--firefly);
+}
+
+.rail-tree.wt-picked {
+  background: rgb(255 180 84 / 0.16);
+}
+
+.rail-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--firefly);
+}
+
+.rail-count {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 999px;
+  background: var(--pine-3);
+  color: var(--moss);
+}
+
+.rail-count-shared {
+  background: var(--firefly-dim);
+  color: var(--moon);
+}
