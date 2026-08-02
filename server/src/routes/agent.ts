@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { Attachment } from "sylva-shared";
+import { GROVE_ID, type Attachment } from "sylva-shared";
 import type { AppContext } from "../context.js";
 import { badRequest } from "../lib/errors.js";
 import { openExternal } from "../services/open.js";
@@ -69,6 +69,16 @@ function safeFileName(name: string): string {
 
 export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { sessions, workspace } = ctx;
+
+  /**
+   * Session routes address a *target*, which is usually a worktree and
+   * occasionally the grove. The grove has no worktree to resolve, so it clears
+   * the guard on its own name rather than by pretending to be one.
+   */
+  const requireTarget = async (targetId: string): Promise<void> => {
+    if (targetId === GROVE_ID) return;
+    await workspace.resolveWorktree(targetId);
+  };
 
   app.get("/api/agent/availability", async () => sessions.getAvailability());
 
@@ -142,7 +152,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.put("/api/worktrees/:worktreeId/settings", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
-    await workspace.resolveWorktree(worktreeId);
+    await requireTarget(worktreeId);
     const body = overridesSchema.parse(req.body);
     return sessions.setOverrides(worktreeId, body);
   });
@@ -154,7 +164,7 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
    */
   app.post("/api/worktrees/:worktreeId/attachments", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
-    await workspace.resolveWorktree(worktreeId);
+    await requireTarget(worktreeId);
 
     const file = await req.file();
     if (!file) throw badRequest("No file uploaded");

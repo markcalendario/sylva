@@ -38,8 +38,8 @@ interface Watched {
 }
 
 /**
- * Watches the focused worktree plus any worktree with an active agent session.
- * Events are debounced/batched; each flush also refreshes git status.
+ * Watches every worktree a pane holds, plus any worktree with an active agent
+ * session. Events are debounced/batched; each flush also refreshes git status.
  *
  * Uses Node's recursive fs.watch, which is backed by FSEvents on macOS and
  * costs one descriptor per worktree. Watching per-file (chokidar's default on
@@ -50,18 +50,29 @@ interface Watched {
  */
 export class WatcherManager {
   private watched = new Map<string, Watched>(); // worktreeId -> state
-  private focusedId: string | null = null;
+  private openIds = new Set<string>();
 
   constructor(
     private hub: WsHub,
     private gitOps: GitOps,
   ) {}
 
-  setFocused(worktreeId: string | null, worktreePath: string | null): void {
-    const prev = this.focusedId;
-    this.focusedId = worktreeId;
-    if (prev && prev !== worktreeId) this.dropReason(prev, "focus");
-    if (worktreeId && worktreePath) this.ensure(worktreeId, worktreePath, "focus");
+  /**
+   * Every worktree a pane currently holds. Panes made this a set rather than a
+   * single id: a worktree in the second pane has to stream just as live as the
+   * one in the first, or half the split is a still photograph.
+   *
+   * Diffed against the previous set so an unchanged worktree keeps its existing
+   * watcher — tearing one down and rebuilding it drops whatever changed in
+   * between.
+   */
+  setWatched(entries: { worktreeId: string; path: string }[]): void {
+    const next = new Set(entries.map((e) => e.worktreeId));
+    for (const id of this.openIds) {
+      if (!next.has(id)) this.dropReason(id, "focus");
+    }
+    for (const entry of entries) this.ensure(entry.worktreeId, entry.path, "focus");
+    this.openIds = next;
   }
 
   addSessionWatch(worktreeId: string, worktreePath: string): void {

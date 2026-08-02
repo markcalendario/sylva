@@ -10,6 +10,9 @@ const createWorktreeSchema = z.object({
 });
 const removeWorktreeSchema = z.object({ force: z.boolean().optional() }).default({});
 const focusSchema = z.object({ worktreeId: z.string().nullable() });
+const openWorktreesSchema = z
+  .object({ worktreeIds: z.array(z.string().min(1)).max(8).default([]) })
+  .default({ worktreeIds: [] });
 
 export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { workspace } = ctx;
@@ -47,6 +50,17 @@ export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void 
     const body = removeWorktreeSchema.parse(req.body ?? {});
     await workspace.removeWorktree(worktreeId, body.force ?? false);
     return { ok: true };
+  });
+
+  /**
+   * What the panes hold. The client owns pane layout — it is a view concern —
+   * so it tells the server which worktrees have to stay live. Capped because a
+   * request is not a reason to open an unbounded number of file watchers.
+   */
+  app.post("/api/open-worktrees", async (req) => {
+    const body = openWorktreesSchema.parse(req.body ?? {});
+    await workspace.setOpenWorktrees(body.worktreeIds);
+    return { worktreeIds: workspace.openWorktrees };
   });
 
   app.get("/api/focus", async () => ({ worktreeId: workspace.focused }));

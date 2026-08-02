@@ -32,14 +32,11 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
     // Announce every focus change here, whatever caused it — an explicit
     // switch, a quick-start, or the focused worktree being removed.
     hub.broadcast({ type: "focus.changed", worktreeId });
-    if (!worktreeId) {
-      watchers.setFocused(null, null);
-      return;
-    }
-    void workspace.tryResolveWorktree(worktreeId).then((resolved) => {
-      watchers.setFocused(worktreeId, resolved?.worktree.path ?? null);
-    });
   };
+
+  // What the panes hold is what gets watched. Focus is one of those worktrees,
+  // but it is no longer the only one, so watching follows the set instead.
+  workspace.onOpenChange = (entries) => watchers.setWatched(entries);
 
   const sessions = new SessionManager(store, workspace, watchers, hub);
   const commitMessages = new CommitMessageService(git, workspace, store);

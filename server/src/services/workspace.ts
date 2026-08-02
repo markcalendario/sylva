@@ -15,7 +15,9 @@ export interface ResolvedWorktree {
 /** Repo registry + worktree operations + focus state. */
 export class Workspace {
   private focusedWorktreeId: string | null = null;
+  private paneWorktreeIds = new Set<string>();
   onFocusChange: (worktreeId: string | null) => void = () => {};
+  onOpenChange: (entries: { worktreeId: string; path: string }[]) => void = () => {};
 
   constructor(
     private store: Store,
@@ -157,5 +159,42 @@ export class Workspace {
     if (this.focusedWorktreeId === worktreeId) return;
     this.focusedWorktreeId = worktreeId;
     this.onFocusChange(worktreeId);
+    void this.syncWatched();
+  }
+
+  /**
+   * Everything the panes hold. Focus stays a single id — it is what quick-start
+   * and `focus.changed` mean by "where you are" — and this runs beside it as
+   * the wider set of worktrees that have to stay live.
+   */
+  get openWorktrees(): string[] {
+    return [...this.paneWorktreeIds];
+  }
+
+  async setOpenWorktrees(worktreeIds: string[]): Promise<void> {
+    this.paneWorktreeIds = new Set(worktreeIds);
+    await this.syncWatched();
+  }
+
+  /**
+   * Resolve the union of the panes and the focused worktree, and hand it to
+   * whoever is watching. Focus is unioned in rather than assumed to be among
+   * the panes: it can move without the client saying anything — a quick-start,
+   * or the focused worktree being removed — and a focused worktree that isn't
+   * being watched is a panel that quietly stops updating.
+   *
+   * Ids that no longer resolve are dropped rather than raised: a pane holding a
+   * worktree someone deleted from a terminal shouldn't fail the whole call.
+   */
+  private async syncWatched(): Promise<void> {
+    const wanted = new Set(this.paneWorktreeIds);
+    if (this.focusedWorktreeId) wanted.add(this.focusedWorktreeId);
+
+    const resolved: { worktreeId: string; path: string }[] = [];
+    for (const id of wanted) {
+      const found = await this.tryResolveWorktree(id);
+      if (found) resolved.push({ worktreeId: id, path: found.worktree.path });
+    }
+    this.onOpenChange(resolved);
   }
 }

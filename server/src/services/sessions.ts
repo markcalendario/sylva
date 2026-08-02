@@ -1,4 +1,4 @@
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { relative } from "node:path";
 import {
   query,
@@ -9,16 +9,17 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import type {
-  AgentAvailability,
-  AgentEvent,
-  PermissionAnswer,
-  PermissionRequest,
-  AgentSettings,
-  QueuedPrompt,
-  SessionInfo,
-  WorktreeOverrides,
-  WorktreeSettings,
+import {
+  GROVE_ID,
+  type AgentAvailability,
+  type AgentEvent,
+  type PermissionAnswer,
+  type PermissionRequest,
+  type AgentSettings,
+  type QueuedPrompt,
+  type SessionInfo,
+  type WorktreeOverrides,
+  type WorktreeSettings,
 } from "sylva-shared";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { freshId, now } from "../lib/id.js";
@@ -78,10 +79,27 @@ interface PendingPermission {
   timer: NodeJS.Timeout;
 }
 
+/**
+ * Where a session runs. Sessions used to resolve a worktree directly, which
+ * made "an agent you can talk to without picking a worktree first" impossible
+ * to express. Resolving a *target* instead leaves every map in this class keyed
+ * by the same string it was keyed by before — only what that string resolves to
+ * changed.
+ */
+interface SessionTarget {
+  id: string;
+  cwd: string;
+  /** Branch for a worktree; null for the grove, which is on no branch. */
+  label: string | null;
+  repoId: string;
+  isGrove: boolean;
+}
+
 interface ActiveSession {
   info: SessionInfo;
   worktreePath: string;
   repoId: string;
+  isGrove: boolean;
   input: InputStream;
   q: Query | null;
   alwaysAllow: Set<string>;
@@ -352,18 +370,57 @@ export class SessionManager {
     return session;
   }
 
+  /**
+   * A worktree id resolves to its worktree, as it always did. The one reserved
+   * id resolves to the grove: a workspace of its own, belonging to no
+   * repository, so there is somewhere to ask a question that spans all of them.
+   */
+  private async resolveTarget(targetId: string): Promise<SessionTarget> {
+    if (targetId === GROVE_ID) {
+      const cwd = this.store.groveDir;
+      await mkdir(cwd, { recursive: true });
+      return { id: targetId, cwd, label: null, repoId: "", isGrove: true };
+    }
+    const { repo, worktree } = await this.workspace.resolveWorktree(targetId);
+    return {
+      id: targetId,
+      cwd: worktree.path,
+      label: worktree.branch,
+      repoId: repo.id,
+      isGrove: false,
+    };
+  }
+
+  /**
+   * The grove has no repository of its own, so it is told where everyone else's
+   * are. Built fresh at session creation, which is also what makes a repository
+   * registered mid-conversation visible to the next turn.
+   */
+  private async groveSystemPrompt(): Promise<string> {
+    const repos = (await this.workspace.listRepos()).filter((r) => r.available);
+    const lines = repos.map((r) => `- ${r.name}: ${r.path}`).join("\n");
+    return [
+      "You are the grove dryad in Sylva, a mission control for git worktrees.",
+      "You are not working inside any one repository — your working directory is a scratch workspace of your own.",
+      repos.length
+        ? `These repositories are registered on this machine, and you may read across all of them:\n${lines}`
+        : "No repositories are registered on this machine yet.",
+      "Prefer absolute paths when reading from those repositories. Do not modify files inside them unless the user asks you to.",
+    ].join("\n\n");
+  }
+
   private async create(worktreeId: string): Promise<ActiveSession> {
     if (this.byWorktree.has(worktreeId)) {
       throw conflict("A session is already active in this worktree");
     }
-    const { repo, worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const target = await this.resolveTarget(worktreeId);
     const persisted = this.store.sessions.find((s) => s.worktreeId === worktreeId);
 
     const prefs = this.store.effectiveFor(worktreeId);
     const info: SessionInfo = {
       id: persisted?.id ?? freshId(),
       worktreeId,
-      branch: worktree.branch,
+      branch: target.label,
       status: "idle",
       settings: prefs,
       sdkSessionId: persisted?.sdkSessionId ?? null,
@@ -375,8 +432,9 @@ export class SessionManager {
 
     const session: ActiveSession = {
       info,
-      worktreePath: worktree.path,
-      repoId: repo.id,
+      worktreePath: target.cwd,
+      repoId: target.repoId,
+      isGrove: target.isGrove,
       input: new InputStream(),
       q: null,
       alwaysAllow: new Set(),
@@ -392,19 +450,28 @@ export class SessionManager {
       ...(prefs.model ? { model: prefs.model } : {}),
       ...(prefs.effort ? { effort: prefs.effort } : {}),
       ...(info.sdkSessionId ? { resume: info.sdkSessionId } : {}),
+      ...(target.isGrove
+        ? {
+            systemPrompt: {
+              type: "preset" as const,
+              preset: "claude_code" as const,
+              append: await this.groveSystemPrompt(),
+            },
+          }
+        : {}),
     };
 
     // Bypass mode skips every check, so there is nothing for canUseTool to ask
     // about; wiring it up anyway would imply approvals that never happen.
     const options: Options = prefs.bypassPermissions
       ? {
-          cwd: worktree.path,
+          cwd: target.cwd,
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
           ...tuning,
         }
       : {
-          cwd: worktree.path,
+          cwd: target.cwd,
           permissionMode: "acceptEdits",
           canUseTool: this.makeCanUseTool(session),
           ...tuning,
@@ -412,7 +479,8 @@ export class SessionManager {
 
     session.q = query({ prompt: session.input, options });
     session.loopDone = this.runLoop(session).catch(() => {});
-    this.watchers.addSessionWatch(worktreeId, worktree.path);
+    // The grove is nobody's worktree, so there is no file feed to keep live.
+    if (!target.isGrove) this.watchers.addSessionWatch(worktreeId, target.cwd);
     await this.persist(session);
     return session;
   }
@@ -450,7 +518,7 @@ export class SessionManager {
         pending.resolve("timeout");
       }
       session.pendingPermissions.clear();
-      this.watchers.removeSessionWatch(session.info.worktreeId);
+      if (!session.isGrove) this.watchers.removeSessionWatch(session.info.worktreeId);
       this.sessions.delete(session.info.id);
       this.byWorktree.delete(session.info.worktreeId);
       await this.persist(session);

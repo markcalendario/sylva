@@ -224,6 +224,15 @@ export class Store {
     return join(this.baseDir, "attachments", worktreeId);
   }
 
+  /**
+   * Where the grove dryad works. Its own directory rather than your home: the
+   * grove reads across every repository, but anything it writes with a relative
+   * path lands somewhere harmless and predictable.
+   */
+  get groveDir(): string {
+    return join(this.baseDir, "grove");
+  }
+
   /** Atomic, serialized write of registry.json. */
   private flush(): Promise<void> {
     return this.write(this.registryPath, this.data);
