@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight, File as FileIcon, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ContentSearchResponse, FileSearchResponse, TreeEntry } from "sylva-shared";
 import { api } from "../lib/api";
@@ -55,7 +56,7 @@ export function FileTree({ worktreeId }: { worktreeId: string }) {
               aria-label="Clear the search"
               data-tip="Clear the search and go back to the folder tree"
             >
-              ✕
+              <X size={14} />
             </button>
           )}
         </div>
@@ -162,7 +163,9 @@ function SearchResults({
               onClick={() => onSelect(result.path)}
               data-tip={result.path}
             >
-              <span className="tree-glyph">·</span>
+              <span className="tree-glyph">
+                <FileIcon size={12} />
+              </span>
               <span className="tree-name">{result.name}</span>
               <span className="tree-result-path">{dirOf(result.path)}</span>
             </button>
@@ -345,7 +348,15 @@ function Node({
         data-tip={isDir ? entry.path : `${entry.path}${entry.size ? ` · ${bytes(entry.size)}` : ""}`}
       >
         <span className={`tree-glyph ${isDir ? "tree-glyph-dir" : ""}`}>
-          {isDir ? (open ? "▾" : "▸") : "·"}
+          {isDir ? (
+            open ? (
+              <ChevronDown size={12} />
+            ) : (
+              <ChevronRight size={12} />
+            )
+          ) : (
+            <FileIcon size={12} />
+          )}
         </span>
         <span className="tree-name">{entry.name}</span>
       </button>

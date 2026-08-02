@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
 interface DialogProps {
@@ -30,7 +31,7 @@ export function Dialog({ title, open, onClose, children }: DialogProps) {
         <header className="dialog-head">
           <h2>{title}</h2>
           <button className="ghost" onClick={onClose} aria-label="Close" data-tip="Close this dialog">
-            ✕
+            <X size={15} />
           </button>
         </header>
         {children}

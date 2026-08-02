@@ -61,7 +61,7 @@ function Shell() {
 
   return (
     <div className="shell">
-      <TopBar onAbout={() => setShowAbout(true)} onHelp={() => setShowHelp(true)} />
+      <TopBar onHelp={() => setShowHelp(true)} />
       <div className="shell-body">
         <Sidebar />
         <MainPanel
@@ -69,7 +69,7 @@ function Shell() {
           onAbout={() => setShowAbout(true)}
         />
       </div>
-      <StatusStrip />
+      <StatusStrip onAbout={() => setShowAbout(true)} />
 
       <AboutDialog open={showAbout} onClose={() => setShowAbout(false)} />
       <HelpDialog open={showHelp} onClose={() => setShowHelp(false)} />

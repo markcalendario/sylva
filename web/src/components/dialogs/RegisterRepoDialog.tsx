@@ -1,3 +1,4 @@
+import { ArrowUp, Folder, FolderGit2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { DirListing } from "sylva-shared";
 import { api, ApiFailure } from "../../lib/api";
@@ -120,7 +121,7 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
           disabled={!listing?.parent || loading}
           data-tip="Go up to the parent folder"
         >
-          ↑
+          <ArrowUp size={13} />
         </button>
         <code
           className="browse-current"
@@ -144,7 +145,7 @@ export function RegisterRepoDialog({ open, onClose }: { open: boolean; onClose: 
                   className="browse-icon"
                   data-tip={entry.isRepo ? "A git repository" : "A plain folder"}
                 >
-                  {entry.isRepo ? "🌳" : "📁"}
+                  {entry.isRepo ? <FolderGit2 size={14} /> : <Folder size={14} />}
                 </span>
                 <span className="browse-name">{entry.name}</span>
               </button>

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import {
   Check,
+  ChevronRight,
   FolderGit2,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   Sparkles,
   Users,
   X,
@@ -103,7 +105,7 @@ function WorktreeRow({
           aria-label={`Remove worktree ${worktree.branch ?? worktree.path}`}
           onClick={() => onRemove(worktree)}
         >
-          ✕
+          <X size={13} />
         </button>
       )}
     </div>
@@ -132,7 +134,7 @@ function RepoGroup({ repo }: { repo: Repo }) {
           onClick={() => setExpanded((e) => !e)}
           data-tip={expanded ? "Hide this repo's worktrees" : "Show this repo's worktrees"}
         >
-          <span className={`chevron ${expanded ? "open" : ""}`}>▸</span>
+          <ChevronRight size={13} className={`chevron ${expanded ? "open" : ""}`} />
           <span className="repo-name">{repo.name}</span>
           {!repo.available && (
             <span className="repo-missing" data-tip="Sylva can't find this repository on disk">
@@ -147,7 +149,7 @@ function RepoGroup({ repo }: { repo: Repo }) {
               data-tip="Grow a new worktree in this repository"
               onClick={() => setShowNewWorktree(true)}
             >
-              +
+              <Plus size={14} />
             </button>
             <button
               className="ghost"
@@ -163,7 +165,7 @@ function RepoGroup({ repo }: { repo: Repo }) {
                 });
               }}
             >
-              ✕
+              <X size={14} />
             </button>
           </div>
         )}

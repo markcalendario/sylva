@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 import type { StatusEntry, WorktreeStatus } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
@@ -142,7 +143,7 @@ function GitToolbar({
           onClick={onPull}
           data-tip="Fetch and merge commits from the remote"
         >
-          ↓ Pull
+          <ArrowDown size={13} /> Pull
         </button>
         <button
           className="btn-quiet"
@@ -150,7 +151,7 @@ function GitToolbar({
           onClick={onPush}
           data-tip="Send your commits to the remote"
         >
-          ↑ Push
+          <ArrowUp size={13} /> Push
         </button>
         <CreatePrButton worktreeId={status.worktreeId} branch={status.branch} />
         <OpenPullsButton worktreeId={status.worktreeId} />
@@ -340,7 +341,7 @@ export function GitPanel({
                 onClick={() => void draftMessage()}
                 data-tip="Have a dryad read the staged diff and write the message"
               >
-                {drafting ? "Reading the diff…" : "✦ Draft message"}
+                {drafting ? "Reading the diff…" : <><Sparkles size={13} /> Draft message</>}
               </button>
               <button
                 className="btn-primary"
@@ -382,7 +383,7 @@ export function GitPanel({
                 aria-label="Close this diff"
                 data-tip="Close this diff"
               >
-                ✕
+                <X size={14} />
               </button>
             </div>
             {diff.data ? (

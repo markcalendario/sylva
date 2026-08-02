@@ -3,6 +3,7 @@ import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { ensureNotifyPermission } from "../lib/notify";
+import { Paperclip, Sparkles, Square, X } from "lucide-react";
 import { AgentSettingsButton } from "./AgentSettingsButton";
 import { SavedPromptsButton } from "./SavedPromptsButton";
 import { EMPTY_DRAFT, NO_EVENTS, useSylva } from "../state/store";
@@ -16,6 +17,13 @@ type Block =
   | { kind: "tools"; items: ToolItem[] }
   | { kind: "result"; outcome: "success" | "error" | "interrupted"; costUsd?: number }
   | { kind: "notice"; text: string };
+
+/** Compact enough for a one-line header; exact numbers live in the tooltip. */
+function compactTokens(n: number): string {
+  if (n < 1000) return `${n} tokens`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k tokens`;
+  return `${(n / 1_000_000).toFixed(1)}M tokens`;
+}
 
 const LEGACY_CD_PREFIX = /^\s*cd\s+(?:"[^"]*"|'[^']*'|[^\s&|;]+)\s*&&\s*/;
 
@@ -167,7 +175,15 @@ function BlockRow({ block }: { block: Block }) {
                 : "This turn ended in an error"
           }
         >
-          {block.outcome === "success" ? "✦ turn complete" : `✕ ${block.outcome}`}
+          {block.outcome === "success" ? (
+            <>
+              <Sparkles size={12} /> turn complete
+            </>
+          ) : (
+            <>
+              <X size={12} /> {block.outcome}
+            </>
+          )}
           {block.costUsd !== undefined && (
             <span className="turn-cost" data-tip="What this turn cost">
               ${block.costUsd.toFixed(3)}
@@ -202,6 +218,8 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
     store.setDraft(worktreeId, { attachments: next(current) });
   };
 
+  /** Set for one animation when a prompt leaves the box. */
+  const [sent, setSent] = useState(0);
   const [uploading, setUploading] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -254,6 +272,33 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   };
 
   const running = session?.status === "running";
+  const waiting = permissions.length > 0;
+  /**
+   * What the dryad is doing, as one word. Everything in the chat that reacts —
+   * the header, the ambient motes, the composer's glow — reads this, so there
+   * is one answer rather than four opinions.
+   */
+  const state = waiting ? "waiting" : running ? "working" : session?.status === "errored" ? "trouble" : session ? "resting" : "new";
+  const stateWord =
+    state === "waiting"
+      ? "needs you"
+      : state === "working"
+        ? "working"
+        : state === "trouble"
+          ? "hit trouble"
+          : state === "resting"
+            ? "resting"
+            : "not started";
+  const stateTip =
+    state === "waiting"
+      ? "Paused until you answer the permission request below"
+      : state === "working"
+        ? "A turn is in flight right now"
+        : state === "trouble"
+          ? "The last turn ended in an error"
+          : state === "resting"
+            ? "Waiting for your next prompt"
+            : "Nothing has been asked here yet";
 
   const upload = async (files: FileList | File[]) => {
     setUploadError(null);
@@ -284,6 +329,9 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           .join("\n")}`
       : "";
     useSylva.getState().clearDraft(worktreeId);
+    // Bump a counter rather than toggling a boolean: sending twice quickly has
+    // to restart the animation, and re-adding a class it already has doesn't.
+    setSent((n) => n + 1);
     void api.prompt(worktreeId, `${prompt}${attachmentNote}`.trim());
   };
 
@@ -302,65 +350,44 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
 
   return (
     <div className="agent-panel">
-      {/* One row that answers what you'd otherwise hover four things to learn:
-          who you're talking to, what it's doing, what it's thinking with, and
-          what it has cost. */}
-      <div className="chat-header">
-        <span className={`chat-state chat-state-${running ? "working" : session?.status ?? "idle"}`}>
+      {/* One compact line. Everything here is glanceable — the state, what it
+          has cost, and the two controls that act on the session — so it stays
+          a strip rather than growing into a second header. */}
+      <div className={`chat-header chat-header-${state}`}>
+        <span className="chat-state" data-tip={stateTip}>
           <span className="chat-state-dot" />
-          <span
-            data-tip={
-              running
-                ? "A turn is in flight right now"
-                : session?.status === "errored"
-                  ? "The last turn ended in an error"
-                  : session
-                    ? "Waiting for your next prompt"
-                    : "Nothing has been asked here yet"
-            }
-          >
-            {running
-              ? "working"
-              : session?.status === "errored"
-                ? "hit trouble"
-                : session
-                  ? "resting"
-                  : "not started"}
-          </span>
+          {stateWord}
         </span>
 
-        <span className="chat-header-facts">
-          {session ? (
-            <>
-              <span data-tip="What this session has cost so far">
-                ${session.totalCostUsd.toFixed(3)}
-              </span>
-              <span className="chat-header-sep">·</span>
-              <span data-tip="Tokens read and written across this session">
-                {session.totalTokens.toLocaleString()} tokens
-              </span>
-            </>
-          ) : (
-            <span className="chat-header-quiet" data-tip="Costs appear once a turn has run">
-              no cost yet
+        {session && (
+          <span className="chat-header-facts">
+            <span data-tip="What this session has cost so far">
+              ${session.totalCostUsd.toFixed(3)}
             </span>
-          )}
-        </span>
+            <span className="chat-header-sep" aria-hidden>
+              ·
+            </span>
+            <span data-tip="Tokens read and written across this session">
+              {compactTokens(session.totalTokens)}
+            </span>
+          </span>
+        )}
 
         <div className="chat-header-actions">
           {running && (
             <button
-              className="btn-danger"
+              className="chat-stop"
               onClick={() => void api.interrupt(worktreeId)}
               data-tip="Interrupt the dryad's current turn"
             >
+              <Square size={11} fill="currentColor" />
               Stop
             </button>
           )}
           <AgentSettingsButton worktreeId={worktreeId} />
         </div>
       </div>
-      <div className="agent-body">
+      <div className={`agent-body agent-body-${state}`}>
         <div
           className="chat-scroll"
           ref={scrollRef}
@@ -392,6 +419,11 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           ))}
           {running && permissions.length === 0 && (
             <div className="thinking" data-tip="Output streams in live as the agent works">
+              <span className="fireflies" aria-hidden>
+                <i />
+                <i />
+                <i />
+              </span>
               the dryad is working…
             </div>
           )}
@@ -411,7 +443,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
                 data-tip="Drop this prompt from the queue"
                 onClick={() => void api.removeQueued(worktreeId, q.id)}
               >
-                ✕
+                <X size={13} />
               </button>
             </div>
           ))}
@@ -419,7 +451,8 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
       )}
 
       <form
-        className={`prompt-bar ${dragging ? "prompt-bar-drop" : ""}`}
+        key={`bar-${sent}`}
+        className={`prompt-bar ${dragging ? "prompt-bar-drop" : ""} ${sent > 0 ? "prompt-bar-sent" : ""}`}
         onSubmit={(e) => {
           e.preventDefault();
           send();
@@ -450,7 +483,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
                   data-tip="Remove this attachment"
                   onClick={() => setAttachments((l) => l.filter((x) => x.path !== a.path))}
                 >
-                  ✕
+                  <X size={11} />
                 </button>
               </span>
             ))}
@@ -475,7 +508,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
             data-tip="Attach files for the dryad to read — or just drop them here"
             onClick={() => fileInputRef.current?.click()}
           >
-            ＋
+            <Paperclip size={15} />
           </button>
           <SavedPromptsButton
             onInsert={(snippet) =>

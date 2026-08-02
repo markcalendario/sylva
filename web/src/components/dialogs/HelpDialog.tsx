@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "../Dialog";
 
@@ -240,7 +241,7 @@ function FaqItem({ item }: { item: Faq }) {
   return (
     <div className={`faq ${open ? "faq-open" : ""}`}>
       <button className="faq-q" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span className="faq-chevron">▸</span>
+        <ChevronRight size={12} className="faq-chevron" />
         {item.q}
       </button>
       {open && <div className="faq-a">{item.a}</div>}
