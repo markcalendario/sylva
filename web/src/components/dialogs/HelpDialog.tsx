@@ -175,6 +175,19 @@ const SECTIONS: Section[] = [
         ),
       },
       {
+        q: "Can I switch tabs from the keyboard?",
+        a: (
+          <>
+            Yes — <strong>Option + Tab</strong> on a Mac steps the pane you're working in through
+            Agent, Files, Git and Terminal, and round from Terminal back to Agent. Hold shift to
+            walk the other way. It works from inside the prompt box and from inside a terminal,
+            where the keystroke is taken before the shell can see it. On Windows the same chord is{" "}
+            <strong>Alt + `</strong>: Windows keeps both Alt+Tab and Win+Tab for itself, so a
+            browser never gets told they happened.
+          </>
+        ),
+      },
+      {
         q: "What are the numbers under the forest?",
         a: (
           <>

@@ -2,7 +2,8 @@ import { useEffect, useMemo } from "react";
 import { Columns2, PanelsTopLeft, X } from "lucide-react";
 import { circleMembers } from "sylva-shared";
 import { api } from "../lib/api";
-import { spriteStateFor, useSylva, type Pane, type Tab } from "../state/store";
+import { tabCycleChord } from "../lib/shortcuts";
+import { spriteStateFor, TABS, useSylva, type Pane, type Tab } from "../state/store";
 import { Sprite } from "../sprites/Sprite";
 import { AgentPanel } from "./AgentPanel";
 import { FilesPanel } from "./FilesPanel";
@@ -16,6 +17,9 @@ const TAB_LABEL: Record<Tab, string> = {
   git: "Git",
   terminal: "Terminal",
 };
+
+/** Named once, in the tooltips, so the shortcut is findable without the Help. */
+const chord = tabCycleChord();
 
 const TAB_TIP: Record<Tab, string> = {
   agent: "Prompt the dryad and watch it work",
@@ -202,12 +206,12 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
           )}
         </div>
         <nav className="tabs">
-          {(["agent", "files", "git", "terminal"] as Tab[]).map((t) => (
+          {TABS.map((t) => (
             <button
               key={t}
               className={`tab ${pane.tab === t ? "tab-on" : ""}`}
               onClick={() => store.setPaneTab(pane.id, t)}
-              data-tip={TAB_TIP[t]}
+              data-tip={`${TAB_TIP[t]} · ${chord} steps through the tabs`}
             >
               {TAB_LABEL[t]}
               {t === "terminal" && anyLive && (

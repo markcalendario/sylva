@@ -37,6 +37,13 @@ export type Connection = "connecting" | "connected" | "disconnected";
 export type Tab = "agent" | "files" | "git" | "terminal";
 
 /**
+ * The tabs a pane can show, in the order the strip lays them out. Cycling with
+ * the keyboard walks this list, so the order here *is* the order you step
+ * through — the tab strip reads from it rather than repeating it.
+ */
+export const TABS: readonly Tab[] = ["agent", "files", "git", "terminal"];
+
+/**
  * One side of the workspace. Migrating an old system to a new one means two
  * repositories open at once, so what used to be "the focused worktree" is now
  * a small list of them — each with its own tab and its own selected diff,
@@ -214,6 +221,11 @@ interface SylvaState {
   setActivePane: (paneId: string) => void;
   setPaneWorktree: (paneId: string, worktreeId: string | null) => void;
   setPaneTab: (paneId: string, tab: Tab) => void;
+  /**
+   * Step the active pane one tab along the strip, wrapping at both ends — from
+   * Terminal forward lands back on Agent. What Option+Tab is wired to.
+   */
+  cycleActiveTab: (direction: 1 | -1) => void;
   setPaneDiff: (paneId: string, diff: DiffSelection | null, tab?: Tab) => void;
   splitPane: () => void;
   closePane: (paneId: string) => void;
@@ -325,6 +337,22 @@ export const useSylva = create<SylvaState>((set, get) => ({
   setPaneTab: (paneId, tab) =>
     set((s) => {
       const panes = s.panes.map((p) => (p.id === paneId ? { ...p, tab } : p));
+      savePanes(panes);
+      return { panes };
+    }),
+
+  cycleActiveTab: (direction) =>
+    set((s) => {
+      // Only the workspace has a tab strip; Settings and the grove cover it, and
+      // a shortcut that silently moved a hidden pane would be a surprise later.
+      if (s.view !== "workspace") return {};
+      const pane = s.panes.find((p) => p.id === s.activePaneId) ?? s.panes[0];
+      // An empty pane renders no tabs, so there is nothing to step through.
+      if (!pane?.worktreeId) return {};
+      const at = TABS.indexOf(pane.tab);
+      const tab = TABS[(at + direction + TABS.length) % TABS.length];
+      if (!tab || tab === pane.tab) return {};
+      const panes = s.panes.map((p) => (p.id === pane.id ? { ...p, tab } : p));
       savePanes(panes);
       return { panes };
     }),

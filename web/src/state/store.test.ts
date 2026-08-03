@@ -188,3 +188,62 @@ describe("clearing a dryad", () => {
     expect(stateOf("wt-b")).toBe("success");
   });
 });
+
+/**
+ * Option+Tab walks the tab strip. The wrap is the part worth pinning down: the
+ * ask was that Terminal steps round to Agent rather than stopping at the end.
+ */
+describe("cycling the active pane's tabs", () => {
+  beforeEach(() => {
+    useSylva.setState({ view: "workspace" });
+    showPane("wt-a");
+    const { panes, setPaneTab } = useSylva.getState();
+    if (panes[0]) setPaneTab(panes[0].id, "agent");
+  });
+
+  const tab = () => useSylva.getState().panes[0]?.tab;
+
+  it("steps forward through the strip", () => {
+    const { cycleActiveTab } = useSylva.getState();
+    cycleActiveTab(1);
+    expect(tab()).toBe("files");
+    cycleActiveTab(1);
+    expect(tab()).toBe("git");
+    cycleActiveTab(1);
+    expect(tab()).toBe("terminal");
+  });
+
+  it("wraps from Terminal back to Agent", () => {
+    const { cycleActiveTab, setPaneTab, panes } = useSylva.getState();
+    if (panes[0]) setPaneTab(panes[0].id, "terminal");
+    cycleActiveTab(1);
+    expect(tab()).toBe("agent");
+  });
+
+  it("walks backwards, wrapping the other way", () => {
+    useSylva.getState().cycleActiveTab(-1);
+    expect(tab()).toBe("terminal");
+  });
+
+  it("only moves the pane you are working in", () => {
+    useSylva.getState().splitPane();
+    const [first, second] = useSylva.getState().panes;
+    if (!first || !second) throw new Error("expected two panes");
+    useSylva.getState().cycleActiveTab(1);
+    expect(useSylva.getState().panes[1]?.tab).toBe("files");
+    expect(useSylva.getState().panes[0]?.tab).toBe("agent");
+    useSylva.getState().closePane(second.id);
+  });
+
+  it("does nothing while the settings page covers the tabs", () => {
+    useSylva.setState({ view: "settings" });
+    useSylva.getState().cycleActiveTab(1);
+    expect(tab()).toBe("agent");
+  });
+
+  it("does nothing in an empty pane, which has no tabs to step through", () => {
+    showPane(null);
+    useSylva.getState().cycleActiveTab(1);
+    expect(tab()).toBe("agent");
+  });
+});

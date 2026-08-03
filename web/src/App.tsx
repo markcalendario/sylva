@@ -5,6 +5,7 @@ import { HelpDialog } from "./components/dialogs/HelpDialog";
 import { RegisterRepoDialog } from "./components/dialogs/RegisterRepoDialog";
 import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "./lib/api";
+import { useTabCycleShortcut } from "./lib/shortcuts";
 import { startWs } from "./lib/ws";
 import { useSylva } from "./state/store";
 import { ConfirmHost } from "./components/ConfirmDialog";
@@ -26,6 +27,9 @@ function Shell() {
   const [showAbout, setShowAbout] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+
+  // Option+Tab steps the active pane through Agent, Files, Git and Terminal.
+  useTabCycleShortcut();
 
   // A branch switch means the fetched worktree list is out of date. The status
   // stream carries the new branch, but the *name* shown in the sidebar comes
