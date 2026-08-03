@@ -3,7 +3,8 @@ import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { ensureNotifyPermission } from "../lib/notify";
-import { Paperclip, Sparkles, Square, X } from "lucide-react";
+import { Eraser, Paperclip, Sparkles, Square, X } from "lucide-react";
+import { confirm } from "../lib/confirm";
 import { AgentSettingsButton } from "./AgentSettingsButton";
 import { SavedPromptsButton } from "./SavedPromptsButton";
 import { EMPTY_DRAFT, NO_EVENTS, useSylva } from "../state/store";
@@ -220,6 +221,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
 
   /** Set for one animation when a prompt leaves the box. */
   const [sent, setSent] = useState(0);
+  const [clearing, setClearing] = useState(false);
   const [uploading, setUploading] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -317,6 +319,28 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
     }
   };
 
+  /**
+   * Start the conversation over. Worth asking first: the transcript is deleted
+   * from disk, and there is nowhere to get it back from.
+   */
+  const clearSession = async () => {
+    const ok = await confirm({
+      title: "Clear this dryad?",
+      body: "It forgets this conversation entirely — the transcript is deleted and the running cost goes back to zero. Its worktrees and settings stay as they are.",
+      confirmLabel: "Clear",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setClearing(true);
+    try {
+      await api.clearSession(worktreeId);
+      // The server broadcasts agent.cleared, and the store empties itself from
+      // that — so both panes showing this dryad forget it, not just this one.
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const send = () => {
     const prompt = text.trim();
     if (!prompt && attachments.length === 0) return;
@@ -382,6 +406,19 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
             >
               <Square size={11} fill="currentColor" />
               Stop
+            </button>
+          )}
+          {/* Nothing to forget until something has been said, so the control
+              only appears once there is. */}
+          {!running && (session || blocks.length > 0) && (
+            <button
+              className="chat-clear"
+              disabled={clearing}
+              onClick={() => void clearSession()}
+              data-tip="Forget this conversation — the next prompt starts fresh"
+            >
+              <Eraser size={11} />
+              Clear
             </button>
           )}
           <AgentSettingsButton worktreeId={worktreeId} />

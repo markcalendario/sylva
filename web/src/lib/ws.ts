@@ -1,7 +1,8 @@
-import type { ServerEvent } from "sylva-shared";
+import type { ClientEvent, ServerEvent } from "sylva-shared";
 import { useSylva } from "../state/store";
 import { playCue } from "./audio";
 import { notifyAgentEvent } from "./notify";
+import { disposeTerminal, receiveTerminalOutput } from "./terminals";
 
 /**
  * Sound only ever comes from live events. Transcript replay goes through the
@@ -34,6 +35,17 @@ export function startWs(onResync: () => void): void {
   connect(onResync);
 }
 
+/**
+ * Send something up the socket. Keystrokes only — see ClientEvent. Returns
+ * false when the socket isn't open, which is the caller's cue that what it
+ * typed went nowhere.
+ */
+export function sendWs(event: ClientEvent): boolean {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+  socket.send(JSON.stringify(event));
+  return true;
+}
+
 function connect(onResync: () => void): void {
   const store = useSylva.getState();
   store.setConnection("connecting");
@@ -49,6 +61,15 @@ function connect(onResync: () => void): void {
   socket.onmessage = (msg) => {
     try {
       const event = JSON.parse(msg.data as string) as ServerEvent;
+      // Terminal bytes go straight to the emulator drawing them. Everything
+      // else is application state and goes to the store.
+      if (event.type === "terminal.output") {
+        receiveTerminalOutput(event.terminalId, event.seq, event.data);
+        return;
+      }
+      // A closed terminal is never coming back; the emulator holding its
+      // scrollback should go with it.
+      if (event.type === "terminal.closed") disposeTerminal(event.terminalId);
       useSylva.getState().applyServerEvent(event);
       notifyAgentEvent(event);
       soundForEvent(event);

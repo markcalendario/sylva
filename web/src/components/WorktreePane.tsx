@@ -7,21 +7,21 @@ import { Sprite } from "../sprites/Sprite";
 import { AgentPanel } from "./AgentPanel";
 import { FilesPanel } from "./FilesPanel";
 import { GitPanel } from "./GitPanel";
-import { RunPanel } from "./RunPanel";
+import { TerminalPanel } from "./TerminalPanel";
 import { OpenExternallyButtons } from "./OpenExternallyButton";
 
 const TAB_LABEL: Record<Tab, string> = {
   agent: "Agent",
   files: "Files",
   git: "Git",
-  run: "Run",
+  terminal: "Terminal",
 };
 
 const TAB_TIP: Record<Tab, string> = {
   agent: "Prompt the dryad and watch it work",
   files: "Live feed of files changing in this worktree",
   git: "Stage, diff, commit, push and pull",
-  run: "Start this project and watch its output",
+  terminal: "Real shells in this worktree — as many as you need",
 };
 
 /**
@@ -47,12 +47,14 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
   const spriteState = useSylva((s) => (targetId ? spriteStateFor(s, targetId) : "idle"));
   const statuses = useSylva((s) => s.statuses);
   const session = useSylva((s) => (targetId ? s.sessions[targetId] : undefined));
-  const runners = useSylva((s) => s.runners);
+  const terminals = useSylva((s) => s.terminals);
   const index = useSylva((s) => s.worktreeIndex);
 
   // The header still describes a single worktree when there is one.
   const status = circle ? undefined : statuses[members[0] ?? ""];
-  const anyRunning = members.some((id) => runners[id]?.status === "running");
+  const anyLive = Object.values(terminals).some(
+    (t) => t.status === "running" && members.includes(t.worktreeId),
+  );
 
   // The session belongs to the target; a circle's transcript is its own.
   useEffect(() => {
@@ -200,7 +202,7 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
           )}
         </div>
         <nav className="tabs">
-          {(["agent", "files", "git", "run"] as Tab[]).map((t) => (
+          {(["agent", "files", "git", "terminal"] as Tab[]).map((t) => (
             <button
               key={t}
               className={`tab ${pane.tab === t ? "tab-on" : ""}`}
@@ -208,8 +210,8 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
               data-tip={TAB_TIP[t]}
             >
               {TAB_LABEL[t]}
-              {t === "run" && anyRunning && (
-                <span className="tab-dot" data-tip="This project is running" />
+              {t === "terminal" && anyLive && (
+                <span className="tab-dot" data-tip="A shell is open and running here" />
               )}
             </button>
           ))}
@@ -230,7 +232,7 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
           onSelect={(selection) => store.setPaneDiff(pane.id, selection)}
         />
       )}
-      {pane.tab === "run" && <RunPanel members={members} />}
+      {pane.tab === "terminal" && <TerminalPanel members={members} />}
     </section>
   );
 }

@@ -11,17 +11,10 @@ const run = promisify(execFile);
  * semicolon is an argument and nothing else — there is no shell to reinterpret
  * it, and a command template can therefore only ever launch one program.
  */
-const darwin = process.platform === "darwin";
-
-const PRESETS: Record<Exclude<OpenTarget, "custom" | "none">, string[]> = {
+const PRESETS: Partial<Record<OpenTarget, string[]>> = {
   vscode: ["code", "{path}"],
   cursor: ["cursor", "{path}"],
   zed: ["zed", "{path}"],
-  terminal: darwin
-    ? ["open", "-a", "Terminal", "{path}"]
-    : ["x-terminal-emulator", "--working-directory={path}"],
-  iterm: darwin ? ["open", "-a", "iTerm", "{path}"] : ["x-terminal-emulator"],
-  warp: darwin ? ["open", "-a", "Warp", "{path}"] : ["x-terminal-emulator"],
 };
 
 /**
@@ -39,17 +32,15 @@ export function splitCommand(template: string): string[] {
   return out;
 }
 
-/** Resolve the configured target for one kind into a concrete argv. */
-export function resolveArgv(prefs: AppPreferences, kind: OpenKind, path: string): string[] {
-  const target = kind === "editor" ? prefs.editorTarget : prefs.terminalTarget;
-  const custom = kind === "editor" ? prefs.editorCommand : prefs.terminalCommand;
-  const what = kind === "editor" ? "editor" : "terminal";
+/** Resolve the configured editor into a concrete argv. */
+export function resolveArgv(prefs: AppPreferences, _kind: OpenKind, path: string): string[] {
+  const target = prefs.editorTarget;
   if (target === "none") {
-    throw badRequest(`Opening a ${what} is switched off in Settings`);
+    throw badRequest("Opening an editor is switched off in Settings");
   }
-  const template = target === "custom" ? splitCommand(custom) : PRESETS[target];
+  const template = target === "custom" ? splitCommand(prefs.editorCommand) : PRESETS[target];
   if (!template || template.length === 0) {
-    throw badRequest(`No ${what} command is configured — pick one in Settings`);
+    throw badRequest("No editor command is configured — pick one in Settings");
   }
   const argv = template.map((part) => part.replaceAll("{path}", path));
   // A template with no {path} would open the editor on nothing useful.

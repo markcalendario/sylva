@@ -7,12 +7,18 @@ import {
   MIN_SCALE,
   STEP,
 } from "../lib/textScale";
+import { restyleTerminals } from "../lib/terminals";
 
 /** Text size stepper. Persists across reloads; click the percentage to reset. */
 export function TextSize() {
   const [scale, setScale] = useState(loadScale);
 
-  const set = (next: number) => setScale(applyScale(next));
+  const set = (next: number) => {
+    setScale(applyScale(next));
+    // Terminals size themselves in a canvas, outside CSS: they only learn the
+    // text scale moved if they are told.
+    restyleTerminals();
+  };
 
   return (
     <div className="textsize" role="group" aria-label="Text size">

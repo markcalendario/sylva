@@ -56,10 +56,9 @@ function Shell() {
           useSylva.getState().setPermissions(worktreeId, list);
         }
       });
-      // Runners keep going across a page reload, so pick them back up.
-      void api.listRunners().then((states) => {
-        for (const state of states) useSylva.getState().setRunner(state);
-      });
+      // Terminals outlive a page reload — they belong to the server, not to
+      // the tab that opened them — so pick them back up.
+      void api.listTerminals().then((infos) => useSylva.getState().seedTerminals(infos));
       // The server watches what the panes hold; a reconnect has to say so again.
       const open = useSylva
         .getState()

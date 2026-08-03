@@ -133,3 +133,58 @@ describe("celebrating a finished turn", () => {
     expect(stateOf("wt-a")).toBe("error");
   });
 });
+
+/**
+ * A cleared dryad has to look untouched afterwards. The transcript is the
+ * obvious half; the easy thing to leave behind is the rest of what the old
+ * conversation set — a celebration, an unseen dot, a session line in the header
+ * still quoting what the forgotten turns cost.
+ */
+describe("clearing a dryad", () => {
+  const cleared = (worktreeId: string) =>
+    useSylva.getState().applyServerEvent({ type: "agent.cleared", worktreeId });
+
+  beforeEach(() => {
+    useSylva.setState({
+      celebrating: {},
+      unseenActivity: {},
+      sessions: {},
+      transcripts: {},
+      pendingPermissions: {},
+      drafts: {},
+      view: "workspace",
+    });
+    showPane(null);
+  });
+
+  it("empties the transcript and puts the dryad back to resting", () => {
+    result("wt-a");
+    expect(useSylva.getState().transcripts["wt-a"]).toHaveLength(1);
+    expect(stateOf("wt-a")).toBe("success");
+
+    cleared("wt-a");
+
+    expect(useSylva.getState().transcripts["wt-a"]).toBeUndefined();
+    expect(useSylva.getState().sessions["wt-a"]).toBeUndefined();
+    expect(useSylva.getState().unseenActivity["wt-a"]).toBeUndefined();
+    expect(stateOf("wt-a")).toBe("idle");
+  });
+
+  it("keeps what you had already typed", () => {
+    useSylva.getState().setDraft("wt-a", { text: "half a thought" });
+    cleared("wt-a");
+    // Clearing is usually the prelude to asking again; discarding the draft
+    // would be a second deletion nobody asked for.
+    expect(useSylva.getState().drafts["wt-a"]?.text).toBe("half a thought");
+  });
+
+  it("leaves every other dryad exactly as it was", () => {
+    result("wt-a");
+    result("wt-b");
+
+    cleared("wt-a");
+
+    expect(useSylva.getState().transcripts["wt-b"]).toHaveLength(1);
+    expect(stateOf("wt-b")).toBe("success");
+  });
+});

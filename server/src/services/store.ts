@@ -119,21 +119,13 @@ export class Store {
       preferences: {
         editorTarget: saved.editorTarget ?? base.preferences.editorTarget,
         editorCommand: saved.editorCommand ?? base.preferences.editorCommand,
-        terminalTarget: saved.terminalTarget ?? base.preferences.terminalTarget,
-        terminalCommand: saved.terminalCommand ?? base.preferences.terminalCommand,
+        terminalShell:
+          typeof saved.terminalShell === "string"
+            ? saved.terminalShell
+            : base.preferences.terminalShell,
         savedPrompts: Array.isArray(saved.savedPrompts)
           ? saved.savedPrompts
           : base.preferences.savedPrompts,
-        runner: {
-          defaultCommand:
-            typeof saved.runner?.defaultCommand === "string" && saved.runner.defaultCommand.trim()
-              ? saved.runner.defaultCommand
-              : base.preferences.runner.defaultCommand,
-          byRepo:
-            saved.runner?.byRepo && typeof saved.runner.byRepo === "object"
-              ? saved.runner.byRepo
-              : {},
-        },
       },
       prefs: source.prefs && typeof source.prefs === "object" ? source.prefs : {},
     };

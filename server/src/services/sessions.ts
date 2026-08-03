@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import { relative } from "node:path";
 import {
   query,
@@ -30,6 +30,22 @@ import type { Workspace } from "./workspace.js";
 import type { WsHub } from "../ws/hub.js";
 
 const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** How long to wait for an interrupted query to actually finish before moving on. */
+const SHUTDOWN_GRACE_MS = 5000;
+
+/** Resolve when the promise does, or when we've waited long enough. Never rejects. */
+async function withTimeout(promise: Promise<void> | null, ms: number): Promise<void> {
+  if (!promise) return;
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    promise.catch(() => {}),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, ms);
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+}
 
 /** Pushable async iterable feeding the SDK's streaming input. */
 class InputStream implements AsyncIterable<SDKUserMessage> {
@@ -116,6 +132,13 @@ interface ActiveSession {
   alwaysAllow: Set<string>;
   pendingPermissions: Map<string, PendingPermission>;
   loopDone: Promise<void> | null;
+  /**
+   * Set when the session has been cleared out from under a query that is still
+   * shutting down. Everything that writes about a session checks this: the loop
+   * persists on its way out, and without the flag a clear could be undone
+   * milliseconds later by the very session it was clearing.
+   */
+  cleared: boolean;
 }
 
 /** Agents habitually prefix commands with `cd "<worktree>" &&`; that's noise here. */
@@ -360,6 +383,53 @@ export class SessionManager {
     return settings;
   }
 
+  /**
+   * Send this dryad back to the sapling it was. Three things carry a
+   * conversation forward and all three go: the SDK session id the next prompt
+   * would resume into, the transcript on disk, and the running cost. What the
+   * dryad *is* — its worktrees, its model, its permission settings — is left
+   * alone; this forgets, it doesn't unmake.
+   *
+   * Deliberately idempotent, and deliberately doesn't resolve the worktree
+   * first: clearing is bookkeeping about our own records, and refusing to do it
+   * because the worktree has since gone would strand exactly the leftovers
+   * worth removing.
+   */
+  async clearSession(worktreeId: string): Promise<{ ok: true }> {
+    const active = this.activeByWorktree(worktreeId);
+    if (active?.info.status === "running") {
+      throw conflict("Stop the current turn before clearing this dryad");
+    }
+
+    const persisted = this.store.sessions.find((s) => s.worktreeId === worktreeId);
+    const sessionId = active?.info.id ?? persisted?.id;
+
+    if (active) {
+      // Mark before ending: the query's own teardown persists the session, and
+      // the flag is what stops it writing the record back after we delete it.
+      active.cleared = true;
+      if (active.q) await active.q.interrupt().catch(() => {});
+      active.input.end();
+      // The loop unregisters itself on the way out. Waiting for it means a
+      // prompt sent straight after this builds a genuinely new session rather
+      // than finding the old one still in the map with its input closed.
+      await withTimeout(active.loopDone, SHUTDOWN_GRACE_MS);
+      if (this.sessions.get(active.info.id) === active) {
+        for (const entry of active.watch) this.watchers.removeSessionWatch(entry.worktreeId);
+        this.sessions.delete(active.info.id);
+        this.byWorktree.delete(worktreeId);
+      }
+    }
+
+    if (sessionId) {
+      await this.store.removeSession(sessionId);
+      await rm(this.store.transcriptPath(sessionId), { force: true });
+    }
+
+    this.hub.broadcast({ type: "agent.cleared", worktreeId });
+    return { ok: true };
+  }
+
   /** End the SDK query so the next prompt reopens it with current settings. */
   private async restart(worktreeId: string): Promise<void> {
     const session = this.activeByWorktree(worktreeId);
@@ -508,6 +578,7 @@ export class SessionManager {
       alwaysAllow: new Set(),
       pendingPermissions: new Map(),
       loopDone: null,
+      cleared: false,
     };
     this.sessions.set(info.id, session);
     this.byWorktree.set(worktreeId, info.id);
@@ -592,9 +663,16 @@ export class SessionManager {
         pending.resolve("timeout");
       }
       session.pendingPermissions.clear();
-      for (const entry of session.watch) this.watchers.removeSessionWatch(entry.worktreeId);
-      this.sessions.delete(session.info.id);
-      this.byWorktree.delete(session.info.worktreeId);
+      // Only unregister what is still ours. A clear tears the session out of
+      // these maps itself and may already have let a new one take its place;
+      // deleting by id alone would drop the replacement's watchers instead.
+      if (this.sessions.get(session.info.id) === session) {
+        for (const entry of session.watch) this.watchers.removeSessionWatch(entry.worktreeId);
+        this.sessions.delete(session.info.id);
+        if (this.byWorktree.get(session.info.worktreeId) === session.info.id) {
+          this.byWorktree.delete(session.info.worktreeId);
+        }
+      }
       await this.persist(session);
     }
   }
@@ -724,6 +802,9 @@ export class SessionManager {
   }
 
   private appendEvent(session: ActiveSession, event: AgentEvent): void {
+    // A cleared session may still emit a last gasp as its query unwinds. Let it
+    // go nowhere rather than rebuild the transcript file we just deleted.
+    if (session.cleared) return;
     this.hub.broadcast({
       type: "agent.event",
       sessionId: session.info.id,
@@ -734,10 +815,14 @@ export class SessionManager {
   }
 
   private broadcastSession(session: ActiveSession): void {
+    // Nothing to say about a session that has been forgotten — announcing it
+    // would put it back on screen a moment after it was cleared.
+    if (session.cleared) return;
     this.hub.broadcast({ type: "agent.session", session: session.info });
   }
 
   private async persist(session: ActiveSession): Promise<void> {
+    if (session.cleared) return;
     await this.store.upsertSession({
       id: session.info.id,
       worktreeId: session.info.worktreeId,

@@ -39,6 +39,21 @@ The system SHALL allow the user to interrupt a running agent turn; the session r
 - **WHEN** the user clicks Stop while the agent is working
 - **THEN** the current turn halts, the UI marks it interrupted, and a new prompt can be sent
 
+### Requirement: Clear a session
+The system SHALL allow the user to clear a dryad's conversation: the persisted session record (including the SDK session ID it would otherwise resume into), the on-disk transcript, and the accumulated cost and token totals are all removed, so the next prompt starts a genuinely new session. Clearing SHALL leave the target's worktrees, model, effort and permission settings untouched, SHALL be refused while a turn is running, and SHALL be idempotent.
+
+#### Scenario: Clear an idle dryad
+- **WHEN** the user clears a worktree whose session has an existing conversation
+- **THEN** the transcript empties, the cost returns to zero, and the next prompt opens a session with no memory of the previous one
+
+#### Scenario: Clear while the agent is working
+- **WHEN** the user attempts to clear a session whose turn is in flight
+- **THEN** the request is refused and the user is told to stop the turn first
+
+#### Scenario: The same dryad open in both panes
+- **WHEN** a session is cleared while two panes show it
+- **THEN** both panes empty, because the clearing is broadcast rather than returned only to the caller
+
 ### Requirement: Tool-permission approvals
 The system SHALL route agent tool-permission requests (via the SDK's `canUseTool` callback) to the UI as permission-request events and SHALL block the tool call until the user answers Allow, Allow-always-for-this-session, or Deny. Per-session "always allow" rules SHALL auto-approve subsequent requests for the same tool. Requests unanswered after a timeout SHALL resolve as denied.
 

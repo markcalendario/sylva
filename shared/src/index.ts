@@ -103,6 +103,22 @@ export interface CommitGraph {
   truncated: boolean;
 }
 
+/** One file a commit touched, as `git show --name-status --numstat` reports it. */
+export interface CommitFile {
+  path: string;
+  kind: FileChangeKind;
+  renamedFrom?: string;
+  /** Null for binary files, where git counts nothing. */
+  insertions: number | null;
+  deletions: number | null;
+}
+
+/** A commit opened up: what it says, and what it changed. */
+export interface CommitDetail {
+  commit: GraphCommit;
+  files: CommitFile[];
+}
+
 export interface TreeEntry {
   name: string;
   /** Worktree-relative path. */
@@ -242,18 +258,13 @@ export const GLOBAL_DEFAULTS: AgentSettings = {
   effort: null,
 };
 
-/** What an Open button hands the worktree to. */
-export type OpenKind = "editor" | "terminal";
+/**
+ * What an Open button hands the worktree to. Only the editor: a shell is no
+ * longer somewhere else to go, because the Terminal tab is one.
+ */
+export type OpenKind = "editor";
 
-export type OpenTarget =
-  | "vscode"
-  | "cursor"
-  | "zed"
-  | "terminal"
-  | "iterm"
-  | "warp"
-  | "custom"
-  | "none";
+export type OpenTarget = "vscode" | "cursor" | "zed" | "custom" | "none";
 
 export interface OpenChoice {
   id: OpenTarget;
@@ -269,62 +280,51 @@ export const EDITOR_TARGETS: OpenChoice[] = [
   { id: "none", label: "Off", note: "hide the editor button" },
 ];
 
-export const TERMINAL_TARGETS: OpenChoice[] = [
-  { id: "terminal", label: "Terminal", note: "the built-in macOS terminal" },
-  { id: "iterm", label: "iTerm", note: "opens iTerm at the worktree" },
-  { id: "warp", label: "Warp", note: "opens Warp at the worktree" },
-  { id: "custom", label: "Custom command", note: "{path} is replaced by the worktree" },
-  { id: "none", label: "Off", note: "hide the terminal button" },
-];
+// ---------- Terminals ----------
 
-// ---------- Runner ----------
+export type TerminalStatus = "running" | "exited";
 
 /**
- * The project command Sylva runs for you, so starting a dev server doesn't mean
- * finding a terminal and remembering which folder it belongs in.
+ * One shell, in one worktree. Several may exist per worktree — a dev server in
+ * the first and whatever you need to type in the second is the ordinary case,
+ * and it is the reason this is a terminal rather than a run button.
  */
-export interface RunnerConfig {
-  /** Used by any repository that hasn't named its own. */
-  defaultCommand: string;
-  /** Per-repository overrides, keyed by repo id. */
-  byRepo: Record<string, string>;
-}
-
-export const RUNNER_DEFAULTS: RunnerConfig = {
-  defaultCommand: "npm run dev",
-  byRepo: {},
-};
-
-export type RunnerStatus = "idle" | "running" | "exited";
-
-export interface RunnerState {
+export interface TerminalInfo {
+  id: string;
   worktreeId: string;
-  /** Repository whose command this is — the one an edit would save against. */
+  /** Repository the worktree belongs to, for labelling a shared dryad's tabs. */
   repoId: string;
-  status: RunnerStatus;
-  /** The command as it will be, or was, run. */
-  command: string;
-  pid: number | null;
-  startedAt: string | null;
-  exitedAt: string | null;
-  /** Exit code, or null while running / never started. Negative means signalled. */
+  /** What the tab says. The shell's name, or the command it was opened to run. */
+  title: string;
+  /** Program the pty is running, e.g. /bin/zsh. */
+  shell: string;
+  cwd: string;
+  status: TerminalStatus;
+  /** Exit code once it's gone; negative means it was signalled. */
   exitCode: number | null;
-  /** Most recent localhost URL seen in the output, if any. */
-  url: string | null;
+  cols: number;
+  rows: number;
+  startedAt: string;
+  exitedAt: string | null;
 }
 
-export interface RunnerLine {
-  /** Monotonic within a runner, so the client can dedupe and order. */
+/**
+ * Everything a freshly attached client needs to draw a terminal it wasn't
+ * watching: the retained output, and the sequence number that output ends at,
+ * so live chunks that arrived while the request was in flight can be told from
+ * the ones already in `data`.
+ */
+export interface TerminalBuffer {
+  info: TerminalInfo;
+  data: string;
   seq: number;
-  stream: "stdout" | "stderr";
-  text: string;
-  at: string;
 }
 
-/** State plus whatever output is still retained, for opening the Run tab. */
-export interface RunnerSnapshot {
-  state: RunnerState;
-  lines: RunnerLine[];
+export interface CreateTerminalRequest {
+  cols?: number;
+  rows?: number;
+  /** Typed into the shell once it's up, as if you had typed it yourself. */
+  command?: string;
 }
 
 /**
@@ -381,20 +381,15 @@ export interface AppPreferences {
   editorTarget: OpenTarget;
   /** Command template used when editorTarget is "custom"; {path} is substituted. */
   editorCommand: string;
-  /** Terminal the ⌥ Shell button opens. */
-  terminalTarget: OpenTarget;
-  terminalCommand: string;
+  /** Shell the Terminal tab spawns. Empty means whatever $SHELL says. */
+  terminalShell: string;
   savedPrompts: SavedPrompt[];
-  /** The one-click run command, globally and per repository. */
-  runner: RunnerConfig;
 }
 
 export const PREFERENCE_DEFAULTS: AppPreferences = {
   editorTarget: "vscode",
   editorCommand: "",
-  terminalTarget: "terminal",
-  terminalCommand: "",
-  runner: { ...RUNNER_DEFAULTS, byRepo: {} },
+  terminalShell: "",
   savedPrompts: [
     {
       id: "review",
@@ -532,6 +527,12 @@ export type ServerEvent =
   | { type: "agent.event"; sessionId: string; worktreeId: string; event: AgentEvent }
   | { type: "agent.session"; session: SessionInfo }
   | { type: "agent.availability"; availability: AgentAvailability }
+  /**
+   * This dryad's memory was cleared: session, transcript and running cost are
+   * all gone. Broadcast rather than answered, because the same conversation can
+   * be on screen in both panes at once.
+   */
+  | { type: "agent.cleared"; worktreeId: string }
   | { type: "permission.request"; request: PermissionRequest }
   | { type: "permission.resolved"; requestId: string; answer: PermissionAnswer | "timeout" }
   | { type: "file.batch"; worktreeId: string; events: FileEvent[]; truncated: boolean }
@@ -544,8 +545,25 @@ export type ServerEvent =
    * stale until a reload.
    */
   | { type: "worktrees.changed"; repoId: string | null }
-  | { type: "runner.state"; state: RunnerState }
-  | { type: "runner.output"; worktreeId: string; lines: RunnerLine[] };
+  | { type: "terminal.state"; info: TerminalInfo }
+  | { type: "terminal.closed"; terminalId: string }
+  /**
+   * Raw pty output. Sequenced rather than timestamped: a terminal is a byte
+   * stream, and the only question a client ever has about a chunk is whether it
+   * already has it.
+   */
+  | { type: "terminal.output"; terminalId: string; seq: number; data: string };
+
+// ---------- WebSocket protocol (client -> server) ----------
+
+/**
+ * The only things a client sends up the socket, both of them terminal input.
+ * Everything else Sylva does is a REST call — but a keystroke can't wait for a
+ * round trip through fetch, and neither can a drag of the window edge.
+ */
+export type ClientEvent =
+  | { type: "terminal.input"; terminalId: string; data: string }
+  | { type: "terminal.resize"; terminalId: string; cols: number; rows: number };
 
 // ---------- REST payloads ----------
 

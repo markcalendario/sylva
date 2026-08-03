@@ -5,8 +5,10 @@ import type {
   AppPreferences,
   Attachment,
   BranchInfo,
+  CommitDetail,
   CommitGraph,
   CommitManyResult,
+  CreateTerminalRequest,
   DirListing,
   FileContent,
   FileDiff,
@@ -14,13 +16,13 @@ import type {
   ContentSearchResponse,
   FileSearchResponse,
   OpenKind,
-  RunnerSnapshot,
-  RunnerState,
   PullRequestResult,
   PermissionAnswer,
   PermissionRequest,
   Repo,
   SessionInfo,
+  TerminalBuffer,
+  TerminalInfo,
   TreeListing,
   Worktree,
   WorktreeOverrides,
@@ -169,6 +171,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
+  /** Forget this dryad's conversation, transcript and running cost. */
+  clearSession: (worktreeId: string) =>
+    request<{ ok: true }>(`/api/worktrees/${worktreeId}/session`, { method: "DELETE" }),
   interrupt: (worktreeId: string) =>
     request<SessionInfo>(`/api/worktrees/${worktreeId}/session/interrupt`, {
       method: "POST",
@@ -184,6 +189,12 @@ export const api = {
       body: JSON.stringify({ requestId, answer }),
     }),
   graph: (worktreeId: string) => request<CommitGraph>(`/api/worktrees/${worktreeId}/graph`),
+  commitDetail: (worktreeId: string, sha: string) =>
+    request<CommitDetail>(`/api/worktrees/${worktreeId}/commits/${sha}`),
+  commitDiff: (worktreeId: string, sha: string, path: string) =>
+    request<FileDiff>(
+      `/api/worktrees/${worktreeId}/commits/${sha}/diff?path=${encodeURIComponent(path)}`,
+    ),
   tree: (worktreeId: string, path = "") =>
     request<TreeListing>(`/api/worktrees/${worktreeId}/tree?path=${encodeURIComponent(path)}`),
   fileContent: (worktreeId: string, path: string) =>
@@ -199,19 +210,18 @@ export const api = {
       `/api/worktrees/${worktreeId}/search-files?q=${encodeURIComponent(q)}`,
     ),
 
-  runner: (worktreeId: string) =>
-    request<RunnerSnapshot>(`/api/worktrees/${worktreeId}/runner`),
-  startRunner: (worktreeId: string) =>
-    request<RunnerState>(`/api/worktrees/${worktreeId}/runner/start`, {
+  terminals: (worktreeId: string) =>
+    request<TerminalInfo[]>(`/api/worktrees/${worktreeId}/terminals`),
+  openTerminal: (worktreeId: string, body: CreateTerminalRequest = {}) =>
+    request<TerminalInfo>(`/api/worktrees/${worktreeId}/terminals`, {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify(body),
     }),
-  stopRunner: (worktreeId: string) =>
-    request<RunnerState>(`/api/worktrees/${worktreeId}/runner/stop`, {
-      method: "POST",
-      body: "{}",
-    }),
-  listRunners: () => request<RunnerState[]>("/api/runners"),
+  terminalBuffer: (terminalId: string) =>
+    request<TerminalBuffer>(`/api/terminals/${terminalId}/buffer`),
+  closeTerminal: (terminalId: string) =>
+    request<{ ok: true }>(`/api/terminals/${terminalId}`, { method: "DELETE" }),
+  listTerminals: () => request<TerminalInfo[]>("/api/terminals"),
   createPr: (worktreeId: string, opts: { draft: boolean; title?: string; body?: string }) =>
     request<PullRequestResult>(`/api/worktrees/${worktreeId}/pr`, {
       method: "POST",

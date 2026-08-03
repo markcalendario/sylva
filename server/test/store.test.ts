@@ -42,17 +42,15 @@ describe("Store", () => {
     await store.setPreferences({
       editorTarget: "cursor",
       editorCommand: "",
-      terminalTarget: "iterm",
-      terminalCommand: "",
+      terminalShell: "/bin/fish",
       savedPrompts: [{ id: "p1", label: "Ship it", text: "Run the tests, then commit." }],
-      runner: { defaultCommand: "npm run dev", byRepo: { r1: "pnpm dev" } },
     });
     await store.setGlobalSettings({ bypassPermissions: false, model: "claude-opus-5", effort: null });
 
     const { readFile } = await import("node:fs/promises");
     const written = JSON.parse(await readFile(join(dir, "settings.json"), "utf8"));
     expect(written.preferences.editorTarget).toBe("cursor");
-    expect(written.preferences.terminalTarget).toBe("iterm");
+    expect(written.preferences.terminalShell).toBe("/bin/fish");
     expect(written.preferences.savedPrompts[0].label).toBe("Ship it");
     expect(written.globalSettings.model).toBe("claude-opus-5");
 
