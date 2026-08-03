@@ -171,6 +171,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
+  /** Forget this dryad's conversation, transcript and running cost. */
+  clearSession: (worktreeId: string) =>
+    request<{ ok: true }>(`/api/worktrees/${worktreeId}/session`, { method: "DELETE" }),
   interrupt: (worktreeId: string) =>
     request<SessionInfo>(`/api/worktrees/${worktreeId}/session/interrupt`, {
       method: "POST",

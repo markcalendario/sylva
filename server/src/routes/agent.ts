@@ -96,6 +96,12 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     return sessions.prompt(worktreeId, body.text);
   });
 
+  /** Forget the conversation so the next prompt starts a new one. */
+  app.delete("/api/worktrees/:worktreeId/session", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    return sessions.clearSession(worktreeId);
+  });
+
   app.post("/api/worktrees/:worktreeId/session/interrupt", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     return sessions.interrupt(worktreeId);

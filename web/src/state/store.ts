@@ -255,6 +255,8 @@ interface SylvaState {
   setTranscript: (worktreeId: string, events: AgentEvent[]) => void;
   setSession: (worktreeId: string, session: SessionInfo | null) => void;
   setPermissions: (worktreeId: string, reqs: PermissionRequest[]) => void;
+  /** Drop everything we hold about one dryad's conversation. */
+  forgetSession: (worktreeId: string) => void;
   setStatus: (status: WorktreeStatus) => void;
   seedFileFeed: (worktreeId: string, events: FileEvent[]) => void;
   setAvailability: (a: AgentAvailability) => void;
@@ -491,6 +493,27 @@ export const useSylva = create<SylvaState>((set, get) => ({
   setPermissions: (worktreeId, reqs) =>
     set((s) => ({ pendingPermissions: { ...s.pendingPermissions, [worktreeId]: reqs } })),
 
+  /**
+   * Everything keyed by this worktree that described the old conversation. The
+   * draft is spared on purpose — clearing is usually the prelude to asking
+   * again, and throwing away what you'd already typed would be a second,
+   * unasked-for deletion.
+   */
+  forgetSession: (worktreeId) =>
+    set((s) => {
+      const sessions = { ...s.sessions };
+      const transcripts = { ...s.transcripts };
+      const pendingPermissions = { ...s.pendingPermissions };
+      const celebrating = { ...s.celebrating };
+      const unseenActivity = { ...s.unseenActivity };
+      delete sessions[worktreeId];
+      delete transcripts[worktreeId];
+      delete pendingPermissions[worktreeId];
+      delete celebrating[worktreeId];
+      delete unseenActivity[worktreeId];
+      return { sessions, transcripts, pendingPermissions, celebrating, unseenActivity };
+    }),
+
   setStatus: (status) =>
     set((s) => ({ statuses: { ...s.statuses, [status.worktreeId]: status } })),
 
@@ -553,6 +576,9 @@ export const useSylva = create<SylvaState>((set, get) => ({
         break;
       case "agent.availability":
         s.setAvailability(event.availability);
+        break;
+      case "agent.cleared":
+        s.forgetSession(event.worktreeId);
         break;
       case "permission.request": {
         const list = s.pendingPermissions[event.request.worktreeId] ?? [];

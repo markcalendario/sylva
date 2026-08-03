@@ -15,7 +15,7 @@ Working on three things at once means three worktrees, three terminals, and no i
 - **A worktree per task.** Name a branch and Sylva creates the worktree, registers it, and opens it. Remove it when you're done and the branch and directory go with it. New repositories can be started from inside Sylva too — initialized, committed, and ready for worktrees.
 - **Two at once.** Split the workspace and keep an old system and a new one open side by side, each with its own Agent, Files, Git and Terminal tabs. Both stay live.
 - **One dryad, several worktrees.** Shift-click a worktree in the sidebar, pick a few more, and they share a single agent — so it can read the old system and write the new one in the same turn, remembering both.
-- **One Claude session per worktree.** Sessions are independent — separate transcripts, separate costs, separate settings — and resume across server restarts.
+- **One Claude session per worktree.** Sessions are independent — separate transcripts, separate costs, separate settings — and resume across server restarts. **Clear** in the Agent header sends one back to a blank slate: transcript deleted, cost back to zero, the next prompt starting a conversation of its own.
 - **The grove.** A dryad bound to no worktree at all, which knows where every registered repository lives. For the questions that span all of them.
 - **Permissions you can actually see.** Tool requests appear inline with Allow / Allow always this session / Deny. There's an opt-in "skip all permissions" mode behind an explicit confirmation.
 - **Live file feed.** A recursive watcher streams every change in the worktree as it happens, ignoring `.git`, `node_modules` and friends.

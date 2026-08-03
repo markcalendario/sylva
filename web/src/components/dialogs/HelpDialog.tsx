@@ -88,6 +88,18 @@ const SECTIONS: Section[] = [
         ),
       },
       {
+        q: "Can I make a dryad forget everything and start over?",
+        a: (
+          <>
+            Yes — <strong>Clear</strong> in the Agent header. It deletes the transcript, drops the
+            SDK session id the next prompt would have resumed into, and puts the cost back to zero,
+            so the next thing you ask begins a conversation of its own. The worktrees it tends and
+            its model, effort and permission settings are all left alone. It's refused mid-turn:
+            stop the turn first.
+          </>
+        ),
+      },
+      {
         q: "What else is stored, and where?",
         a: (
           <>

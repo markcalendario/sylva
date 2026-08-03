@@ -4350,6 +4350,27 @@ button:disabled {
   background: rgb(255 107 91 / 0.14);
 }
 
+/* Quieter than Stop: forgetting is deliberate, but it is not an emergency. */
+.chat-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-1);
+  font-size: var(--text-xs);
+  padding: 2px var(--pad-2);
+  border-radius: var(--radius);
+  color: var(--moss);
+  border: 1px solid transparent;
+}
+
+.chat-clear:hover:not(:disabled) {
+  color: var(--ember);
+  border-color: var(--ember-dim);
+}
+
+.chat-clear:disabled {
+  opacity: 0.5;
+}
+
 /* A working dryad stirs the air in the transcript. Off in every other state —
    the stillness is what makes the movement mean something. */
 .agent-body {

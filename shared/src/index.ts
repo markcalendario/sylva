@@ -527,6 +527,12 @@ export type ServerEvent =
   | { type: "agent.event"; sessionId: string; worktreeId: string; event: AgentEvent }
   | { type: "agent.session"; session: SessionInfo }
   | { type: "agent.availability"; availability: AgentAvailability }
+  /**
+   * This dryad's memory was cleared: session, transcript and running cost are
+   * all gone. Broadcast rather than answered, because the same conversation can
+   * be on screen in both panes at once.
+   */
+  | { type: "agent.cleared"; worktreeId: string }
   | { type: "permission.request"; request: PermissionRequest }
   | { type: "permission.resolved"; requestId: string; answer: PermissionAnswer | "timeout" }
   | { type: "file.batch"; worktreeId: string; events: FileEvent[]; truncated: boolean }
