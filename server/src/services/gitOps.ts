@@ -1,4 +1,4 @@
-import { open, readdir, stat } from "node:fs/promises";
+import { open, readdir, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 import type {
   BaseDivergence,
@@ -698,5 +698,45 @@ export class GitOps {
     } finally {
       await handle.close();
     }
+  }
+
+  /**
+   * Write a file back after an edit in the Files tab.
+   *
+   * Deliberately narrow: it overwrites a file that already exists and is text,
+   * and refuses everything else. Creating files, writing binaries and touching
+   * anything outside the worktree are all jobs the dryad or the terminal
+   * already does, with more context than a text box has.
+   */
+  async writeFileContent(
+    worktreeId: string,
+    relPath: string,
+    content: string,
+  ): Promise<FileContent> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const rel = this.safeRelPath(relPath);
+    const full = join(worktree.path, rel);
+
+    let info;
+    try {
+      info = await stat(full);
+    } catch {
+      throw badRequest(`${rel} doesn't exist in this worktree`);
+    }
+    if (!info.isFile()) throw badRequest(`${rel} is not a file`);
+
+    // A binary read back as UTF-8 and written again is a corrupted binary, so
+    // the same NUL-byte test that gates reading gates writing.
+    const existing = await this.fileContent(worktreeId, rel);
+    if (existing.binary) throw badRequest(`${rel} is a binary file`);
+    if (existing.truncated) {
+      throw badRequest(
+        `${rel} is too large to edit here`,
+        "Only the first 256 KB was read, so saving would truncate the file. Open it in your editor instead.",
+      );
+    }
+
+    await writeFile(full, content, "utf8");
+    return this.fileContent(worktreeId, rel);
   }
 }

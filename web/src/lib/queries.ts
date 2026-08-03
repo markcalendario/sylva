@@ -99,6 +99,8 @@ export function useInvalidate() {
     status: (worktreeId?: string) =>
       void qc.invalidateQueries({ queryKey: worktreeId ? ["status", worktreeId] : ["status"] }),
     diffs: () => void qc.invalidateQueries({ queryKey: ["diff"] }),
+    file: (worktreeId: string, path: string) =>
+      void qc.invalidateQueries({ queryKey: ["file", worktreeId, path] }),
     everything: () => void qc.invalidateQueries(),
   };
 }

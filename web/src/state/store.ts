@@ -86,6 +86,7 @@ export interface WorktreePlace {
 const PANES_KEY = "sylva.panes";
 const SIDEBAR_KEY = "sylva.sidebarCollapsed";
 const CIRCLES_KEY = "sylva.circles";
+const TABS_KEY = "sylva.tabsByWorktree";
 
 function loadList(key: string): string[] {
   try {
@@ -118,6 +119,38 @@ function saveFlag(key: string, value: boolean): void {
     localStorage.setItem(key, value ? "1" : "0");
   } catch {
     // Private mode or a full quota; the preference just won't stick.
+  }
+}
+
+function isTab(value: unknown): value is Tab {
+  return typeof value === "string" && (TABS as readonly string[]).includes(value);
+}
+
+/**
+ * Which tab each worktree was last left on. A pane is a window onto a worktree,
+ * not a mode you put the app into: leaving one tree at its Terminal and opening
+ * another shouldn't drag you into that tree's terminal too, which is exactly
+ * what a pane-level tab did.
+ */
+function loadTabs(): Record<string, Tab> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(TABS_KEY) ?? "{}") as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter((entry): entry is [string, Tab] =>
+        isTab(entry[1]),
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveTabs(tabs: Record<string, Tab>): void {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify(tabs));
+  } catch {
+    // Private mode or a full quota; the memory just won't survive a reload.
   }
 }
 
@@ -200,6 +233,11 @@ interface SylvaState {
   /** Layout of the main area. */
   panes: Pane[];
   activePaneId: string;
+  /**
+   * The tab each worktree was last read on, so opening one puts you back where
+   * you left it rather than wherever the pane happened to be.
+   */
+  tabByWorktree: Record<string, Tab>;
   view: View;
   /**
    * Every terminal the server holds, by terminal id. Only what a tab strip
@@ -297,6 +335,7 @@ export const useSylva = create<SylvaState>((set, get) => ({
 
   panes: initialPanes,
   activePaneId: initialPanes[0]?.id ?? "",
+  tabByWorktree: loadTabs(),
   view: "workspace",
   terminals: {},
   worktreeIndex: {},
@@ -325,10 +364,14 @@ export const useSylva = create<SylvaState>((set, get) => ({
 
   setPaneWorktree: (paneId, worktreeId) =>
     set((s) => {
+      // The tab comes from the worktree being opened, not from the pane: you
+      // were on Terminal in *that* tree for a reason, and it isn't a reason to
+      // put every other tree into its terminal too. A tree never opened before
+      // starts where every conversation starts.
+      const tab = (worktreeId && s.tabByWorktree[worktreeId]) || "agent";
       const panes = s.panes.map((p) =>
-        // A pane pointed at a different worktree keeps its tab — you were on
-        // Git for a reason — but not its diff, which belonged to the old one.
-        p.id === paneId ? { ...p, worktreeId, diff: null } : p,
+        // The diff is dropped either way — it belonged to the old worktree.
+        p.id === paneId ? { ...p, worktreeId, tab, diff: null } : p,
       );
       savePanes(panes);
       return { panes };
@@ -338,7 +381,11 @@ export const useSylva = create<SylvaState>((set, get) => ({
     set((s) => {
       const panes = s.panes.map((p) => (p.id === paneId ? { ...p, tab } : p));
       savePanes(panes);
-      return { panes };
+      const worktreeId = s.panes.find((p) => p.id === paneId)?.worktreeId;
+      if (!worktreeId) return { panes };
+      const tabByWorktree = { ...s.tabByWorktree, [worktreeId]: tab };
+      saveTabs(tabByWorktree);
+      return { panes, tabByWorktree };
     }),
 
   cycleActiveTab: (direction) =>
@@ -354,13 +401,23 @@ export const useSylva = create<SylvaState>((set, get) => ({
       if (!tab || tab === pane.tab) return {};
       const panes = s.panes.map((p) => (p.id === pane.id ? { ...p, tab } : p));
       savePanes(panes);
-      return { panes };
+      // Stepping with the keyboard is still choosing a tab for this worktree.
+      const tabByWorktree = { ...s.tabByWorktree, [pane.worktreeId]: tab };
+      saveTabs(tabByWorktree);
+      return { panes, tabByWorktree };
     }),
 
   setPaneDiff: (paneId, diff, tab) =>
-    set((s) => ({
-      panes: s.panes.map((p) => (p.id === paneId ? { ...p, diff, ...(tab ? { tab } : {}) } : p)),
-    })),
+    set((s) => {
+      const panes = s.panes.map((p) =>
+        p.id === paneId ? { ...p, diff, ...(tab ? { tab } : {}) } : p,
+      );
+      const worktreeId = s.panes.find((p) => p.id === paneId)?.worktreeId;
+      if (!tab || !worktreeId) return { panes };
+      const tabByWorktree = { ...s.tabByWorktree, [worktreeId]: tab };
+      saveTabs(tabByWorktree);
+      return { panes, tabByWorktree };
+    }),
 
   /**
    * Split by copying the active pane rather than opening an empty one: you
@@ -370,7 +427,13 @@ export const useSylva = create<SylvaState>((set, get) => ({
     set((s) => {
       if (s.panes.length >= 2) return {};
       const active = s.panes.find((p) => p.id === s.activePaneId) ?? s.panes[0];
-      const created = freshPane(active?.worktreeId ?? null);
+      const worktreeId = active?.worktreeId ?? null;
+      const created = {
+        ...freshPane(worktreeId),
+        // Same worktree, same place in it — a split that landed on Agent while
+        // you were reading a diff would be a second thing to undo.
+        tab: active?.tab ?? "agent",
+      };
       const panes = [...s.panes, created];
       savePanes(panes);
       return { panes, activePaneId: created.id };

@@ -203,6 +203,11 @@ export const api = {
     request<TreeListing>(`/api/worktrees/${worktreeId}/tree?path=${encodeURIComponent(path)}`),
   fileContent: (worktreeId: string, path: string) =>
     request<FileContent>(`/api/worktrees/${worktreeId}/file?path=${encodeURIComponent(path)}`),
+  saveFile: (worktreeId: string, path: string, content: string) =>
+    request<FileContent>(`/api/worktrees/${worktreeId}/file`, {
+      method: "PUT",
+      body: JSON.stringify({ path, content }),
+    }),
   searchContent: (worktreeId: string, q: string) =>
     request<ContentSearchResponse>(
       `/api/worktrees/${worktreeId}/search-content?q=${encodeURIComponent(q)}`,

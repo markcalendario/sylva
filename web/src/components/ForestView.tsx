@@ -2,8 +2,8 @@ import { useQueries } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useRepos } from "../lib/queries";
 import { spriteStateFor, useSylva } from "../state/store";
-import { circleMembers } from "sylva-shared";
-import { ForestScene, type CirclePlot, type Plot } from "./ForestScene";
+import { circleMembers, GROVE_ID } from "sylva-shared";
+import { ForestScene, type CirclePlot, type GrovePlot, type Plot } from "./ForestScene";
 
 /**
  * The clearing: every worktree across every repository, living in one scene.
@@ -82,7 +82,20 @@ export function ForestView() {
     ];
   });
 
-  const busy = plots.filter((p) => p.state === "working").length;
+  /**
+   * The grove stands on the map with everyone else. It is never "focused" here
+   * — reaching it means leaving the forest for its own view — so it only ever
+   * reads as unseen while it has news.
+   */
+  const grove: GrovePlot = {
+    state: spriteStateFor({ sessions, pendingPermissions, celebrating }, GROVE_ID),
+    unseen: unseenMap[GROVE_ID] ?? false,
+    focused: false,
+    repoCount: available.length,
+  };
+
+  const busy =
+    plots.filter((p) => p.state === "working").length + (grove.state === "working" ? 1 : 0);
   const loading = worktreeQueries.some((q) => q.isLoading);
 
   return (
@@ -110,13 +123,40 @@ export function ForestView() {
           <ForestScene
             plots={plots}
             circles={circlePlots}
+            grove={grove}
             onOpen={(id) => useSylva.getState().openWorktree(id)}
             onOpenCircle={(ids) => useSylva.getState().openCircle(ids)}
+            onOpenGrove={() => useSylva.getState().setView("grove")}
           />
 
           {/* The facts live here rather than on the map, so the plane stays a
               scene and the numbers stay scannable. */}
           <div className="ow-roster">
+            {/* First, and without divergence or a dirty count: the grove has no
+                worktree, so those columns would be blanks pretending to be
+                numbers. */}
+            <button
+              className="ow-chip"
+              onClick={() => useSylva.getState().setView("grove")}
+              data-tip="The dryad that belongs to no worktree"
+            >
+              <span className="ow-chip-name">the grove</span>
+              <span className={`ow-chip-state ow-state-${grove.state}`}>
+                {grove.state === "idle"
+                  ? "resting"
+                  : grove.state === "working"
+                    ? "working"
+                    : grove.state === "success"
+                      ? "done"
+                      : "needs you"}
+              </span>
+              <span className="div-zero">no tree</span>
+              {(sessions[GROVE_ID]?.totalCostUsd ?? 0) > 0 && (
+                <span className="ow-chip-cost tabular">
+                  ${(sessions[GROVE_ID]?.totalCostUsd ?? 0).toFixed(2)}
+                </span>
+              )}
+            </button>
             {plots.map((plot) => {
               const dirty = plot.status
                 ? plot.status.staged.length +

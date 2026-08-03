@@ -1,9 +1,10 @@
 import { ChevronDown, ChevronRight, File as FileIcon, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ContentSearchResponse, FileSearchResponse, TreeEntry } from "sylva-shared";
-import { api } from "../lib/api";
+import { api, ApiFailure } from "../lib/api";
+import { chunkClass, highlightLines, languageFor } from "../lib/highlight";
 import { useSylva } from "../state/store";
-import { useFileContent, useTree } from "../lib/queries";
+import { useFileContent, useInvalidate, useTree } from "../lib/queries";
 
 /**
  * Browse the worktree, not just what changed in it. Directories load on
@@ -414,7 +415,7 @@ function Directory({
   return (
     <ul className="tree-list">
       {tree.data.entries.map((entry) => (
-        <Node
+        <TreeNode
           key={entry.path}
           worktreeId={worktreeId}
           entry={entry}
@@ -427,7 +428,8 @@ function Directory({
   );
 }
 
-function Node({
+/** Named for the tree, not the DOM: plain `Node` shadows the global one. */
+function TreeNode({
   worktreeId,
   entry,
   selected,
@@ -478,6 +480,46 @@ function Node({
   );
 }
 
+/**
+ * Above this, the editor stops re-colouring as you type.
+ *
+ * The coloured layer is rebuilt from the draft on every keystroke, and
+ * tokenising tens of thousands of characters between one and the next is felt
+ * immediately. Reading is unaffected — that highlight is computed once.
+ */
+const EDIT_HIGHLIGHT_LIMIT = 60_000;
+
+/**
+ * Turn a position in the rendered text into an offset into the file.
+ *
+ * The coloured view is the file's own characters split across a span per token,
+ * so summing the text nodes that precede a point counts exactly the characters
+ * that precede it in the file — no font metrics, no assumptions about tabs.
+ */
+function offsetOfNode(root: HTMLElement, node: Node, offset: number): number | null {
+  if (!root.contains(node) || node.nodeType !== Node.TEXT_NODE) return null;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let total = 0;
+  while (walker.nextNode()) {
+    if (walker.currentNode === node) return total + offset;
+    total += (walker.currentNode as Text).data.length;
+  }
+  return null;
+}
+
+/** Where in the file a click landed. */
+function caretOffsetFromPoint(root: HTMLElement, x: number, y: number): number | null {
+  // Two spellings of the same API: the standard one, and WebKit's older one.
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  const hit = doc.caretPositionFromPoint?.(x, y);
+  if (hit) return offsetOfNode(root, hit.offsetNode, hit.offset);
+  const range = doc.caretRangeFromPoint?.(x, y);
+  return range ? offsetOfNode(root, range.startContainer, range.startOffset) : null;
+}
+
 function FilePreview({
   worktreeId,
   path,
@@ -488,13 +530,58 @@ function FilePreview({
   highlight?: number | null;
 }) {
   const file = useFileContent(worktreeId, path);
+  const invalidate = useInvalidate();
   const lineRef = useRef<HTMLSpanElement>(null);
+  const codeRef = useRef<HTMLPreElement>(null);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  /** The text being edited, or null when this is a read. */
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** Where to put the caret once the editor exists, from where you clicked. */
+  const [pendingCaret, setPendingCaret] = useState<[number, number] | null>(null);
+
+  const content = file.data?.binary ? "" : (file.data?.content ?? "");
+  const language = languageFor(path);
+  // Reading: tokenised once, since neither the text nor the grammar changes
+  // while you scroll. Editing: rebuilt per keystroke, hence the size limit.
+  const readLines = useMemo(() => highlightLines(content, language), [content, language]);
+  const editLines = useMemo(
+    () =>
+      draft === null
+        ? []
+        : highlightLines(draft, draft.length <= EDIT_HIGHLIGHT_LIMIT ? language : null),
+    [draft, language],
+  );
 
   // Arriving from a text match should land on the line that matched, not at
   // the top of a two-thousand-line file.
   useEffect(() => {
     lineRef.current?.scrollIntoView({ block: "center" });
   }, [path, highlight, file.data]);
+
+  // Switching files leaves the editor: an unsaved draft belongs to the file it
+  // was typed against, and carrying it across would write it to the wrong one.
+  useEffect(() => {
+    setDraft(null);
+    setError(null);
+    setPendingCaret(null);
+  }, [worktreeId, path]);
+
+  /**
+   * Put the caret where the click was. The editor covers the whole file rather
+   * than scrolling inside itself, so focusing it can't jump the view — which is
+   * what makes clicking line 400 land on line 400 instead of the top.
+   */
+  useEffect(() => {
+    if (!pendingCaret) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus({ preventScroll: true });
+    editor.setSelectionRange(pendingCaret[0], pendingCaret[1]);
+    setPendingCaret(null);
+  }, [pendingCaret]);
 
   if (file.isLoading) return <div className="tree-note">Loading {path}…</div>;
   if (file.isError || !file.data) return <div className="tree-note">Couldn't read {path}.</div>;
@@ -506,32 +593,170 @@ function FilePreview({
     );
   }
 
-  const lines = file.data.content.split("\n");
+  const editable = !file.data.truncated;
+  const editing = draft !== null;
+  const dirty = editing && draft !== content;
+
+  /**
+   * Start editing from a click on the text.
+   *
+   * A selection dragged out before the click is kept — you highlighted that
+   * span for a reason, and the usual reason is that you are about to replace
+   * it. Anything else starts a caret where the pointer was.
+   */
+  const beginEdit = (event: React.MouseEvent<HTMLPreElement>) => {
+    if (!editable || editing) return;
+    const pre = codeRef.current;
+    // Clicking past the end of the text is a click at the end of the text.
+    let caret: [number, number] = [content.length, content.length];
+
+    if (pre) {
+      const selection = window.getSelection();
+      const dragged =
+        selection && !selection.isCollapsed && selection.anchorNode && selection.focusNode
+          ? ([
+              offsetOfNode(pre, selection.anchorNode, selection.anchorOffset),
+              offsetOfNode(pre, selection.focusNode, selection.focusOffset),
+            ] as const)
+          : null;
+
+      if (dragged && dragged[0] !== null && dragged[1] !== null) {
+        // Selections run backwards as readily as forwards.
+        caret = dragged[0] <= dragged[1] ? [dragged[0], dragged[1]] : [dragged[1], dragged[0]];
+      } else {
+        const at = caretOffsetFromPoint(pre, event.clientX, event.clientY);
+        if (at !== null) caret = [at, at];
+      }
+    }
+
+    setDraft(content);
+    setPendingCaret(caret);
+  };
+
+  const save = async () => {
+    if (draft === null) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.saveFile(worktreeId, path, draft);
+      invalidate.file(worktreeId, path);
+      // The patch on the Git tab is about to be wrong, and so is the file's
+      // place in the change list; both are cheap to re-ask for.
+      invalidate.diffs();
+      invalidate.status(worktreeId);
+      setDraft(null);
+    } catch (e) {
+      setError(e instanceof ApiFailure ? (e.detail ?? e.message) : `Couldn't save ${path}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="tree-file">
       <header className="tree-file-head">
         <code>{path}</code>
         <span className="tree-file-size">{bytes(file.data.size)}</span>
-      </header>
-      <pre className="tree-file-body">
-        {lines.map((text, i) => {
-          const number = i + 1;
-          const hit = highlight === number;
-          return (
-            <span
-              key={number}
-              {...(hit ? { ref: lineRef } : {})}
-              className={`tree-file-line ${hit ? "tree-file-line-hit" : ""}`}
+        {editing ? (
+          <span className="tree-file-actions">
+            <button
+              className="btn-quiet"
+              disabled={saving}
+              onClick={() => {
+                setDraft(null);
+                setError(null);
+              }}
+              data-tip="Discard these edits and go back to reading"
             >
-              {text || " "}
-              {"\n"}
+              Cancel
+            </button>
+            <button
+              className="btn-primary"
+              disabled={saving || !dirty}
+              onClick={() => void save()}
+              data-tip={dirty ? "Write this back to the worktree" : "Nothing has changed yet"}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </span>
+        ) : (
+          editable && (
+            /* No button: the text itself is the control. This says so once,
+               quietly, because an affordance nobody can see isn't one. */
+            <span className="tree-file-hint" data-tip="Click anywhere in the file to edit it">
+              click to edit
             </span>
-          );
-        })}
-      </pre>
+          )
+        )}
+      </header>
+
+      {error && (
+        <div className="form-error" data-tip="The file wasn't written">
+          {error}
+        </div>
+      )}
+
+      {/* One scrolling box holding two layers that always agree: the coloured
+          text, and — while editing — a transparent textarea laid exactly over
+          it. The textarea is as tall as the whole file rather than a window
+          onto it, so there is no second scrollbar to keep in step and no jump
+          when it takes focus. */}
+      <div className="tree-code">
+        <div className="tree-code-inner">
+          <pre
+            className={`tree-file-body ${editable && !editing ? "tree-file-body-editable" : ""}`}
+            ref={codeRef}
+            aria-hidden={editing}
+            {...(editable && !editing ? { onClick: beginEdit } : {})}
+          >
+            {(editing ? editLines : readLines).map((chunks, i) => {
+              const number = i + 1;
+              const hit = !editing && highlight === number;
+              return (
+                <span
+                  key={number}
+                  {...(hit ? { ref: lineRef } : {})}
+                  className={`tree-file-line ${hit ? "tree-file-line-hit" : ""}`}
+                >
+                  {chunks.length === 0
+                    ? " "
+                    : chunks.map((chunk, c) => (
+                        <span key={c} className={chunkClass(chunk.type)}>
+                          {chunk.text}
+                        </span>
+                      ))}
+                  {"\n"}
+                </span>
+              );
+            })}
+          </pre>
+
+          {editing && (
+            <textarea
+              ref={editorRef}
+              className="tree-file-editor"
+              value={draft}
+              spellCheck={false}
+              wrap="off"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                // The one shortcut worth having here; everything else is a
+                // normal textarea, including Tab, which still moves focus out.
+                if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+                  e.preventDefault();
+                  if (dirty && !saving) void save();
+                }
+              }}
+              data-tip="⌘S saves · Cancel discards"
+            />
+          )}
+        </div>
+      </div>
+
       {file.data.truncated && (
-        <p className="tree-note">Cut off at 256 KB — open it in your editor to see the rest.</p>
+        <p className="tree-note">
+          Cut off at 256 KB — open it in your editor to read the rest, and to change it.
+        </p>
       )}
     </div>
   );

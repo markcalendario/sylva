@@ -21,10 +21,18 @@ export function HoverCard({
   card,
   children,
   className,
+  placement = "below",
 }: {
   card: ReactNode;
   children: ReactNode;
   className?: string;
+  /**
+   * Where the card prefers to sit. "below" suits a button — the card appears
+   * under the thing you pointed at. "beside" suits a list: rows are full-width
+   * and stacked, so a card below one covers the next three, while the space to
+   * the right of the list is empty.
+   */
+  placement?: "below" | "beside";
 }) {
   const anchorRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -60,15 +68,27 @@ export function HoverCard({
 
     const rect = anchor.getBoundingClientRect();
     const box = el.getBoundingClientRect();
-    const below = rect.bottom + GAP + box.height <= window.innerHeight - EDGE;
-    const top = below ? rect.bottom + GAP : Math.max(EDGE, rect.top - box.height - GAP);
-    const left = Math.min(
-      Math.max(EDGE, rect.left),
-      Math.max(EDGE, window.innerWidth - box.width - EDGE),
-    );
+    const clamp = (value: number, extent: number, limit: number) =>
+      Math.min(Math.max(EDGE, value), Math.max(EDGE, limit - extent - EDGE));
+
+    let top: number;
+    let left: number;
+    if (placement === "beside") {
+      // Right of the anchor, flipping to its left only when there is no room —
+      // and vertically aligned with the row, clamped so a card taller than the
+      // space below it rides up rather than running off the bottom.
+      const fitsRight = rect.right + GAP + box.width <= window.innerWidth - EDGE;
+      left = fitsRight ? rect.right + GAP : Math.max(EDGE, rect.left - box.width - GAP);
+      top = clamp(rect.top, box.height, window.innerHeight);
+    } else {
+      const below = rect.bottom + GAP + box.height <= window.innerHeight - EDGE;
+      top = below ? rect.bottom + GAP : Math.max(EDGE, rect.top - box.height - GAP);
+      left = clamp(rect.left, box.width, window.innerWidth);
+    }
+
     el.style.top = `${Math.round(top)}px`;
     el.style.left = `${Math.round(left)}px`;
-  }, [open]);
+  }, [open, placement]);
 
   return (
     <div

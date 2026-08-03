@@ -247,3 +247,59 @@ describe("cycling the active pane's tabs", () => {
     expect(tab()).toBe("agent");
   });
 });
+
+/**
+ * A tab belongs to the worktree you were reading, not to the pane you were
+ * reading it in. Leaving one tree at its Terminal used to put every tree you
+ * opened afterwards into a terminal too.
+ */
+describe("remembering the tab per worktree", () => {
+  beforeEach(() => {
+    useSylva.setState({ tabByWorktree: {}, view: "workspace" });
+    showPane(null);
+  });
+
+  function paneId(): string {
+    const id = useSylva.getState().panes[0]?.id;
+    if (!id) throw new Error("expected a pane");
+    return id;
+  }
+
+  it("restores the tab a worktree was left on", () => {
+    showPane("wt-a");
+    useSylva.getState().setPaneTab(paneId(), "terminal");
+
+    showPane("wt-b");
+    expect(useSylva.getState().panes[0]?.tab).toBe("agent");
+
+    showPane("wt-a");
+    expect(useSylva.getState().panes[0]?.tab).toBe("terminal");
+  });
+
+  it("does not drag one worktree's tab onto another", () => {
+    showPane("wt-a");
+    useSylva.getState().setPaneTab(paneId(), "git");
+    showPane("wt-b");
+    expect(useSylva.getState().panes[0]?.tab).toBe("agent");
+    expect(useSylva.getState().tabByWorktree["wt-b"]).toBeUndefined();
+  });
+
+  it("counts stepping with the keyboard as choosing a tab", () => {
+    showPane("wt-a");
+    useSylva.getState().cycleActiveTab(1);
+    expect(useSylva.getState().tabByWorktree["wt-a"]).toBe("files");
+  });
+
+  it("remembers the tab an opened diff switched to", () => {
+    showPane("wt-a");
+    useSylva
+      .getState()
+      .setPaneDiff(paneId(), { worktreeId: "wt-a", path: "a.ts", staged: false }, "git");
+    expect(useSylva.getState().tabByWorktree["wt-a"]).toBe("git");
+  });
+
+  it("starts a worktree it has never seen on the agent", () => {
+    showPane("wt-new");
+    expect(useSylva.getState().panes[0]?.tab).toBe("agent");
+  });
+});

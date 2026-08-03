@@ -167,7 +167,13 @@ function CommitRow({
   const open = openSha === commit.sha;
   return (
     <li className={`graph-row-wrap ${open ? "graph-row-open" : ""}`}>
-      <HoverCard className="graph-row-anchor" card={<CommitCard commit={commit} />}>
+      {/* Beside, not below: commit rows are stacked full-width, so a card under
+          one of them hides the three commits you were comparing it against. */}
+      <HoverCard
+        className="graph-row-anchor"
+        placement="beside"
+        card={<CommitCard commit={commit} />}
+      >
         <div
           className="graph-row"
           tabIndex={0}

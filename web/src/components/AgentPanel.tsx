@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
+import { compactTokens } from "../lib/format";
 import { ensureNotifyPermission } from "../lib/notify";
-import { Eraser, Paperclip, Sparkles, Square, X } from "lucide-react";
+import { ArrowDown, Eraser, Paperclip, Sparkles, Square, X } from "lucide-react";
 import { confirm } from "../lib/confirm";
 import { AgentSettingsButton } from "./AgentSettingsButton";
 import { SavedPromptsButton } from "./SavedPromptsButton";
@@ -19,12 +20,21 @@ type Block =
   | { kind: "result"; outcome: "success" | "error" | "interrupted"; costUsd?: number }
   | { kind: "notice"; text: string };
 
-/** Compact enough for a one-line header; exact numbers live in the tooltip. */
-function compactTokens(n: number): string {
-  if (n < 1000) return `${n} tokens`;
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k tokens`;
-  return `${(n / 1_000_000).toFixed(1)}M tokens`;
-}
+/**
+ * How much of a long conversation is drawn at once, and how much more each
+ * "show earlier" reveals.
+ *
+ * A day-long session runs to thousands of blocks, and every one of them is
+ * markdown that React re-reconciles on each streamed chunk — which is what
+ * makes a long chat crawl while the dryad is mid-answer. The newest blocks are
+ * the ones being read; the rest are history, and history can wait to be asked
+ * for.
+ */
+const WINDOW_START = 60;
+const WINDOW_STEP = 40;
+
+/** Distance from the bottom, in px, still counted as "at the bottom". */
+const BOTTOM_SLACK = 60;
 
 const LEGACY_CD_PREFIX = /^\s*cd\s+(?:"[^"]*"|'[^']*'|[^\s&|;]+)\s*&&\s*/;
 
@@ -152,7 +162,45 @@ function PermissionCard({ request }: { request: PermissionRequest }) {
   );
 }
 
-function BlockRow({ block }: { block: Block }) {
+/**
+ * Two blocks that would draw identically.
+ *
+ * `toBlocks` rebuilds the whole list from the event stream on every streamed
+ * chunk, so every block is a new object even when nothing about it changed —
+ * which means identity tells React nothing and it re-renders (and re-parses
+ * the markdown of) the entire conversation for each token that arrives.
+ * Comparing what is actually drawn is what makes the memo below bite.
+ */
+function sameBlock(a: Block, b: Block): boolean {
+  if (a.kind !== b.kind) return false;
+  switch (a.kind) {
+    case "user":
+    case "assistant":
+      return a.text === (b as typeof a).text;
+    case "notice":
+      return a.text === (b as typeof a).text;
+    case "result": {
+      const other = b as typeof a;
+      return a.outcome === other.outcome && a.costUsd === other.costUsd;
+    }
+    case "tools": {
+      const other = b as typeof a;
+      if (a.items.length !== other.items.length) return false;
+      return a.items.every((item, i) => {
+        const there = other.items[i];
+        return (
+          !!there &&
+          item.id === there.id &&
+          item.summary === there.summary &&
+          item.detail === there.detail &&
+          item.error === there.error
+        );
+      });
+    }
+  }
+}
+
+const BlockRow = memo(function BlockRow({ block }: { block: Block }) {
   switch (block.kind) {
     case "user":
       return <div className="msg msg-user">{block.text}</div>;
@@ -199,7 +247,7 @@ function BlockRow({ block }: { block: Block }) {
         </div>
       );
   }
-}
+}, (prev, next) => sameBlock(prev.block, next.block));
 
 export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   const transcript = useSylva((s) => s.transcripts[worktreeId] ?? NO_EVENTS);
@@ -230,6 +278,17 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   const stickToBottom = useRef(true);
   const blockRefs = useRef(new Map<number, HTMLDivElement>());
   const [activePrompt, setActivePrompt] = useState<number | null>(null);
+  /**
+   * The same fact as `stickToBottom`, in state rather than a ref, because the
+   * jump button has to appear the moment you scroll away — and a ref changing
+   * renders nothing.
+   */
+  const [atBottom, setAtBottom] = useState(true);
+  const [windowSize, setWindowSize] = useState(WINDOW_START);
+  /** Distance from the bottom to restore after older blocks are prepended. */
+  const growthAnchor = useRef<number | null>(null);
+  /** A prompt to jump to once the window has grown far enough back to hold it. */
+  const [pendingJump, setPendingJump] = useState<number | null>(null);
 
   const blocks = useMemo(() => toBlocks(transcript), [transcript]);
 
@@ -241,10 +300,58 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
     [blocks],
   );
 
+  /**
+   * The tail of the conversation, and how much of it is being withheld. Indices
+   * stay absolute — the jump rail, the active-prompt highlight and the refs all
+   * speak in positions within the whole transcript, not within the slice.
+   */
+  const hidden = Math.max(0, blocks.length - windowSize);
+  const shown = hidden > 0 ? blocks.slice(hidden) : blocks;
+
+  // A different dryad is a different conversation: back to the newest blocks,
+  // pinned to the bottom, with nothing of the last one's scroll position left.
+  useEffect(() => {
+    setWindowSize(WINDOW_START);
+    setPendingJump(null);
+    setActivePrompt(null);
+    stickToBottom.current = true;
+    setAtBottom(true);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [worktreeId]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [transcript.length, permissions.length]);
+
+  /**
+   * Revealing older blocks adds height above the viewport, which would
+   * otherwise shove the line you were reading down the screen. Measuring from
+   * the *bottom* and restoring that instead keeps it exactly where it was.
+   */
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const anchor = growthAnchor.current;
+    growthAnchor.current = null;
+    if (el && anchor !== null) el.scrollTop = el.scrollHeight - anchor;
+  }, [windowSize]);
+
+  const revealOlder = () => {
+    // A growth already measured but not yet restored: scroll events arrive far
+    // faster than renders, and each one would otherwise reveal another slab.
+    if (hidden === 0 || growthAnchor.current !== null) return;
+    const el = scrollRef.current;
+    growthAnchor.current = el ? el.scrollHeight - el.scrollTop : null;
+    setWindowSize((n) => n + WINDOW_STEP);
+  };
+
+  const goToBottom = () => {
+    const el = scrollRef.current;
+    stickToBottom.current = true;
+    setAtBottom(true);
+    el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
 
   /** Highlight the prompt whose section the reader is currently inside. */
   const syncActivePrompt = () => {
@@ -264,14 +371,35 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
 
   useEffect(syncActivePrompt, [blocks.length, prompts.length]);
 
-  const jumpTo = (blockIndex: number) => {
+  const scrollToBlock = (blockIndex: number) => {
     const container = scrollRef.current;
     const el = blockRefs.current.get(blockIndex);
     if (!container || !el) return;
     stickToBottom.current = false;
+    setAtBottom(false);
     container.scrollTo({ top: el.offsetTop - container.offsetTop - 12, behavior: "smooth" });
     setActivePrompt(blockIndex);
   };
+
+  const jumpTo = (blockIndex: number) => {
+    // The rail lists every prompt in the conversation, including ones older
+    // than the window. Reach back far enough to hold the target, then jump
+    // once it has actually been drawn.
+    if (!blockRefs.current.has(blockIndex)) {
+      growthAnchor.current = null;
+      setWindowSize((n) => Math.max(n, blocks.length - blockIndex + WINDOW_STEP));
+      setPendingJump(blockIndex);
+      return;
+    }
+    scrollToBlock(blockIndex);
+  };
+
+  useLayoutEffect(() => {
+    if (pendingJump === null || !blockRefs.current.has(pendingJump)) return;
+    scrollToBlock(pendingJump);
+    setPendingJump(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingJump, windowSize]);
 
   const running = session?.status === "running";
   const waiting = permissions.length > 0;
@@ -430,7 +558,12 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           ref={scrollRef}
           onScroll={(e) => {
             const el = e.currentTarget;
-            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+            const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLACK;
+            stickToBottom.current = bottom;
+            setAtBottom((was) => (was === bottom ? was : bottom));
+            // Reaching the top is the ordinary way to ask for more history;
+            // the button below it is for anyone who'd rather say so.
+            if (el.scrollTop < 48) revealOlder();
             syncActivePrompt();
           }}
         >
@@ -439,18 +572,26 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
               Ask for anything — the dryad works right here in this worktree.
             </div>
           )}
-          {blocks.map((block, i) => (
-            <div
-              key={i}
-              className="block-anchor"
-              ref={(el) => {
-                if (el) blockRefs.current.set(i, el);
-                else blockRefs.current.delete(i);
-              }}
-            >
-              <BlockRow block={block} />
-            </div>
-          ))}
+          {hidden > 0 && (
+            <button className="chat-older" onClick={revealOlder} data-tip="Load older messages">
+              {hidden} earlier {hidden === 1 ? "message" : "messages"} — show more
+            </button>
+          )}
+          {shown.map((block, i) => {
+            const index = i + hidden;
+            return (
+              <div
+                key={index}
+                className="block-anchor"
+                ref={(el) => {
+                  if (el) blockRefs.current.set(index, el);
+                  else blockRefs.current.delete(index);
+                }}
+              >
+                <BlockRow block={block} />
+              </div>
+            );
+          })}
           {permissions.map((p) => (
             <PermissionCard key={p.id} request={p} />
           ))}
@@ -465,6 +606,21 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
             </div>
           )}
         </div>
+
+        {/* Only while you're actually away from the newest message: a button
+            that never leaves is a button that stops being read. */}
+        {!atBottom && blocks.length > 0 && (
+          <button
+            className="chat-jump"
+            onClick={goToBottom}
+            data-tip="Back to the newest message"
+            aria-label="Jump to the newest message"
+          >
+            <ArrowDown size={13} />
+            Latest
+          </button>
+        )}
+
         <PromptNav prompts={prompts} activeIndex={activePrompt} onJump={jumpTo} />
       </div>
 

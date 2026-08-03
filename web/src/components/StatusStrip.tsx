@@ -1,4 +1,5 @@
 import { GitBranch, Sparkles } from "lucide-react";
+import { compactTokens } from "../lib/format";
 import { useSylva } from "../state/store";
 
 export function StatusStrip({ onAbout }: { onAbout: () => void }) {
@@ -50,6 +51,13 @@ export function StatusStrip({ onAbout }: { onAbout: () => void }) {
             }>
             {dirty === 0 ? "clean" : `${dirty} dirty`}
           </span>
+          {session && (
+            <span
+              className="strip-item strip-usage"
+              data-tip={`${session.totalTokens.toLocaleString()} tokens read and written by this worktree's dryad`}>
+              {compactTokens(session.totalTokens)}
+            </span>
+          )}
           {session && (
             <span
               className="strip-item strip-cost"

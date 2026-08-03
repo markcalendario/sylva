@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Repo, Worktree, WorktreeStatus } from "sylva-shared";
+import { GROVE_ID, type Repo, type Worktree, type WorktreeStatus } from "sylva-shared";
 import type { SpriteState } from "../sprites/frames";
 import { playNoise, type Noise } from "../lib/audio";
 import { PixelArt } from "../sprites/pixel";
@@ -86,6 +86,22 @@ export interface CirclePlot {
   state: SpriteState;
   unseen: boolean;
   focused: boolean;
+}
+
+/**
+ * The grove dryad, which tends no tree at all.
+ *
+ * It belongs on the map for the same reason the others do: the forest is meant
+ * to answer "who is working and who needs me" in one look, and a dryad you can
+ * only find by remembering a button in the top bar is a dryad that gets
+ * forgotten while it waits.
+ */
+export interface GrovePlot {
+  state: SpriteState;
+  unseen: boolean;
+  focused: boolean;
+  /** How many repositories it can read, for the tooltip. */
+  repoCount: number;
 }
 
 /**
@@ -241,13 +257,17 @@ const standing = new Map<string, StationKey>();
 export function ForestScene({
   plots,
   circles = [],
+  grove,
   onOpen,
   onOpenCircle,
+  onOpenGrove,
 }: {
   plots: Plot[];
   circles?: CirclePlot[];
+  grove?: GrovePlot;
   onOpen: (id: string) => void;
   onOpenCircle?: (worktreeIds: string[]) => void;
+  onOpenGrove?: () => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const [viewWidth, setViewWidth] = useState(0);
@@ -266,10 +286,13 @@ export function ForestScene({
   }, []);
 
   const layout = useMemo(
-    // Circles stand on the map too, so they count towards how much of it
-    // there needs to be.
-    () => (viewWidth > 0 ? computeLayout(viewWidth, plots.length + circles.length) : null),
-    [viewWidth, plots.length, circles.length],
+    // Circles and the grove stand on the map too, so they count towards how
+    // much of it there needs to be.
+    () =>
+      viewWidth > 0
+        ? computeLayout(viewWidth, plots.length + circles.length + (grove ? 1 : 0))
+        : null,
+    [viewWidth, plots.length, circles.length, grove ? 1 : 0],
   );
 
   return (
@@ -279,8 +302,10 @@ export function ForestScene({
           layout={layout}
           plots={plots}
           circles={circles}
+          {...(grove ? { grove } : {})}
           onOpen={onOpen}
           {...(onOpenCircle ? { onOpenCircle } : {})}
+          {...(onOpenGrove ? { onOpenGrove } : {})}
         />
       )}
     </div>
@@ -291,14 +316,18 @@ function Plane({
   layout,
   plots,
   circles,
+  grove,
   onOpen,
   onOpenCircle,
+  onOpenGrove,
 }: {
   layout: Layout;
   plots: Plot[];
   circles: CirclePlot[];
+  grove?: GrovePlot;
   onOpen: (id: string) => void;
   onOpenCircle?: (worktreeIds: string[]) => void;
+  onOpenGrove?: () => void;
 }) {
   const plane = useMemo(() => renderPlane(layout), [layout]);
   const { stations } = layout;
@@ -340,6 +369,27 @@ function Plane({
    * actors land on the same slot the shared one keeps the nearer place.
    */
   const actors: SceneActor[] = useMemo(() => {
+    // The grove leads for the same reason circles do: there is one of it, it
+    // is the odd one out, and when it shares a slot it should keep the front.
+    const fromGrove: SceneActor[] = grove
+      ? [
+          {
+            id: GROVE_ID,
+            state: grove.state,
+            unseen: grove.unseen,
+            focused: grove.focused,
+            crew: 1,
+            label: "the grove",
+            tip: `the grove — tends no tree, ${
+              grove.repoCount === 0
+                ? "no repositories registered yet"
+                : `can read ${grove.repoCount} ${grove.repoCount === 1 ? "repository" : "repositories"}`
+            } · ${STATE_WORD[grove.state]} · click to open`,
+            onOpen: () => onOpenGrove?.(),
+          },
+        ]
+      : [];
+
     const fromCircles = circles.map((circle) => {
       const names = circle.members.map(
         (m) => m.worktree.branch ?? m.worktree.head.slice(0, 7),
@@ -370,9 +420,9 @@ function Plane({
       } satisfies SceneActor;
     });
 
-    return [...fromCircles, ...fromPlots];
+    return [...fromGrove, ...fromCircles, ...fromPlots];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plots, circles, labels]);
+  }, [plots, circles, grove, labels]);
 
   // Position comes from where each dryad is *painted*, which lags where its
   // state says it should be until the walk has been kicked off below. A CSS

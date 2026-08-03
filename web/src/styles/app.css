@@ -1260,6 +1260,46 @@ button:disabled {
   min-width: 0;
 }
 
+/* Back to the newest message. Floats over the transcript at the bottom right,
+   clear of the jump rail on the far edge, and only exists while you're
+   somewhere else in the conversation. */
+.chat-jump {
+  position: absolute;
+  right: calc(var(--pad-4) + 26px);
+  bottom: var(--pad-3);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-1);
+  padding: var(--pad-1) var(--pad-3);
+  border: 1px solid var(--pine-3);
+  border-radius: 999px;
+  background: var(--pine-2);
+  color: var(--moon);
+  font-size: var(--text-xs);
+  box-shadow: var(--shadow-raise);
+}
+
+.chat-jump:hover {
+  border-color: var(--firefly);
+  color: var(--firefly);
+}
+
+/* The head of a long conversation, withheld until asked for. */
+.chat-older {
+  align-self: center;
+  padding: var(--pad-1) var(--pad-3);
+  border: 1px dashed var(--pine-3);
+  border-radius: 999px;
+  color: var(--moss);
+  font-size: var(--text-xs);
+}
+
+.chat-older:hover {
+  border-color: var(--firefly-dim);
+  color: var(--firefly);
+}
+
 /* Wrapper that keeps each block measurable for the jump rail without
    disturbing how the blocks themselves align. */
 .block-anchor {
@@ -1370,10 +1410,14 @@ button:disabled {
   text-align: center;
 }
 
+/* 70% of the column rather than half of it: a bubble that stops at the middle
+   wastes the other side on every line, and prose reads worse for it. The cap
+   still leaves the ragged edge that tells the two speakers apart. */
 .msg {
-  max-width: 72ch;
+  max-width: 70%;
   padding: var(--pad-2) var(--pad-3);
   border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
@@ -1798,6 +1842,8 @@ button:disabled {
   flex: 1;
   resize: none;
   background: var(--pine-0);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
 
 .attach-btn {
@@ -2053,6 +2099,18 @@ button:disabled {
 .file-time {
   color: var(--moss-dim);
   font-size: var(--text-xs);
+}
+
+/* Which side of the index a row is about. Quiet: most rows aren't staged, and
+   the ones that are only need to be distinguishable, not announced. */
+.file-staged {
+  flex-shrink: 0;
+  padding: 0 var(--pad-1);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  color: var(--sapling);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
 }
 
 /* ---------- git panel ---------- */
@@ -2372,6 +2430,13 @@ button:disabled {
   color: var(--firefly);
 }
 
+/* Quieter than the cost beside it: tokens are context for that number rather
+   than a second headline. */
+.strip-usage {
+  color: var(--moss);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- dialogs ---------- */
 
 .dialog {
@@ -2433,6 +2498,85 @@ button:disabled {
 
 .field-hint {
   color: var(--moss-dim);
+}
+
+/* ---------- branch picker ---------- */
+
+/* Capped rather than unbounded: a repository with hundreds of branches would
+   otherwise push the dialog's buttons off the bottom of the screen. */
+.branch-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--pad-1);
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-0);
+}
+
+.branch-option {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  width: 100%;
+  padding: var(--pad-1) var(--pad-2);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--moon);
+  text-align: left;
+}
+
+.branch-option:hover {
+  background: var(--pine-2);
+}
+
+.branch-option-on {
+  background: var(--pine-2);
+  box-shadow: inset 2px 0 0 var(--firefly);
+}
+
+.branch-option-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-option-tag {
+  flex-shrink: 0;
+  color: var(--moss-dim);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+}
+
+/* What the button at the bottom is actually going to do, said once, where the
+   choice was made — the search box still holds whatever you typed. */
+.branch-chosen {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  padding: var(--pad-1) var(--pad-2);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--moon);
+}
+
+.branch-chosen-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+}
+
+.branch-chosen code {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mono-input {
@@ -2903,6 +3047,15 @@ button:disabled {
   padding: var(--pad-3);
 }
 
+/* A column the exact height of the panel: the header stays put and the code
+   below it does the scrolling, which is what keeps the editor overlay and the
+   text it covers on the same scroll position. */
+.tree-file {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
 .tree-file-head {
   display: flex;
   align-items: baseline;
@@ -2923,15 +3076,159 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-.tree-file-body {
+/* The one box that scrolls. Both layers live inside it, so they cannot drift
+   apart: there is only ever one scroll position between them. */
+.tree-code {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Sized by the coloured text — as wide as the longest line and as tall as the
+   file — which is what lets the editor cover it exactly. */
+.tree-code-inner {
+  position: relative;
+  min-width: 100%;
+  width: max-content;
+  min-height: 100%;
+}
+
+/* Every property below the colour is shared with .tree-file-editor. The two
+   layers sit on top of each other, so any difference in font, size, leading,
+   padding or tab width shows up immediately as text that drifts out of
+   register with its own caret. Change one, change the other. */
+.tree-file-body,
+.tree-file-editor {
   margin: 0;
   padding: var(--pad-3);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: var(--leading-normal);
-  color: var(--moon);
+  letter-spacing: normal;
   white-space: pre;
-  overflow-x: auto;
+  tab-size: 2;
+  border: 0;
+}
+
+.tree-file-body {
+  color: var(--moon);
+}
+
+/* The text is the control, so it says so on hover the way any control does. */
+.tree-file-body-editable {
+  cursor: text;
+}
+
+.tree-file-editor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Invisible text over visible text: what you read is the coloured layer
+     underneath, what you type into is this. The caret and the selection are
+     the only parts of the textarea that are allowed to show. */
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--firefly);
+  background: transparent;
+  border-radius: 0;
+  resize: none;
+  overflow: hidden;
+}
+
+.tree-file-editor:focus {
+  outline: none;
+}
+
+.tree-file-editor::selection {
+  background: rgb(255 180 84 / 0.24);
+}
+
+.tree-file-actions {
+  display: inline-flex;
+  gap: var(--pad-2);
+  align-items: center;
+}
+
+.tree-file-hint {
+  color: var(--moss-dim);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+}
+
+/* ---------- syntax colours ---------- */
+
+/* Prism's token names, namespaced (see lib/highlight.ts). Grouped by what the
+   eye is actually looking for in a file: what's quiet (comments), what's
+   literal (strings, numbers), and what's structural (keywords, names). */
+.tok-comment,
+.tok-prolog,
+.tok-doctype,
+.tok-cdata {
+  color: var(--moss-dim);
+  font-style: italic;
+}
+
+.tok-punctuation {
+  color: var(--moss);
+}
+
+.tok-keyword,
+.tok-atrule,
+.tok-rule,
+.tok-important,
+.tok-tag {
+  color: var(--ansi-magenta);
+}
+
+.tok-string,
+.tok-char,
+.tok-attr-value,
+.tok-regex,
+.tok-url {
+  color: var(--sapling);
+}
+
+.tok-number,
+.tok-boolean,
+.tok-constant,
+.tok-symbol {
+  color: var(--firefly);
+}
+
+.tok-function,
+.tok-class-name,
+.tok-selector,
+.tok-builtin {
+  color: var(--ansi-cyan);
+}
+
+.tok-property,
+.tok-attr-name,
+.tok-variable,
+.tok-parameter {
+  color: var(--stream);
+}
+
+.tok-operator,
+.tok-entity {
+  color: var(--ansi-bright-white);
+}
+
+.tok-deleted {
+  color: var(--ember);
+}
+
+.tok-inserted {
+  color: var(--sapling);
+}
+
+.tok-bold {
+  font-weight: 600;
+}
+
+.tok-italic {
+  font-style: italic;
 }
 
 /* ── Saved prompts ─────────────────────────────────────────────────────── */

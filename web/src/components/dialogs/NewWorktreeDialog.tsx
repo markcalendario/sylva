@@ -1,9 +1,39 @@
-import { useState } from "react";
-import type { Repo } from "sylva-shared";
+import { useMemo, useState } from "react";
+import { X } from "lucide-react";
+import type { BranchInfo, Repo } from "sylva-shared";
 import { api, ApiFailure } from "../../lib/api";
 import { useBranches, useInvalidate, usePreferences, useRepos } from "../../lib/queries";
 import { useSylva } from "../../state/store";
 import { Dialog } from "../Dialog";
+
+/** How many matches the list shows before it stops; the box narrows the rest. */
+const MAX_MATCHES = 40;
+
+/**
+ * Filter branches by a typed fragment, best first.
+ *
+ * Ranked rather than merely filtered because branch names share prefixes —
+ * `feature/auth`, `feature/auth-tests`, `hotfix/auth` — and an exact or
+ * leading match is almost always the one meant. Case-insensitive throughout:
+ * nobody remembers whether they capitalised the ticket number.
+ */
+function search(branches: BranchInfo[], query: string): BranchInfo[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return branches.slice(0, MAX_MATCHES);
+
+  return branches
+    .flatMap((branch) => {
+      const name = branch.name.toLowerCase();
+      const at = name.indexOf(q);
+      if (at === -1) return [];
+      // Exact, then leading, then a match at a path segment, then anywhere.
+      const rank = name === q ? 0 : at === 0 ? 1 : name[at - 1] === "/" ? 2 : 3;
+      return [{ branch, rank, at }];
+    })
+    .sort((a, b) => a.rank - b.rank || a.at - b.at || a.branch.name.localeCompare(b.branch.name))
+    .slice(0, MAX_MATCHES)
+    .map((m) => m.branch);
+}
 
 /**
  * The single way to grow a worktree. Creating one opens it in the active pane,
@@ -27,6 +57,8 @@ export function NewWorktreeDialog({
   const [repoId, setRepoId] = useState("");
   const [branch, setBranch] = useState("");
   const [baseRef, setBaseRef] = useState("");
+  /** What's typed in the existing-branch search box, which is not the choice. */
+  const [branchQuery, setBranchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -34,7 +66,9 @@ export function NewWorktreeDialog({
   const effectiveRepoId = repo?.id ?? repoId ?? "";
   const targetRepoId = effectiveRepoId || available[0]?.id || "";
   const branches = useBranches(open ? targetRepoId || null : null);
-  const freeBranches = branches.data?.filter((b) => !b.worktreeId) ?? [];
+  const allBranches = useMemo(() => branches.data ?? [], [branches.data]);
+  const freeBranches = useMemo(() => allBranches.filter((b) => !b.worktreeId), [allBranches]);
+  const matches = useMemo(() => search(freeBranches, branchQuery), [freeBranches, branchQuery]);
 
   const submit = async () => {
     setBusy(true);
@@ -49,6 +83,7 @@ export function NewWorktreeDialog({
       useSylva.getState().openWorktree(created.worktree.id);
       setBranch("");
       setBaseRef("");
+      setBranchQuery("");
       onClose();
     } catch (e) {
       setError(e instanceof ApiFailure ? (e.detail ?? e.message) : "Worktree creation failed");
@@ -73,7 +108,13 @@ export function NewWorktreeDialog({
         <button
           type="button"
           className={mode === "new" ? "seg-on" : ""}
-          onClick={() => setMode("new")}
+          /* The two modes mean two different things by `branch` — a name to
+             create, or a name to find — so switching clears it rather than
+             carrying a half-typed name into a search box. */
+          onClick={() => {
+            setMode("new");
+            setBranch("");
+          }}
           data-tip="Create a branch and check it out in the new worktree"
         >
           New branch
@@ -81,7 +122,11 @@ export function NewWorktreeDialog({
         <button
           type="button"
           className={mode === "existing" ? "seg-on" : ""}
-          onClick={() => setMode("existing")}
+          onClick={() => {
+            setMode("existing");
+            setBranch("");
+            setBranchQuery("");
+          }}
           data-tip="Check out a branch that has no worktree yet"
         >
           Existing branch
@@ -131,29 +176,83 @@ export function NewWorktreeDialog({
                 placeholder="main"
                 value={baseRef}
                 onChange={(e) => setBaseRef(e.target.value)}
-                data-tip="Branch or commit the new branch starts from"
+                /* Suggestions rather than a fixed list: a base ref can be any
+                   commit or tag, so the branches are a shortcut, not the set. */
+                list="worktree-base-refs"
+                data-tip="Branch or commit the new branch starts from — branch names are suggested as you type"
               />
+              <datalist id="worktree-base-refs">
+                {allBranches.map((b) => (
+                  <option key={b.name} value={b.name} />
+                ))}
+              </datalist>
             </label>
           </>
         ) : (
-          <label className="field">
+          <div className="field">
             Branch
-            <select
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              data-tip="Existing branch to check out here"
-            >
-              <option value="">Choose a branch…</option>
-              {freeBranches.map((b) => (
-                <option key={b.name} value={b.name}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-            {freeBranches.length === 0 && !branches.isLoading && (
-              <span className="field-hint">Every branch is already checked out in a worktree.</span>
+            {/* A repository with two hundred branches makes a <select> useless,
+                and the name you want is usually one you can half-remember —
+                so this is a search box with the matches under it. */}
+            <input
+              autoFocus
+              className="mono-input"
+              placeholder="Search branches…"
+              value={branchQuery}
+              onChange={(e) => setBranchQuery(e.target.value)}
+              aria-label="Search branches"
+              data-tip="Type any part of a branch name to narrow the list"
+            />
+
+            {branch && (
+              <div className="branch-chosen">
+                <span className="branch-chosen-label">checking out</span>
+                <code>{branch}</code>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setBranch("")}
+                  aria-label="Clear the chosen branch"
+                  data-tip="Pick a different branch"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             )}
-          </label>
+
+            {branches.isLoading ? (
+              <span className="field-hint">Reading the branches…</span>
+            ) : freeBranches.length === 0 ? (
+              <span className="field-hint">Every branch is already checked out in a worktree.</span>
+            ) : matches.length === 0 ? (
+              <span className="field-hint">
+                No free branch matches “{branchQuery.trim()}”.
+                {allBranches.some((b) => b.name.includes(branchQuery.trim()) && b.worktreeId)
+                  ? " One that does is already checked out somewhere."
+                  : ""}
+              </span>
+            ) : (
+              <ul className="branch-list">
+                {matches.map((b) => (
+                  <li key={b.name}>
+                    <button
+                      type="button"
+                      className={`branch-option ${branch === b.name ? "branch-option-on" : ""}`}
+                      onClick={() => setBranch(b.name)}
+                      data-tip={
+                        b.isCurrent
+                          ? "The branch this repository's main worktree is on"
+                          : "Check this branch out in the new worktree"
+                      }
+                    >
+                      <span className="branch-option-name">{b.name}</span>
+                      {b.isCurrent && <span className="branch-option-tag">current</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
 
         {error && (

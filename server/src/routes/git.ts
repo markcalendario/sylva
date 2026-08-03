@@ -7,6 +7,11 @@ import { createPullRequest, listPullRequests } from "../services/pr.js";
 const treeQuerySchema = z.object({ path: z.string().max(1000).optional() });
 const fileQuerySchema = z.object({ path: z.string().min(1).max(1000) });
 const searchQuerySchema = z.object({ q: z.string().max(200).optional() });
+/** The cap matches what `fileContent` will read back, so a save can't truncate. */
+const writeFileSchema = z.object({
+  path: z.string().min(1).max(1000),
+  content: z.string().max(256 * 1024),
+});
 const prSchema = z
   .object({
     draft: z.boolean().default(false),
@@ -156,6 +161,19 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     const { worktreeId } = req.params as { worktreeId: string };
     const { path } = fileQuerySchema.parse(req.query);
     return gitOps.fileContent(worktreeId, path);
+  });
+
+  /**
+   * Save an edit made in the Files tab. Broadcasts status afterwards rather
+   * than waiting on the watcher: the edit came from this app, so the change
+   * list should already reflect it by the time the save returns.
+   */
+  app.put("/api/worktrees/:worktreeId/file", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const body = writeFileSchema.parse(req.body);
+    const saved = await gitOps.writeFileContent(worktreeId, body.path, body.content);
+    await broadcastStatus(worktreeId);
+    return saved;
   });
 
   /** Pull requests already open on this repository. */
