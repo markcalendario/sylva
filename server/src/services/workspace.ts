@@ -1,9 +1,10 @@
 import { access, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type { Repo, Worktree } from "sylva-shared";
+import type { CreatedWorktree, Repo, Worktree } from "sylva-shared";
 import { badRequest, conflict, HttpError, notFound } from "../lib/errors.js";
 import { pathId } from "../lib/id.js";
 import { parseWorktreeList } from "../lib/parse.js";
+import { copyEnvFiles } from "./envFiles.js";
 import type { GitService } from "./git.js";
 import type { Store } from "./store.js";
 
@@ -159,7 +160,7 @@ export class Workspace {
   async createWorktree(
     repoId: string,
     opts: { branch: string; baseRef?: string; path?: string },
-  ): Promise<Worktree> {
+  ): Promise<CreatedWorktree> {
     const repo = this.requireRepo(repoId);
     if (!opts.branch.trim()) throw badRequest("Branch name is required");
     const branch = opts.branch.trim();
@@ -186,7 +187,16 @@ export class Workspace {
     const created =
       worktrees.find((w) => w.path === targetPath) ?? worktrees.find((w) => w.path === wanted);
     if (!created) throw new Error("worktree created but not found in list");
-    return created;
+
+    // Env files are gitignored, so the checkout left them behind and the tree
+    // can't run yet. Copied from the main worktree, and never at the cost of
+    // the worktree itself — it exists, and reporting it as a failure because a
+    // file couldn't be read would be a lie about what happened.
+    const copiedEnvFiles = this.store.preferences.copyEnvFiles
+      ? await copyEnvFiles(this.git, repo.path, created.path).catch(() => [])
+      : [];
+
+    return { worktree: created, copiedEnvFiles };
   }
 
   async removeWorktree(worktreeId: string, force: boolean): Promise<void> {

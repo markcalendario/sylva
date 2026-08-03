@@ -43,6 +43,7 @@ describe("Store", () => {
       editorTarget: "cursor",
       editorCommand: "",
       terminalShell: "/bin/fish",
+      copyEnvFiles: false,
       savedPrompts: [{ id: "p1", label: "Ship it", text: "Run the tests, then commit." }],
     });
     await store.setGlobalSettings({ bypassPermissions: false, model: "claude-opus-5", effort: null });

@@ -123,6 +123,10 @@ export class Store {
           typeof saved.terminalShell === "string"
             ? saved.terminalShell
             : base.preferences.terminalShell,
+        copyEnvFiles:
+          typeof saved.copyEnvFiles === "boolean"
+            ? saved.copyEnvFiles
+            : base.preferences.copyEnvFiles,
         savedPrompts: Array.isArray(saved.savedPrompts)
           ? saved.savedPrompts
           : base.preferences.savedPrompts,

@@ -8,6 +8,7 @@ import type {
   CommitDetail,
   CommitGraph,
   CommitManyResult,
+  CreatedWorktree,
   CreateTerminalRequest,
   DirListing,
   FileContent,
@@ -88,7 +89,10 @@ export const api = {
 
   listWorktrees: (repoId: string) => request<Worktree[]>(`/api/repos/${repoId}/worktrees`),
   createWorktree: (repoId: string, body: { branch: string; baseRef?: string; path?: string }) =>
-    request<Worktree>(`/api/repos/${repoId}/worktrees`, { method: "POST", body: JSON.stringify(body) }),
+    request<CreatedWorktree>(`/api/repos/${repoId}/worktrees`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   removeWorktree: (worktreeId: string, force: boolean) =>
     request<{ ok: true }>(`/api/worktrees/${worktreeId}`, {
       method: "DELETE",

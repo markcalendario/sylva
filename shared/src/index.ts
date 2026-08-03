@@ -21,6 +21,17 @@ export interface Worktree {
   isDetached: boolean;
 }
 
+/**
+ * A worktree that has just been grown, and what was carried into it that git
+ * would not have brought itself. Reported rather than done silently: copying a
+ * file nobody asked about into a new directory should be visible.
+ */
+export interface CreatedWorktree {
+  worktree: Worktree;
+  /** Paths, relative to the worktree root, of the env files copied across. */
+  copiedEnvFiles: string[];
+}
+
 // ---------- Git ----------
 
 export type FileChangeKind = "added" | "modified" | "deleted" | "renamed" | "untracked";
@@ -383,6 +394,14 @@ export interface AppPreferences {
   editorCommand: string;
   /** Shell the Terminal tab spawns. Empty means whatever $SHELL says. */
   terminalShell: string;
+  /**
+   * Carry `.env` files from the main worktree into every new one.
+   *
+   * They are gitignored, which is the whole point of them, and so `git worktree
+   * add` leaves them behind — the new tree checks out and then can't start. On
+   * by default because a worktree that can't run is the wrong default.
+   */
+  copyEnvFiles: boolean;
   savedPrompts: SavedPrompt[];
 }
 
@@ -390,6 +409,7 @@ export const PREFERENCE_DEFAULTS: AppPreferences = {
   editorTarget: "vscode",
   editorCommand: "",
   terminalShell: "",
+  copyEnvFiles: true,
   savedPrompts: [
     {
       id: "review",

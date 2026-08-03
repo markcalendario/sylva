@@ -37,7 +37,7 @@ describe("creating a repository", () => {
 
     // This is the whole reason for the initial commit: `git worktree add`
     // refuses to work against an unborn HEAD.
-    const worktree = await ctx.workspace.createWorktree(repo.id, {
+    const { worktree } = await ctx.workspace.createWorktree(repo.id, {
       branch: "feature/first",
       baseRef: "main",
     });

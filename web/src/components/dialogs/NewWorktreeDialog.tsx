@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Repo } from "sylva-shared";
 import { api, ApiFailure } from "../../lib/api";
-import { useBranches, useInvalidate, useRepos } from "../../lib/queries";
+import { useBranches, useInvalidate, usePreferences, useRepos } from "../../lib/queries";
 import { useSylva } from "../../state/store";
 import { Dialog } from "../Dialog";
 
@@ -21,6 +21,7 @@ export function NewWorktreeDialog({
   onClose: () => void;
 }) {
   const repos = useRepos();
+  const prefs = usePreferences();
   const invalidate = useInvalidate();
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [repoId, setRepoId] = useState("");
@@ -45,7 +46,7 @@ export function NewWorktreeDialog({
       });
       invalidate.worktrees(targetRepoId);
       invalidate.branches();
-      useSylva.getState().openWorktree(created.id);
+      useSylva.getState().openWorktree(created.worktree.id);
       setBranch("");
       setBaseRef("");
       onClose();
@@ -60,6 +61,12 @@ export function NewWorktreeDialog({
     <Dialog title="New worktree" open={open} onClose={onClose}>
       <p className="dialog-hint">
         Grows a new tree in the forest and takes you to it. Prompt the dryad once you're there.
+        {prefs.data?.copyEnvFiles && (
+          <>
+            {" "}
+            Any <code>.env</code> files go with it, so the tree can run as soon as it exists.
+          </>
+        )}
       </p>
 
       <div className="seg">

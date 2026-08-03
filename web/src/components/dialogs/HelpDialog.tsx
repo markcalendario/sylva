@@ -42,6 +42,20 @@ const SECTIONS: Section[] = [
         ),
       },
       {
+        q: "Why does a new worktree have my .env files?",
+        a: (
+          <>
+            Because <code>git worktree add</code> checks out tracked files and nothing else, and
+            env files are gitignored — so a new tree used to arrive unable to run until you
+            remembered which directory to copy them out of. Sylva copies every <code>.env</code>{" "}
+            and <code>.env.*</code> from the main worktree, in its root and in subdirectories, and
+            never overwrites a file the checkout already put there. Turn it off under{" "}
+            <strong>Settings → Worktrees</strong>. Ignored directories are skipped wholesale, so
+            nothing goes hunting through <code>node_modules</code>.
+          </>
+        ),
+      },
+      {
         q: "What happens to a running agent when I switch worktrees?",
         a: (
           <>

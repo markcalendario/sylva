@@ -115,6 +115,54 @@ export function TerminalShellField({
   );
 }
 
+/**
+ * Whether a new worktree gets the env files the old one had.
+ *
+ * `git worktree add` brings tracked files and nothing else, which leaves every
+ * new tree without the one thing it needs to actually run. Copying them is the
+ * default because the alternative default is a worktree that doesn't work.
+ */
+export function CopyEnvFilesField({
+  value,
+  onChange,
+}: {
+  value: AppPreferences;
+  onChange: (next: AppPreferences) => void;
+}) {
+  const on = value.copyEnvFiles;
+  return (
+    <div className="field">
+      <span data-tip="Copy .env files from the main worktree into each new one">
+        Carry env files across
+      </span>
+      <div className="seg">
+        <button
+          type="button"
+          className={on ? "seg-on" : ""}
+          onClick={() => onChange({ ...value, copyEnvFiles: true })}
+          data-tip="New worktrees get the env files the main one has"
+        >
+          Copy them
+        </button>
+        <button
+          type="button"
+          className={on ? "" : "seg-on"}
+          onClick={() => onChange({ ...value, copyEnvFiles: false })}
+          data-tip="Leave new worktrees without env files"
+        >
+          Leave them
+        </button>
+      </div>
+      <span className="field-hint">
+        Env files are gitignored, so <code>git worktree add</code> leaves them behind and the new
+        tree can't start. This copies every <code>.env</code>, <code>.env.local</code> and the like
+        from the main worktree — in its root <em>and</em> in subdirectories, so a monorepo gets the
+        one per package too. Files already in the new tree are never overwritten.
+      </span>
+    </div>
+  );
+}
+
 /** Snippets the prompt bar can append to whatever you've typed. */
 export function SavedPromptsField({
   value,

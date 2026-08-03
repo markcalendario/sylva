@@ -8,12 +8,18 @@ import { useSylva } from "../state/store";
 import { AudioControls } from "./AudioControls";
 import { TextSize } from "./TextSize";
 import { BypassWarning, EffortField, ModelField, PermissionField } from "./dialogs/settingsFields";
-import { OpenTargetField, SavedPromptsField, TerminalShellField } from "./dialogs/PreferenceFields";
+import {
+  CopyEnvFilesField,
+  OpenTargetField,
+  SavedPromptsField,
+  TerminalShellField,
+} from "./dialogs/PreferenceFields";
 
 const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "sound", label: "Sound" },
   { id: "workflow", label: "Workflow" },
+  { id: "worktrees", label: "Worktrees" },
   { id: "terminal", label: "Terminal" },
   { id: "agent", label: "Agent defaults" },
   { id: "repos", label: "Repositories" },
@@ -169,6 +175,14 @@ export function SettingsPage({
           <h3 className="settings-heading">Workflow</h3>
           <OpenTargetField value={prefs} onChange={setPrefs} />
           <SavedPromptsField value={prefs} onChange={setPrefs} />
+        </section>
+
+        <section className="settings-section" id="settings-worktrees">
+          <h3 className="settings-heading">Worktrees</h3>
+          <p className="dialog-hint">
+            What a newly grown worktree gets beyond the files git checks out.
+          </p>
+          <CopyEnvFilesField value={prefs} onChange={setPrefs} />
         </section>
 
         <section className="settings-section" id="settings-terminal">

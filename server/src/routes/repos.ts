@@ -52,9 +52,9 @@ export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.post("/api/repos/:repoId/worktrees", async (req, reply) => {
     const { repoId } = req.params as { repoId: string };
     const body = createWorktreeSchema.parse(req.body);
-    const worktree = await workspace.createWorktree(repoId, body);
+    const created = await workspace.createWorktree(repoId, body);
     reply.code(201);
-    return worktree;
+    return created;
   });
 
   app.delete("/api/worktrees/:worktreeId", async (req) => {

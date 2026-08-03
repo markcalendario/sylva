@@ -21,6 +21,7 @@ const preferencesSchema = z.object({
   editorTarget: openTargetSchema,
   editorCommand: z.string().max(500),
   terminalShell: z.string().max(500),
+  copyEnvFiles: z.boolean(),
   savedPrompts: z
     .array(
       z.object({
