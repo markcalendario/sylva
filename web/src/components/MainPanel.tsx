@@ -3,10 +3,12 @@ import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
 import { useRepos } from "../lib/queries";
 import { useSylva } from "../state/store";
+import { FleetView } from "./FleetView";
 import { ForestView } from "./ForestView";
 import { GroveView } from "./GroveView";
 import { Landing } from "./Landing";
 import { SettingsPage } from "./SettingsPage";
+import { ToolsView } from "./ToolsView";
 import { WorktreePane } from "./WorktreePane";
 
 /**
@@ -69,6 +71,22 @@ export function MainPanel({
     return (
       <main className="main">
         <GroveView />
+      </main>
+    );
+  }
+
+  if (view === "tools") {
+    return (
+      <main className="main main-scroll">
+        <ToolsView />
+      </main>
+    );
+  }
+
+  if (view === "fleet") {
+    return (
+      <main className="main main-scroll">
+        <FleetView />
       </main>
     );
   }

@@ -70,7 +70,8 @@ export interface Plot {
   repo: Repo;
   state: SpriteState;
   status?: WorktreeStatus;
-  cost?: number;
+  /** Tokens this worktree's dryad has read and written. */
+  tokens?: number;
   unseen: boolean;
   focused: boolean;
 }

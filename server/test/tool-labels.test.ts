@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeTool } from "../src/services/sessions.js";
+import { describeTool, locateFile } from "../src/services/sessions.js";
 
 const ROOT = "/Users/me/Desktop/GoRocky Repositories/erp and webapp/core";
 
@@ -60,5 +60,47 @@ describe("describeTool", () => {
     expect(describeTool("Task", { description: "audit mail templates" }, ROOT).summary).toBe(
       "audit mail templates",
     );
+  });
+});
+
+/**
+ * A transcript row that touched a file offers to open it, which means the
+ * server has to say *which* file — a worktree and a path inside it. One dryad
+ * can tend several worktrees, so "relative to the session" is not an answer.
+ */
+describe("locating a file a step touched", () => {
+  const A = { worktreeId: "wt-a", path: "/repos/alpha" };
+  const B = { worktreeId: "wt-b", path: "/repos/beta" };
+
+  it("finds the worktree a path is inside", () => {
+    expect(locateFile("/repos/beta/src/index.ts", [A, B])).toEqual({
+      worktreeId: "wt-b",
+      path: "src/index.ts",
+    });
+  });
+
+  it("gives up on a path that is in none of them", () => {
+    expect(locateFile("/etc/hosts", [A, B])).toBeNull();
+  });
+
+  it("picks the innermost when one worktree sits inside another", () => {
+    const outer = { worktreeId: "wt-outer", path: "/repos/alpha" };
+    const inner = { worktreeId: "wt-inner", path: "/repos/alpha/packages/ui" };
+    expect(locateFile("/repos/alpha/packages/ui/Button.tsx", [outer, inner])).toEqual({
+      worktreeId: "wt-inner",
+      path: "Button.tsx",
+    });
+  });
+
+  it("won't be talked out of a root by a path that climbs out of it", () => {
+    expect(locateFile("/repos/alpha/../beta/secret.ts", [A])).toBeNull();
+  });
+
+  it("has nothing to say about the root itself", () => {
+    expect(locateFile("/repos/alpha", [A])).toBeNull();
+  });
+
+  it("has nothing to say with no roots, which is the grove", () => {
+    expect(locateFile("/repos/alpha/x.ts", [])).toBeNull();
   });
 });

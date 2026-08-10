@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileCode2, Sparkles } from "lucide-react";
 import type { StatusEntry, WorktreeStatus } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
@@ -7,6 +7,7 @@ import { confirm } from "../lib/confirm";
 import { useInvalidate, useStatusQuery } from "../lib/queries";
 import { useSylva, type DiffSelection } from "../state/store";
 import { CreatePrButton } from "./CreatePrButton";
+import { PullRequestCard } from "./PullRequestCard";
 
 const KIND_GLYPH: Record<StatusEntry["kind"], string> = {
   added: "+",
@@ -82,6 +83,16 @@ function FileList({
               <span className="git-file-path">
                 {entry.renamedFrom ? `${entry.renamedFrom} → ${entry.path}` : entry.path}
               </span>
+            </button>
+            {/* The diff answers "what changed"; often the next question is
+                "and what does the rest of the file look like now". */}
+            <button
+              className="ghost git-file-open"
+              onClick={() => useSylva.getState().openFileHere({ worktreeId, path: entry.path })}
+              aria-label={`Open ${entry.path} in the Files tab`}
+              data-tip="Open this file in the Files tab"
+            >
+              <FileCode2 size={12} />
             </button>
             <button
               className="ghost git-file-action"
@@ -232,6 +243,10 @@ export function GitSection({
             </button>
             <CreatePrButton worktreeId={worktreeId} branch={status.branch} />
           </div>
+
+          {/* Above the change list, because "is my PR green" is a question you
+              ask before you start adding to it. */}
+          <PullRequestCard worktreeId={worktreeId} />
 
           {changed === 0 ? (
             <div className="git-clean" data-tip="Nothing has changed since the last commit">

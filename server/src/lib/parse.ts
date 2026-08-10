@@ -5,6 +5,7 @@ import type {
   DiffLine,
   FileChangeKind,
   FileDiff,
+  LineBlame,
   StatusEntry,
   Worktree,
   WorktreeStatus,
@@ -244,4 +245,81 @@ export function parseBranches(
     });
   }
   return branches;
+}
+
+/** All-zero sha: git's way of saying a line isn't in any commit yet. */
+const UNCOMMITTED_SHA = /^0+$/;
+
+/**
+ * One line's blame, from `git blame --porcelain`.
+ *
+ * The porcelain format leads with a header line carrying the sha, then a run of
+ * `key value` lines, then the source line prefixed by a tab. Only the first
+ * block matters here, because the caller asked about exactly one line.
+ */
+export function parseBlamePorcelain(output: string, line: number): LineBlame {
+  const lines = output.split("\n");
+  const header = lines[0]?.split(" ") ?? [];
+  const sha = header[0] ?? "";
+
+  const fields = new Map<string, string>();
+  for (const raw of lines.slice(1)) {
+    // The source line itself is tab-prefixed and ends the header block.
+    if (raw.startsWith("\t")) break;
+    const space = raw.indexOf(" ");
+    if (space === -1) {
+      if (raw) fields.set(raw, "");
+      continue;
+    }
+    fields.set(raw.slice(0, space), raw.slice(space + 1));
+  }
+
+  const committed = sha !== "" && !UNCOMMITTED_SHA.test(sha);
+  const seconds = Number(fields.get("author-time"));
+  // git reports seconds; an uncommitted line has no meaningful time at all.
+  const authoredAt =
+    committed && Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : "";
+
+  return {
+    line,
+    committed,
+    sha: committed ? sha : "",
+    shortSha: committed ? sha.slice(0, 7) : "",
+    author: committed ? (fields.get("author") ?? "") : "",
+    authorEmail: committed ? (fields.get("author-mail") ?? "").replace(/^<|>$/g, "") : "",
+    authoredAt,
+    summary: committed ? (fields.get("summary") ?? "") : "",
+  };
+}
+
+/** A hunk header from `diff --unified=0`, e.g. `@@ -12,3 +12,4 @@`. */
+const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+
+/**
+ * Which line numbers a patch adds or changes, in the new file.
+ *
+ * With `--unified=0` every hunk is exactly the change and nothing around it, so
+ * the header's ranges are the answer without reading a single body line. A hunk
+ * that removes as well as adds is a modification — the lines are replacements
+ * rather than insertions, and marking them differently is the difference
+ * between "this is new" and "this used to say something else".
+ */
+export function parseChangedLines(output: string): { added: number[]; modified: number[] } {
+  const added: number[] = [];
+  const modified: number[] = [];
+
+  for (const raw of output.split("\n")) {
+    const match = HUNK.exec(raw);
+    if (!match) continue;
+
+    const removedCount = match[2] === undefined ? 1 : Number(match[2]);
+    const start = Number(match[3]);
+    const addedCount = match[4] === undefined ? 1 : Number(match[4]);
+    if (!Number.isFinite(start) || addedCount === 0) continue;
+
+    const into = removedCount > 0 ? modified : added;
+    for (let i = 0; i < addedCount; i++) into.push(start + i);
+  }
+
+  return { added, modified };
 }

@@ -89,6 +89,84 @@ export function useFileContent(worktreeId: string | null, path: string | null) {
   });
 }
 
+/**
+ * The pull request for a worktree's branch.
+ *
+ * Refetched on an interval rather than only on mount: checks go green minutes
+ * after a push, and a card that still says "pending" long after CI finished is
+ * worse than no card. Kept slow — every poll is a `gh` process.
+ */
+export function useCurrentPull(worktreeId: string | null) {
+  return useQuery({
+    queryKey: ["pull", worktreeId],
+    queryFn: () => api.currentPull(worktreeId as string),
+    enabled: worktreeId !== null,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+}
+
+/**
+ * What's left of the Claude plan. One query for the whole app — the limits
+ * belong to the login, so panes share the answer rather than each asking.
+ */
+export function usePlanUsage() {
+  return useQuery({
+    queryKey: ["usage"],
+    queryFn: api.usage,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+    // A machine on an API key has no plan windows and never will within a
+    // session; retrying that answer just spawns processes.
+    retry: false,
+  });
+}
+
+/**
+ * Which lines of the open file differ from the last commit.
+ *
+ * Invalidated alongside the diff, since they are two readings of one fact — a
+ * gutter still marking lines you committed a minute ago is worse than no
+ * gutter, because you would believe it.
+ */
+export function useChangedLines(worktreeId: string | null, path: string | null) {
+  return useQuery({
+    queryKey: ["changed-lines", worktreeId, path],
+    queryFn: () => api.changedLines(worktreeId as string, path as string),
+    enabled: worktreeId !== null && path !== null,
+  });
+}
+
+/**
+ * Who last touched the line the caret is on.
+ *
+ * One query per line, cached forever: a line's history doesn't change while you
+ * sit on it, and moving up and down a file re-asking the same twenty questions
+ * would run a `git blame` per keystroke.
+ */
+export function useLineBlame(worktreeId: string | null, path: string | null, line: number | null) {
+  return useQuery({
+    queryKey: ["blame", worktreeId, path, line],
+    queryFn: () => api.blame(worktreeId as string, path as string, line as number),
+    enabled: worktreeId !== null && path !== null && line !== null,
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
+/** Every worktree's status in one answer, for the fleet digest. */
+export function useFleet(enabled: boolean) {
+  return useQuery({
+    queryKey: ["fleet"],
+    queryFn: api.fleet,
+    enabled,
+    // It reads git status in every registered worktree; polling it hard would
+    // be rude to the disk for a screen you glance at.
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useInvalidate() {
   const qc = useQueryClient();
   return {
@@ -98,9 +176,17 @@ export function useInvalidate() {
     branches: () => void qc.invalidateQueries({ queryKey: ["branches"] }),
     status: (worktreeId?: string) =>
       void qc.invalidateQueries({ queryKey: worktreeId ? ["status", worktreeId] : ["status"] }),
-    diffs: () => void qc.invalidateQueries({ queryKey: ["diff"] }),
+    diffs: () => {
+      void qc.invalidateQueries({ queryKey: ["diff"] });
+      // The gutter is the same fact read another way; they must move together.
+      void qc.invalidateQueries({ queryKey: ["changed-lines"] });
+      void qc.invalidateQueries({ queryKey: ["blame"] });
+      void qc.invalidateQueries({ queryKey: ["fleet"] });
+    },
     file: (worktreeId: string, path: string) =>
       void qc.invalidateQueries({ queryKey: ["file", worktreeId, path] }),
+    pull: (worktreeId?: string) =>
+      void qc.invalidateQueries({ queryKey: worktreeId ? ["pull", worktreeId] : ["pull"] }),
     everything: () => void qc.invalidateQueries(),
   };
 }

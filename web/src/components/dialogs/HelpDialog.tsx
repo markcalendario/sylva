@@ -106,8 +106,8 @@ const SECTIONS: Section[] = [
         a: (
           <>
             Yes — <strong>Clear</strong> in the Agent header. It deletes the transcript, drops the
-            SDK session id the next prompt would have resumed into, and puts the cost back to zero,
-            so the next thing you ask begins a conversation of its own. The worktrees it tends and
+            SDK session id the next prompt would have resumed into, and puts its token count back to
+            zero, so the next thing you ask begins a conversation of its own. The worktrees it tends and
             its model, effort and permission settings are all left alone. It's refused mid-turn:
             stop the turn first.
           </>
@@ -207,8 +207,8 @@ const SECTIONS: Section[] = [
           <>
             The roster under the map carries the facts the scene doesn't. ↑ and ↓ are commits ahead
             of and behind the repository's base branch (resolved from <code>origin/HEAD</code>, then
-            main or master). “dirty” counts files changed but not committed. The dollar figure is
-            what that worktree's agent session has cost so far.
+            main or master). “dirty” counts files changed but not committed. The last figure is how
+            many tokens that worktree's dryad has read and written so far.
           </>
         ),
       },

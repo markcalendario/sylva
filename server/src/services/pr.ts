@@ -1,6 +1,11 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { PullRequestResult } from "sylva-shared";
+import type {
+  ChecksState,
+  CurrentPullRequest,
+  CurrentPullRequestResponse,
+  PullRequestResult,
+} from "sylva-shared";
 import { badRequest } from "../lib/errors.js";
 
 const run = promisify(execFile);
@@ -175,4 +180,168 @@ export async function listPullRequests(cwd: string, branch: string | null): Prom
           : "Couldn't read pull requests from this repository.";
     return { pulls: null, fallbackUrl, reason };
   }
+}
+
+/** One entry in gh's status check rollup. The two shapes GitHub actually emits. */
+interface RollupEntry {
+  /** Check runs: "COMPLETED", "IN_PROGRESS", "QUEUED". */
+  status?: string;
+  /** Check runs: "SUCCESS", "FAILURE", "NEUTRAL", "SKIPPED", "CANCELLED". */
+  conclusion?: string;
+  /** Commit statuses, which have no separate status field: "SUCCESS", "PENDING". */
+  state?: string;
+}
+
+/**
+ * Roll a list of checks up to one word.
+ *
+ * Failure wins over everything: one red check is the whole answer, and burying
+ * it under "12 passing" is how a broken branch gets merged. Anything still
+ * running comes next, because "passing so far" is not passing.
+ */
+export function rollUpChecks(entries: RollupEntry[]): {
+  checks: ChecksState;
+  passed: number;
+  failed: number;
+  pending: number;
+} {
+  let passed = 0;
+  let failed = 0;
+  let pending = 0;
+
+  for (const entry of entries) {
+    // A check run that hasn't completed has no conclusion yet; a commit status
+    // says the same thing in its state. Read whichever one this entry has.
+    const verdict = (entry.conclusion || entry.state || "").toUpperCase();
+    const running = entry.status !== undefined && entry.status !== "COMPLETED";
+
+    if (running || verdict === "PENDING" || verdict === "") pending++;
+    else if (verdict === "SUCCESS" || verdict === "NEUTRAL" || verdict === "SKIPPED") passed++;
+    else failed++;
+  }
+
+  const checks: ChecksState =
+    entries.length === 0 ? "none" : failed > 0 ? "failing" : pending > 0 ? "pending" : "passing";
+  return { checks, passed, failed, pending };
+}
+
+/**
+ * The pull request for the branch this worktree is on, if there is one.
+ *
+ * `gh pr view` without an argument answers for the current branch, which is
+ * exactly the question — no matching against a list, and no ambiguity when two
+ * PRs share a head name across forks. A branch with no PR is not a failure, so
+ * it comes back as a null pull with a compare URL rather than an error.
+ */
+export async function currentPullRequest(
+  cwd: string,
+  branch: string | null,
+): Promise<CurrentPullRequestResponse> {
+  const { stdout: remote } = await run("git", ["remote", "get-url", "origin"], { cwd }).catch(
+    () => ({ stdout: "" }),
+  );
+  const https = remote ? remoteToHttps(remote) : null;
+
+  try {
+    const { stdout } = await run(
+      "gh",
+      [
+        "pr",
+        "view",
+        "--json",
+        [
+          "number",
+          "title",
+          "url",
+          "isDraft",
+          "state",
+          "headRefName",
+          "baseRefName",
+          "author",
+          "updatedAt",
+          "additions",
+          "deletions",
+          "changedFiles",
+          "statusCheckRollup",
+          "reviewDecision",
+          "mergeable",
+          "comments",
+        ].join(","),
+      ],
+      { cwd, timeout: 30_000 },
+    );
+
+    const raw = JSON.parse(stdout || "{}") as {
+      number?: number;
+      title?: string;
+      url?: string;
+      isDraft?: boolean;
+      state?: string;
+      headRefName?: string;
+      baseRefName?: string;
+      author?: { login?: string };
+      updatedAt?: string;
+      additions?: number;
+      deletions?: number;
+      changedFiles?: number;
+      statusCheckRollup?: RollupEntry[] | null;
+      reviewDecision?: string | null;
+      mergeable?: string | null;
+      comments?: unknown[] | null;
+    };
+
+    if (!raw.number || !raw.url) {
+      return { pull: null, reason: null, createUrl: compareFor(https, branch) };
+    }
+
+    const rollup = rollUpChecks(raw.statusCheckRollup ?? []);
+    const pull: CurrentPullRequest = {
+      number: raw.number,
+      title: raw.title ?? "",
+      url: raw.url,
+      draft: raw.isDraft ?? false,
+      state: raw.state ?? "OPEN",
+      branch: raw.headRefName ?? (branch ?? ""),
+      baseBranch: raw.baseRefName ?? "",
+      author: raw.author?.login ?? "",
+      updatedAt: raw.updatedAt ?? "",
+      additions: raw.additions ?? 0,
+      deletions: raw.deletions ?? 0,
+      changedFiles: raw.changedFiles ?? 0,
+      checks: rollup.checks,
+      checksPassed: rollup.passed,
+      checksFailed: rollup.failed,
+      checksPending: rollup.pending,
+      reviewDecision: raw.reviewDecision || null,
+      mergeable: raw.mergeable || null,
+      commentCount: raw.comments?.length ?? 0,
+    };
+    return { pull, reason: null, createUrl: null };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const createUrl = compareFor(https, branch);
+
+    // "no pull requests found" is the ordinary answer for a branch you haven't
+    // opened one for yet, and reporting it as a problem would be noise on every
+    // branch before its PR exists.
+    if (/no pull requests found|no open pull requests/i.test(message)) {
+      return { pull: null, reason: null, createUrl };
+    }
+    const reason = /ENOENT|command not found|spawn gh/i.test(message)
+      ? "`gh` isn't installed, so Sylva can't read this branch's pull request."
+      : /auth|login|gh auth/i.test(message)
+        ? "`gh` isn't logged in — run `gh auth login`."
+        : /no git remote|none of the git remotes|not a git repository|could not determine/i.test(
+              message,
+            )
+          ? "This repository has no GitHub remote."
+          : null;
+    return { pull: null, reason, createUrl };
+  }
+}
+
+/** The "open a PR for this branch" page, when we know enough to build one. */
+function compareFor(https: string | null, branch: string | null): string | null {
+  if (!https || !branch) return null;
+  return `${https}/compare/${encodeURIComponent(branch)}?expand=1`;
 }

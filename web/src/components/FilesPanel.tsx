@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { GitCompare } from "lucide-react";
 import type { FileChangeKind } from "sylva-shared";
-import { NO_EVENTS, useSylva, type DiffSelection } from "../state/store";
+import { fileKey, NO_EVENTS, useSylva, type DiffSelection, type Pane } from "../state/store";
+import { FileEditor } from "./FileEditor";
 import { FileTree } from "./FileTree";
 
 const CHANGE_GLYPH: Record<FileChangeKind, { glyph: string; cls: string; tip: string }> = {
@@ -24,7 +26,14 @@ interface ChangeRow {
 }
 
 /**
- * What is changing, and what is here — across every worktree the dryad tends.
+ * What is changing, what is here, and whatever you are reading — across every
+ * worktree the dryad tends.
+ *
+ * The rail on the left answers two questions the other can't: git says what
+ * changed, a tree says what exists. Both of them only ever *open* something;
+ * the editor beside them is where files are actually read, and it keeps its own
+ * tabs so following a change across four files doesn't cost you your place in
+ * the first three.
  *
  * The change list is git's answer, not the filesystem's. The watcher sees every
  * write under the worktree, which means build output, editor swap files and
@@ -33,19 +42,25 @@ interface ChangeRow {
  * drives the feed's timestamps, so rows stay ordered by what moved last.
  */
 export function FilesPanel({
+  pane,
   members,
   onOpenDiff,
 }: {
+  pane: Pane;
   members: string[];
   onOpenDiff: (selection: DiffSelection) => void;
 }) {
   const statuses = useSylva((s) => s.statuses);
   const feeds = useSylva((s) => s.fileFeed);
   const index = useSylva((s) => s.worktreeIndex);
-  // Two different questions: "what changed" and "what's in here". Git can't
-  // answer the second, and a tree can't answer the first.
-  const [mode, setMode] = useState<"changes" | "browse">("changes");
+  // Only the pane you are working in gets the caret; in a split, the other one
+  // opening its Files tab must not pull it away mid-sentence.
+  const activePane = useSylva((s) => s.activePaneId) === pane.id;
+  const store = useSylva.getState();
+  const mode = pane.filesMode;
   const shared = members.length > 1;
+
+  const active = pane.files.find((f) => fileKey(f) === pane.activeFile) ?? null;
 
   const memberKey = members.join(",");
   const rows = useMemo(() => {
@@ -63,10 +78,7 @@ export function FilesPanel({
         if (!seenAt.has(event.path)) seenAt.set(event.path, event.at);
       }
 
-      const push = (
-        entries: typeof status.staged,
-        staged: boolean,
-      ) => {
+      const push = (entries: typeof status.staged, staged: boolean) => {
         for (const entry of entries) {
           const at = seenAt.get(entry.path);
           out.push({
@@ -100,88 +112,142 @@ export function FilesPanel({
   const switcher = (
     <div className="seg files-seg" role="group" aria-label="Files view">
       <button
-        className={mode === "changes" ? "seg-on" : ""}
-        onClick={() => setMode("changes")}
-        data-tip="Files git reports as changed, newest first"
-      >
-        Changes
-      </button>
-      <button
         className={mode === "browse" ? "seg-on" : ""}
-        onClick={() => setMode("browse")}
+        onClick={() => store.setFilesMode(pane.id, "browse")}
         data-tip={
           shared ? "Browse every worktree this dryad tends" : "Browse everything in this worktree"
         }
       >
         Browse
       </button>
+      <button
+        className={mode === "changes" ? "seg-on" : ""}
+        onClick={() => store.setFilesMode(pane.id, "changes")}
+        data-tip="Files git reports as changed, newest first"
+      >
+        Changes
+        {rows.length > 0 && <span className="seg-count">{rows.length}</span>}
+      </button>
     </div>
   );
 
-  if (mode === "browse") {
-    return (
-      <div className="files-panel">
+  return (
+    <div className="files-panel">
+      <div className="files-rail">
         {switcher}
-        <FileTree members={members} />
+        {mode === "browse" ? (
+          <FileTree
+            members={members}
+            activePath={active?.path ?? null}
+            activeWorktreeId={active?.worktreeId ?? null}
+            autoFocus={activePane}
+            onOpen={(request) => store.openFile(pane.id, request)}
+          />
+        ) : (
+          <ChangeList
+            rows={rows}
+            shared={shared}
+            index={index}
+            activeKey={pane.activeFile}
+            onOpenFile={(row) =>
+              store.openFile(pane.id, { worktreeId: row.worktreeId, path: row.path })
+            }
+            onOpenDiff={onOpenDiff}
+          />
+        )}
       </div>
-    );
-  }
+      <FileEditor pane={pane} />
+    </div>
+  );
+}
 
+/**
+ * What git says has changed, newest first.
+ *
+ * A row opens the *file*, not its diff — reading and editing is what the Files
+ * tab is for, and sending you to the Git tab to look at a path you clicked here
+ * was a detour every time. The patch is still one click away, on its own
+ * control, for when comparing is genuinely the question.
+ */
+function ChangeList({
+  rows,
+  shared,
+  index,
+  activeKey,
+  onOpenFile,
+  onOpenDiff,
+}: {
+  rows: ChangeRow[];
+  shared: boolean;
+  index: Record<string, { repoName: string; branch: string } | undefined>;
+  activeKey: string | null;
+  onOpenFile: (row: ChangeRow) => void;
+  onOpenDiff: (selection: DiffSelection) => void;
+}) {
   if (rows.length === 0) {
     return (
-      <div className="files-panel">
-        {switcher}
-        <div className="files-empty">
-          Nothing has changed here yet. Edits git would report — by dryad, editor, or terminal —
-          appear in this list, newest first.
-        </div>
+      <div className="files-empty">
+        Nothing has changed here yet. Edits git would report — by dryad, editor, or terminal —
+        appear in this list, newest first.
       </div>
     );
   }
 
   return (
-    <div className="files-panel">
-      {switcher}
+    <div className="files-list">
       {rows.map((row) => {
         const meta = CHANGE_GLYPH[row.kind];
+        const on = activeKey === fileKey(row);
         return (
-          <button
+          <div
             key={`${row.worktreeId}-${row.staged ? "s" : "u"}-${row.path}`}
-            className="file-row"
-            onClick={() =>
-              onOpenDiff({ worktreeId: row.worktreeId, path: row.path, staged: row.staged })
-            }
-            data-tip="Open this file's diff in the Git tab"
+            className={`file-row ${on ? "file-row-on" : ""}`}
           >
-            <span className={`chg ${meta.cls}`} data-tip={meta.tip}>
-              {meta.glyph}
-            </span>
-            {/* Which worktree, only when there is more than one to confuse. */}
-            {shared && (
-              <span
-                className="file-where"
-                data-tip={index[row.worktreeId]?.repoName ?? row.worktreeId}
-              >
-                {index[row.worktreeId]?.branch ?? row.worktreeId.slice(0, 7)}
+            <button
+              className="file-row-open"
+              onClick={() => onOpenFile(row)}
+              data-tip="Open this file in the editor"
+            >
+              <span className={`chg ${meta.cls}`} data-tip={meta.tip}>
+                {meta.glyph}
               </span>
-            )}
-            <span className="file-path">
-              {row.renamedFrom ? `${row.renamedFrom} → ${row.path}` : row.path}
-            </span>
-            {row.staged && (
-              <span className="file-staged" data-tip="Already staged for the next commit">
-                staged
+              {/* Which worktree, only when there is more than one to confuse. */}
+              {shared && (
+                <span
+                  className="file-where"
+                  data-tip={index[row.worktreeId]?.repoName ?? row.worktreeId}
+                >
+                  {index[row.worktreeId]?.branch ?? row.worktreeId.slice(0, 7)}
+                </span>
+              )}
+              <span className="file-path">
+                {row.renamedFrom ? `${row.renamedFrom} → ${row.path}` : row.path}
               </span>
-            )}
-            {row.at && (
-              <span className="file-time" data-tip="When Sylva last saw this file move">
-                {new Date(row.at).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-            )}
-          </button>
+              {row.staged && (
+                <span className="file-staged" data-tip="Already staged for the next commit">
+                  staged
+                </span>
+              )}
+              {row.at && (
+                <span className="file-time" data-tip="When Sylva last saw this file move">
+                  {new Date(row.at).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              )}
+            </button>
+            <button
+              className="ghost file-row-diff"
+              onClick={() =>
+                onOpenDiff({ worktreeId: row.worktreeId, path: row.path, staged: row.staged })
+              }
+              aria-label={`Show the diff for ${row.path}`}
+              data-tip="Show this file's diff in the Git tab"
+            >
+              <GitCompare size={12} />
+            </button>
+          </div>
         );
       })}
     </div>

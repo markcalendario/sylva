@@ -5,6 +5,7 @@ import type {
   AppPreferences,
   Attachment,
   BranchInfo,
+  ChangedLines,
   CommitDetail,
   CommitGraph,
   CommitManyResult,
@@ -15,8 +16,14 @@ import type {
   FileDiff,
   FileEvent,
   ContentSearchResponse,
+  CurrentPullRequestResponse,
   FileSearchResponse,
+  FleetDigest,
+  KillPortResult,
+  LineBlame,
   OpenKind,
+  PlanUsage,
+  PortScan,
   PullRequestResult,
   PermissionAnswer,
   PermissionRequest,
@@ -24,6 +31,8 @@ import type {
   SessionInfo,
   TerminalBuffer,
   TerminalInfo,
+  TranscriptSearchMode,
+  TranscriptSearchResponse,
   TreeListing,
   Worktree,
   WorktreeOverrides,
@@ -212,8 +221,30 @@ export const api = {
     request<ContentSearchResponse>(
       `/api/worktrees/${worktreeId}/search-content?q=${encodeURIComponent(q)}`,
     ),
+  /** Who last touched one line. Asked per caret position. */
+  blame: (worktreeId: string, path: string, line: number) =>
+    request<LineBlame>(
+      `/api/worktrees/${worktreeId}/blame?path=${encodeURIComponent(path)}&line=${line}`,
+    ),
+  /** Which lines of a file differ from the last commit, for the gutter. */
+  changedLines: (worktreeId: string, path: string) =>
+    request<ChangedLines>(
+      `/api/worktrees/${worktreeId}/changed-lines?path=${encodeURIComponent(path)}`,
+    ),
+  /** Every registered worktree's status, for the fleet digest. */
+  fleet: () => request<FleetDigest>("/api/fleet"),
   openPulls: (worktreeId: string) =>
     request<OpenPullRequests>(`/api/worktrees/${worktreeId}/pulls`),
+  /** The pull request for this worktree's branch, shown inline in the Git tab. */
+  currentPull: (worktreeId: string) =>
+    request<CurrentPullRequestResponse>(`/api/worktrees/${worktreeId}/pull`),
+  /** What's left of the Claude plan — shared across every pane. */
+  usage: () => request<PlanUsage>("/api/usage"),
+  /** Which dryads touched a file, or said a thing, across every session. */
+  searchTranscripts: (q: string, mode: TranscriptSearchMode) =>
+    request<TranscriptSearchResponse>(
+      `/api/transcripts/search?q=${encodeURIComponent(q)}&mode=${mode}`,
+    ),
   searchFiles: (worktreeId: string, q: string) =>
     request<FileSearchResponse>(
       `/api/worktrees/${worktreeId}/search-files?q=${encodeURIComponent(q)}`,
@@ -256,6 +287,15 @@ export const api = {
     request<WorktreeSettings>(`/api/worktrees/${worktreeId}/settings`, {
       method: "PUT",
       body: JSON.stringify(overrides),
+    }),
+
+  /** Who is holding these ports — or every listener, when asked about none. */
+  scanPorts: (ports: number[]) =>
+    request<PortScan>(`/api/tools/ports${ports.length ? `?ports=${ports.join(",")}` : ""}`),
+  killPorts: (ports: number[]) =>
+    request<{ results: KillPortResult[] }>("/api/tools/kill-port", {
+      method: "POST",
+      body: JSON.stringify({ ports }),
     }),
 
   browse: (path?: string) =>

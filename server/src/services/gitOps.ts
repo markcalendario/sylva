@@ -3,6 +3,7 @@ import { isAbsolute, join, normalize } from "node:path";
 import type {
   BaseDivergence,
   BranchInfo,
+  ChangedLines,
   CommitDetail,
   CommitGraph,
   CommitManyResult,
@@ -17,12 +18,21 @@ import type {
   FileSearchResponse,
   FileSearchResult,
   GraphCommit,
+  LineBlame,
   TreeEntry,
   TreeListing,
   WorktreeStatus,
 } from "sylva-shared";
 import { badRequest, conflict, GitError, HttpError } from "../lib/errors.js";
-import { parseBranches, parseDiff, parseNameStatusZ, parseNumstatZ, parseStatusV2 } from "../lib/parse.js";
+import {
+  parseBlamePorcelain,
+  parseBranches,
+  parseChangedLines,
+  parseDiff,
+  parseNameStatusZ,
+  parseNumstatZ,
+  parseStatusV2,
+} from "../lib/parse.js";
 import type { GitService } from "./git.js";
 import { isIgnored } from "./watcher.js";
 import type { Workspace } from "./workspace.js";
@@ -668,6 +678,69 @@ export class GitOps {
       fileCount: new Set(matches.map((m) => m.path)).size,
       truncated: matches.length >= maxMatches,
     };
+  }
+
+  /**
+   * Who last touched one line.
+   *
+   * Asked per line rather than for the whole file on purpose: this follows a
+   * caret, so all but one of the answers would be thrown away, and blaming a
+   * three-thousand-line file to show one row is work nobody asked for.
+   *
+   * `-w` ignores whitespace-only changes and `-C` follows lines moved between
+   * files in the same commit — without them a reformat or a file split makes
+   * everything look like it was written by whoever did the moving.
+   */
+  async blameLine(worktreeId: string, filePath: string, line: number): Promise<LineBlame> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const rel = this.safeRelPath(filePath);
+    if (!Number.isInteger(line) || line < 1) throw badRequest(`Invalid line: ${line}`);
+
+    const { stdout } = await this.git.run(worktree.path, [
+      "blame",
+      "-w",
+      "-C",
+      "--porcelain",
+      "-L",
+      `${line},${line}`,
+      "--",
+      rel,
+    ]);
+
+    return parseBlamePorcelain(stdout, line);
+  }
+
+  /**
+   * Which lines of a file differ from the last commit.
+   *
+   * Read from the same patch the Git tab shows, so the two can never disagree
+   * about what changed. An untracked file has no patch and no baseline — every
+   * line of it is new, and saying so is more honest than reporting nothing.
+   */
+  async changedLines(worktreeId: string, filePath: string): Promise<ChangedLines> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    const rel = this.safeRelPath(filePath);
+
+    const { stdout: tracked } = await this.git
+      .run(worktree.path, ["ls-files", "--error-unmatch", "--", rel])
+      .catch(() => ({ stdout: "" }));
+
+    if (!tracked.trim()) {
+      return { path: rel, added: [], modified: [], tracked: false };
+    }
+
+    // Against HEAD rather than the index: the question is "what is new since
+    // the last commit", and staging something doesn't make it old.
+    const { stdout } = await this.git.run(worktree.path, [
+      "diff",
+      "HEAD",
+      "--unified=0",
+      "--no-color",
+      "--",
+      rel,
+    ]);
+
+    return { path: rel, ...parseChangedLines(stdout), tracked: true };
   }
 
   /** A file's text, capped, with binaries reported rather than streamed. */

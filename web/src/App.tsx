@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import { AboutDialog } from "./components/dialogs/AboutDialog";
 import { HelpDialog } from "./components/dialogs/HelpDialog";
 import { RegisterRepoDialog } from "./components/dialogs/RegisterRepoDialog";
+import { TranscriptSearchDialog } from "./components/dialogs/TranscriptSearchDialog";
 import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "./lib/api";
-import { useTabCycleShortcut } from "./lib/shortcuts";
+import { useShortcuts } from "./lib/shortcuts";
 import { startWs } from "./lib/ws";
 import { useSylva } from "./state/store";
+import { CommandPalette } from "./components/CommandPalette";
 import { ConfirmHost } from "./components/ConfirmDialog";
 import { Sidebar } from "./components/Sidebar";
 import { MainPanel } from "./components/MainPanel";
@@ -28,8 +30,8 @@ function Shell() {
   const [showRegister, setShowRegister] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Option+Tab steps the active pane through Agent, Files, Git and Terminal.
-  useTabCycleShortcut();
+  // Every window-level shortcut: the palette, the attention jump, the tabs.
+  useShortcuts();
 
   // A branch switch means the fetched worktree list is out of date. The status
   // stream carries the new branch, but the *name* shown in the sidebar comes
@@ -94,9 +96,27 @@ function Shell() {
         }}
       />
 
+      <CommandPalette onHelp={() => setShowHelp(true)} />
+      <TranscriptSearchHost />
       <TooltipLayer />
       <ConfirmHost />
     </div>
+  );
+}
+
+/**
+ * The transcript search, mounted once and opened from the store — a tab menu, a
+ * palette row and a chord all reach for it, and none of them are near each
+ * other in the tree.
+ */
+function TranscriptSearchHost() {
+  const query = useSylva((s) => s.transcriptQuery);
+  return (
+    <TranscriptSearchDialog
+      open={query !== null}
+      {...(query ? { initialQuery: query } : {})}
+      onClose={() => useSylva.getState().closeTranscriptSearch()}
+    />
   );
 }
 

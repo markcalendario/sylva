@@ -1,4 +1,4 @@
-import { CircleHelp, Flower2, Settings, Trees } from "lucide-react";
+import { CircleHelp, Flower2, Layers, Settings, Trees, Wrench } from "lucide-react";
 import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
 import { useSylva, type View } from "../state/store";
@@ -15,10 +15,22 @@ interface Destination {
 const DESTINATIONS: Destination[] = [
   { key: "workspace", label: "Forest", icon: Trees, tip: "Every worktree across every repository" },
   {
+    key: "fleet",
+    label: "Fleet",
+    icon: Layers,
+    tip: "Every worktree's uncommitted changes, on one screen",
+  },
+  {
     key: "grove",
     label: "Grove",
     icon: Flower2,
     tip: "A dryad that belongs to no worktree, and can read every repository",
+  },
+  {
+    key: "tools",
+    label: "Tools",
+    icon: Wrench,
+    tip: "Odd jobs that aren't about a worktree — freeing a port, reading a timestamp",
   },
   { key: "settings", label: "Settings", icon: Settings, tip: "Appearance, sound, the run command and agent defaults" },
   { key: "help", label: "Help", icon: CircleHelp, tip: "How Sylva works" },
@@ -76,7 +88,17 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
   };
 
   const currentKey: Destination["key"] | null =
-    view === "settings" ? "settings" : view === "grove" ? "grove" : where ? null : "workspace";
+    view === "settings"
+      ? "settings"
+      : view === "grove"
+        ? "grove"
+        : view === "fleet"
+          ? "fleet"
+          : view === "tools"
+            ? "tools"
+            : where
+              ? null
+              : "workspace";
 
   return (
     <header className="topbar">

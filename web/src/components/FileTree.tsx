@@ -1,121 +1,142 @@
 import { ChevronDown, ChevronRight, File as FileIcon, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ContentSearchResponse, FileSearchResponse, TreeEntry } from "sylva-shared";
-import { api, ApiFailure } from "../lib/api";
-import { chunkClass, highlightLines, languageFor } from "../lib/highlight";
+import { api } from "../lib/api";
 import { useSylva } from "../state/store";
-import { useFileContent, useInvalidate, useTree } from "../lib/queries";
+import { useTree } from "../lib/queries";
+
+/** Where a click in the rail wants to go: a file, sometimes at a line. */
+export interface OpenRequest {
+  worktreeId: string;
+  path: string;
+  line?: number;
+}
 
 /**
  * Browse the worktree, not just what changed in it. Directories load on
  * expansion rather than up front — a repository is far too big to walk eagerly,
  * and you only ever look at a few branches of it.
+ *
+ * This is the rail alone. Reading a file happens in the editor beside it, which
+ * holds its own tabs — so a click here is a request to open something, not a
+ * change to what is displayed.
  */
-export function FileTree({ members }: { members: string[] }) {
-  /** A file being read, and the worktree it lives in. */
-  const [selected, setSelected] = useState<{ worktreeId: string; path: string } | null>(null);
+export function FileTree({
+  members,
+  onOpen,
+  activePath,
+  activeWorktreeId,
+  autoFocus = false,
+}: {
+  members: string[];
+  onOpen: (request: OpenRequest) => void;
+  /** Path of the file the editor is showing, so the rail can mark it. */
+  activePath: string | null;
+  activeWorktreeId: string | null;
+  /**
+   * Take the caret on arrival. Opening the Files tab is nearly always a
+   * question — "where is X" — and typing it should not cost a click first.
+   */
+  autoFocus?: boolean;
+}) {
   const [query, setQuery] = useState("");
   /** Two different questions: "where is the file called X" and "where is X written". */
   const [mode, setMode] = useState<"name" | "text">("name");
-  const [highlight, setHighlight] = useState<number | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const shared = members.length > 1;
   const results = useFileSearch(members, mode === "name" ? query : "");
   const content = useContentSearch(members, mode === "text" ? query : "");
 
-  return (
-    <div className="tree-panel">
-      <div className="tree-side">
-        <div className="tree-search">
-          <div className="seg tree-search-mode" role="group" aria-label="Search by">
-            <button
-              className={mode === "name" ? "seg-on" : ""}
-              onClick={() => setMode("name")}
-              data-tip="Find files by their name or path"
-            >
-              Name
-            </button>
-            <button
-              className={mode === "text" ? "seg-on" : ""}
-              onClick={() => setMode("text")}
-              data-tip="Find files by what's written inside them"
-            >
-              Text
-            </button>
-          </div>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={mode === "name" ? "Find a file…" : "Find text in files…"}
-            aria-label={mode === "name" ? "Find a file by name" : "Find text inside files"}
-            data-tip={
-              mode === "name"
-                ? "Search this worktree by file name or path fragment"
-                : "Search the contents of every file in this worktree"
-            }
-          />
-          {query && (
-            <button
-              className="ghost"
-              onClick={() => setQuery("")}
-              aria-label="Clear the search"
-              data-tip="Clear the search and go back to the folder tree"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+  const selected =
+    activeWorktreeId && activePath ? { worktreeId: activeWorktreeId, path: activePath } : null;
 
-        {/* Searching replaces the tree rather than filtering it in place, so
-            clearing the box returns every folder you had expanded. */}
-        {query.trim() ? (
-          mode === "name" ? (
-            <SearchResults
-              groups={results}
-              shared={shared}
-              selected={selected}
-              onSelect={(worktreeId, path) => {
-                setSelected({ worktreeId, path });
-                setHighlight(null);
-              }}
-            />
-          ) : (
-            <ContentResults
-              groups={content}
-              shared={shared}
-              selected={selected}
-              onSelect={(worktreeId, path, line) => {
-                setSelected({ worktreeId, path });
-                setHighlight(line);
-              }}
-            />
-          )
-        ) : shared ? (
-          /* A root of worktrees. With one member this level is skipped
-             entirely, so an ordinary worktree gains no extra click. */
-          members.map((id) => (
-            <WorktreeBranch key={id} worktreeId={id} selected={selected} onSelect={setSelected} />
-          ))
-        ) : (
-          <Directory
-            worktreeId={members[0] ?? ""}
-            path=""
-            selected={selected?.path ?? null}
-            onSelect={(path) => setSelected({ worktreeId: members[0] ?? "", path })}
-          />
+  // On arrival only. Switching between Name and Text keeps whatever you were
+  // doing, and the second pane must not steal the caret from the first.
+  useEffect(() => {
+    if (autoFocus) searchRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="tree-side">
+      <div className="tree-search">
+        <div className="seg tree-search-mode" role="group" aria-label="Search by">
+          <button
+            className={mode === "name" ? "seg-on" : ""}
+            onClick={() => setMode("name")}
+            data-tip="Find files by their name or path"
+          >
+            Name
+          </button>
+          <button
+            className={mode === "text" ? "seg-on" : ""}
+            onClick={() => setMode("text")}
+            data-tip="Find files by what's written inside them"
+          >
+            Text
+          </button>
+        </div>
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={mode === "name" ? "Find a file…" : "Find text in files…"}
+          aria-label={mode === "name" ? "Find a file by name" : "Find text inside files"}
+          data-tip={
+            mode === "name"
+              ? "Search this worktree by file name or path fragment"
+              : "Search the contents of every file in this worktree"
+          }
+        />
+        {query && (
+          <button
+            className="ghost"
+            onClick={() => setQuery("")}
+            aria-label="Clear the search"
+            data-tip="Clear the search and go back to the folder tree"
+          >
+            <X size={14} />
+          </button>
         )}
       </div>
-      <div className="tree-view">
-        {selected ? (
-          <FilePreview
-            key={`${selected.worktreeId}:${selected.path}`}
-            worktreeId={selected.worktreeId}
-            path={selected.path}
-            highlight={highlight}
+
+      {/* Searching replaces the tree rather than filtering it in place, so
+          clearing the box returns every folder you had expanded. */}
+      {query.trim() ? (
+        mode === "name" ? (
+          <SearchResults
+            groups={results}
+            shared={shared}
+            selected={selected}
+            onSelect={(worktreeId, path) => onOpen({ worktreeId, path })}
           />
         ) : (
-          <div className="tree-empty">Pick a file to read it.</div>
-        )}
-      </div>
+          <ContentResults
+            groups={content}
+            shared={shared}
+            selected={selected}
+            onSelect={(worktreeId, path, line) => onOpen({ worktreeId, path, line })}
+          />
+        )
+      ) : shared ? (
+        /* A root of worktrees. With one member this level is skipped
+           entirely, so an ordinary worktree gains no extra click. */
+        members.map((id) => (
+          <WorktreeBranch
+            key={id}
+            worktreeId={id}
+            selected={selected}
+            onSelect={(request) => onOpen(request)}
+          />
+        ))
+      ) : (
+        <Directory
+          worktreeId={members[0] ?? ""}
+          path=""
+          selected={selected?.path ?? null}
+          onSelect={(path) => onOpen({ worktreeId: members[0] ?? "", path })}
+        />
+      )}
     </div>
   );
 }
@@ -480,289 +501,7 @@ function TreeNode({
   );
 }
 
-/**
- * Above this, the editor stops re-colouring as you type.
- *
- * The coloured layer is rebuilt from the draft on every keystroke, and
- * tokenising tens of thousands of characters between one and the next is felt
- * immediately. Reading is unaffected — that highlight is computed once.
- */
-const EDIT_HIGHLIGHT_LIMIT = 60_000;
-
-/**
- * Turn a position in the rendered text into an offset into the file.
- *
- * The coloured view is the file's own characters split across a span per token,
- * so summing the text nodes that precede a point counts exactly the characters
- * that precede it in the file — no font metrics, no assumptions about tabs.
- */
-function offsetOfNode(root: HTMLElement, node: Node, offset: number): number | null {
-  if (!root.contains(node) || node.nodeType !== Node.TEXT_NODE) return null;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let total = 0;
-  while (walker.nextNode()) {
-    if (walker.currentNode === node) return total + offset;
-    total += (walker.currentNode as Text).data.length;
-  }
-  return null;
-}
-
-/** Where in the file a click landed. */
-function caretOffsetFromPoint(root: HTMLElement, x: number, y: number): number | null {
-  // Two spellings of the same API: the standard one, and WebKit's older one.
-  const doc = document as Document & {
-    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-    caretRangeFromPoint?: (x: number, y: number) => Range | null;
-  };
-  const hit = doc.caretPositionFromPoint?.(x, y);
-  if (hit) return offsetOfNode(root, hit.offsetNode, hit.offset);
-  const range = doc.caretRangeFromPoint?.(x, y);
-  return range ? offsetOfNode(root, range.startContainer, range.startOffset) : null;
-}
-
-function FilePreview({
-  worktreeId,
-  path,
-  highlight,
-}: {
-  worktreeId: string;
-  path: string;
-  highlight?: number | null;
-}) {
-  const file = useFileContent(worktreeId, path);
-  const invalidate = useInvalidate();
-  const lineRef = useRef<HTMLSpanElement>(null);
-  const codeRef = useRef<HTMLPreElement>(null);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
-
-  /** The text being edited, or null when this is a read. */
-  const [draft, setDraft] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  /** Where to put the caret once the editor exists, from where you clicked. */
-  const [pendingCaret, setPendingCaret] = useState<[number, number] | null>(null);
-
-  const content = file.data?.binary ? "" : (file.data?.content ?? "");
-  const language = languageFor(path);
-  // Reading: tokenised once, since neither the text nor the grammar changes
-  // while you scroll. Editing: rebuilt per keystroke, hence the size limit.
-  const readLines = useMemo(() => highlightLines(content, language), [content, language]);
-  const editLines = useMemo(
-    () =>
-      draft === null
-        ? []
-        : highlightLines(draft, draft.length <= EDIT_HIGHLIGHT_LIMIT ? language : null),
-    [draft, language],
-  );
-
-  // Arriving from a text match should land on the line that matched, not at
-  // the top of a two-thousand-line file.
-  useEffect(() => {
-    lineRef.current?.scrollIntoView({ block: "center" });
-  }, [path, highlight, file.data]);
-
-  // Switching files leaves the editor: an unsaved draft belongs to the file it
-  // was typed against, and carrying it across would write it to the wrong one.
-  useEffect(() => {
-    setDraft(null);
-    setError(null);
-    setPendingCaret(null);
-  }, [worktreeId, path]);
-
-  /**
-   * Put the caret where the click was. The editor covers the whole file rather
-   * than scrolling inside itself, so focusing it can't jump the view — which is
-   * what makes clicking line 400 land on line 400 instead of the top.
-   */
-  useEffect(() => {
-    if (!pendingCaret) return;
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.focus({ preventScroll: true });
-    editor.setSelectionRange(pendingCaret[0], pendingCaret[1]);
-    setPendingCaret(null);
-  }, [pendingCaret]);
-
-  if (file.isLoading) return <div className="tree-note">Loading {path}…</div>;
-  if (file.isError || !file.data) return <div className="tree-note">Couldn't read {path}.</div>;
-  if (file.data.binary) {
-    return (
-      <div className="tree-note">
-        {path} is a binary file ({bytes(file.data.size)}).
-      </div>
-    );
-  }
-
-  const editable = !file.data.truncated;
-  const editing = draft !== null;
-  const dirty = editing && draft !== content;
-
-  /**
-   * Start editing from a click on the text.
-   *
-   * A selection dragged out before the click is kept — you highlighted that
-   * span for a reason, and the usual reason is that you are about to replace
-   * it. Anything else starts a caret where the pointer was.
-   */
-  const beginEdit = (event: React.MouseEvent<HTMLPreElement>) => {
-    if (!editable || editing) return;
-    const pre = codeRef.current;
-    // Clicking past the end of the text is a click at the end of the text.
-    let caret: [number, number] = [content.length, content.length];
-
-    if (pre) {
-      const selection = window.getSelection();
-      const dragged =
-        selection && !selection.isCollapsed && selection.anchorNode && selection.focusNode
-          ? ([
-              offsetOfNode(pre, selection.anchorNode, selection.anchorOffset),
-              offsetOfNode(pre, selection.focusNode, selection.focusOffset),
-            ] as const)
-          : null;
-
-      if (dragged && dragged[0] !== null && dragged[1] !== null) {
-        // Selections run backwards as readily as forwards.
-        caret = dragged[0] <= dragged[1] ? [dragged[0], dragged[1]] : [dragged[1], dragged[0]];
-      } else {
-        const at = caretOffsetFromPoint(pre, event.clientX, event.clientY);
-        if (at !== null) caret = [at, at];
-      }
-    }
-
-    setDraft(content);
-    setPendingCaret(caret);
-  };
-
-  const save = async () => {
-    if (draft === null) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await api.saveFile(worktreeId, path, draft);
-      invalidate.file(worktreeId, path);
-      // The patch on the Git tab is about to be wrong, and so is the file's
-      // place in the change list; both are cheap to re-ask for.
-      invalidate.diffs();
-      invalidate.status(worktreeId);
-      setDraft(null);
-    } catch (e) {
-      setError(e instanceof ApiFailure ? (e.detail ?? e.message) : `Couldn't save ${path}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="tree-file">
-      <header className="tree-file-head">
-        <code>{path}</code>
-        <span className="tree-file-size">{bytes(file.data.size)}</span>
-        {editing ? (
-          <span className="tree-file-actions">
-            <button
-              className="btn-quiet"
-              disabled={saving}
-              onClick={() => {
-                setDraft(null);
-                setError(null);
-              }}
-              data-tip="Discard these edits and go back to reading"
-            >
-              Cancel
-            </button>
-            <button
-              className="btn-primary"
-              disabled={saving || !dirty}
-              onClick={() => void save()}
-              data-tip={dirty ? "Write this back to the worktree" : "Nothing has changed yet"}
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-          </span>
-        ) : (
-          editable && (
-            /* No button: the text itself is the control. This says so once,
-               quietly, because an affordance nobody can see isn't one. */
-            <span className="tree-file-hint" data-tip="Click anywhere in the file to edit it">
-              click to edit
-            </span>
-          )
-        )}
-      </header>
-
-      {error && (
-        <div className="form-error" data-tip="The file wasn't written">
-          {error}
-        </div>
-      )}
-
-      {/* One scrolling box holding two layers that always agree: the coloured
-          text, and — while editing — a transparent textarea laid exactly over
-          it. The textarea is as tall as the whole file rather than a window
-          onto it, so there is no second scrollbar to keep in step and no jump
-          when it takes focus. */}
-      <div className="tree-code">
-        <div className="tree-code-inner">
-          <pre
-            className={`tree-file-body ${editable && !editing ? "tree-file-body-editable" : ""}`}
-            ref={codeRef}
-            aria-hidden={editing}
-            {...(editable && !editing ? { onClick: beginEdit } : {})}
-          >
-            {(editing ? editLines : readLines).map((chunks, i) => {
-              const number = i + 1;
-              const hit = !editing && highlight === number;
-              return (
-                <span
-                  key={number}
-                  {...(hit ? { ref: lineRef } : {})}
-                  className={`tree-file-line ${hit ? "tree-file-line-hit" : ""}`}
-                >
-                  {chunks.length === 0
-                    ? " "
-                    : chunks.map((chunk, c) => (
-                        <span key={c} className={chunkClass(chunk.type)}>
-                          {chunk.text}
-                        </span>
-                      ))}
-                  {"\n"}
-                </span>
-              );
-            })}
-          </pre>
-
-          {editing && (
-            <textarea
-              ref={editorRef}
-              className="tree-file-editor"
-              value={draft}
-              spellCheck={false}
-              wrap="off"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                // The one shortcut worth having here; everything else is a
-                // normal textarea, including Tab, which still moves focus out.
-                if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-                  e.preventDefault();
-                  if (dirty && !saving) void save();
-                }
-              }}
-              data-tip="⌘S saves · Cancel discards"
-            />
-          )}
-        </div>
-      </div>
-
-      {file.data.truncated && (
-        <p className="tree-note">
-          Cut off at 256 KB — open it in your editor to read the rest, and to change it.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function bytes(n: number): string {
+export function bytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;

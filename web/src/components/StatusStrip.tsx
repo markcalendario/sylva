@@ -1,6 +1,7 @@
-import { GitBranch, Sparkles } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import { compactTokens } from "../lib/format";
 import { useSylva } from "../state/store";
+import { UsageMeter } from "./UsageMeter";
 
 export function StatusStrip({ onAbout }: { onAbout: () => void }) {
   // Follows the active pane, which is what "the worktree you're looking at"
@@ -21,6 +22,12 @@ export function StatusStrip({ onAbout }: { onAbout: () => void }) {
 
   return (
     <footer className="statusstrip">
+      {/* First, not last. The plan window is the one fact here that is true
+          whatever is open, and it is the one you want to catch without going
+          looking — so it leads the strip rather than trailing off the far end
+          of it, where a wide window puts it half a screen from your eyes. */}
+      <UsageMeter />
+
       {!worktreeId || !status ? (
         <span
           className="strip-item"
@@ -56,13 +63,6 @@ export function StatusStrip({ onAbout }: { onAbout: () => void }) {
               className="strip-item strip-usage"
               data-tip={`${session.totalTokens.toLocaleString()} tokens read and written by this worktree's dryad`}>
               {compactTokens(session.totalTokens)}
-            </span>
-          )}
-          {session && (
-            <span
-              className="strip-item strip-cost"
-              data-tip="What this worktree's agent session has cost so far">
-              <Sparkles size={11} />${session.totalCostUsd.toFixed(3)}
             </span>
           )}
         </>

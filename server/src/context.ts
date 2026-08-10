@@ -4,6 +4,7 @@ import { GitOps } from "./services/gitOps.js";
 import { TerminalService } from "./services/terminals.js";
 import { SessionManager } from "./services/sessions.js";
 import { Store } from "./services/store.js";
+import { UsageService } from "./services/usage.js";
 import { WatcherManager } from "./services/watcher.js";
 import { Workspace } from "./services/workspace.js";
 import { WsHub } from "./ws/hub.js";
@@ -19,6 +20,7 @@ export interface AppContext {
   sessions: SessionManager;
   commitMessages: CommitMessageService;
   terminals: TerminalService;
+  usage: UsageService;
 }
 
 export async function createContext(baseDir?: string): Promise<AppContext> {
@@ -46,5 +48,23 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
   // The socket carries keystrokes as well as events; terminals are the only
   // thing a client ever sends up it.
   hub.onClientEvent = (event) => terminals.handleClientEvent(event);
-  return { store, git, hub, workspace, gitOps, watchers, sessions, commitMessages, terminals };
+
+  // Plan limits belong to the login, not to any worktree, so one reader serves
+  // the whole app — and it borrows a running agent's process when there is one
+  // rather than starting its own.
+  const usage = new UsageService();
+  usage.borrowQuery = () => sessions.anyLiveQuery();
+
+  return {
+    store,
+    git,
+    hub,
+    workspace,
+    gitOps,
+    watchers,
+    sessions,
+    commitMessages,
+    terminals,
+    usage,
+  };
 }

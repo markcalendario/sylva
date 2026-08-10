@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { AgentEvent, Attachment, PermissionRequest } from "sylva-shared";
+import { circleMembers, type AgentEvent, type Attachment, type PermissionRequest } from "sylva-shared";
+import { applyMention, mentionAt, PathMentions, type Mention } from "./PathMentions";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { compactTokens } from "../lib/format";
@@ -7,6 +8,7 @@ import { ensureNotifyPermission } from "../lib/notify";
 import { ArrowDown, Eraser, Paperclip, Sparkles, Square, X } from "lucide-react";
 import { confirm } from "../lib/confirm";
 import { AgentSettingsButton } from "./AgentSettingsButton";
+import { CopyButton } from "./CopyButton";
 import { SavedPromptsButton } from "./SavedPromptsButton";
 import { EMPTY_DRAFT, NO_EVENTS, useSylva } from "../state/store";
 import { Markdown } from "./Markdown";
@@ -17,7 +19,7 @@ type Block =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
   | { kind: "tools"; items: ToolItem[] }
-  | { kind: "result"; outcome: "success" | "error" | "interrupted"; costUsd?: number }
+  | { kind: "result"; outcome: "success" | "error" | "interrupted"; tokens?: number }
   | { kind: "notice"; text: string };
 
 /**
@@ -35,6 +37,24 @@ const WINDOW_STEP = 40;
 
 /** Distance from the bottom, in px, still counted as "at the bottom". */
 const BOTTOM_SLACK = 60;
+
+/**
+ * How far one press of an arrow key moves the transcript. Roughly a line of
+ * chat at the default text size — small enough to creep the last few pixels
+ * into view, which is the whole reason the keys are wired up.
+ */
+const LINE_STEP = 44;
+
+/**
+ * How tall the composer may grow before it stops and scrolls instead.
+ *
+ * A prompt worth twenty lines is worth seeing while you write it, but the
+ * conversation it is about has to stay on screen too — so the box takes what it
+ * needs up to a share of the window, and no more.
+ */
+function promptCeiling(): number {
+  return Math.min(280, Math.round(window.innerHeight * 0.4));
+}
 
 const LEGACY_CD_PREFIX = /^\s*cd\s+(?:"[^"]*"|'[^']*'|[^\s&|;]+)\s*&&\s*/;
 
@@ -78,6 +98,7 @@ function toBlocks(events: AgentEvent[]): Block[] {
           tool: event.tool,
           summary: tidySummary(event.summary),
           ...(event.detail ? { detail: event.detail } : {}),
+          ...(event.file ? { file: event.file } : {}),
         };
         if (tail?.kind === "tools") tail.items.push(item);
         else blocks.push({ kind: "tools", items: [item] });
@@ -103,7 +124,7 @@ function toBlocks(events: AgentEvent[]): Block[] {
         blocks.push({
           kind: "result",
           outcome: event.outcome,
-          ...(event.costUsd !== undefined ? { costUsd: event.costUsd } : {}),
+          ...(event.tokens !== undefined ? { tokens: event.tokens } : {}),
         });
         break;
 
@@ -181,7 +202,7 @@ function sameBlock(a: Block, b: Block): boolean {
       return a.text === (b as typeof a).text;
     case "result": {
       const other = b as typeof a;
-      return a.outcome === other.outcome && a.costUsd === other.costUsd;
+      return a.outcome === other.outcome && a.tokens === other.tokens;
     }
     case "tools": {
       const other = b as typeof a;
@@ -193,7 +214,9 @@ function sameBlock(a: Block, b: Block): boolean {
           item.id === there.id &&
           item.summary === there.summary &&
           item.detail === there.detail &&
-          item.error === there.error
+          item.error === there.error &&
+          item.file?.path === there.file?.path &&
+          item.file?.worktreeId === there.file?.worktreeId
         );
       });
     }
@@ -203,11 +226,21 @@ function sameBlock(a: Block, b: Block): boolean {
 const BlockRow = memo(function BlockRow({ block }: { block: Block }) {
   switch (block.kind) {
     case "user":
-      return <div className="msg msg-user">{block.text}</div>;
+      return (
+        <div className="msg-block msg-block-user">
+          <div className="msg msg-user">{block.text}</div>
+          <CopyButton text={block.text} className="msg-copy" tip="Copy this message" />
+        </div>
+      );
     case "assistant":
       return (
-        <div className="msg msg-assistant">
-          <Markdown text={block.text} />
+        <div className="msg-block msg-block-assistant">
+          <div className="msg msg-assistant">
+            <Markdown text={block.text} />
+          </div>
+          {/* The markdown as the dryad wrote it, not as it was drawn: pasting
+              a rendered heading into a file loses the thing that made it one. */}
+          <CopyButton text={block.text} className="msg-copy" tip="Copy this reply as markdown" />
         </div>
       );
     case "tools":
@@ -233,9 +266,9 @@ const BlockRow = memo(function BlockRow({ block }: { block: Block }) {
               <X size={12} /> {block.outcome}
             </>
           )}
-          {block.costUsd !== undefined && (
-            <span className="turn-cost" data-tip="What this turn cost">
-              ${block.costUsd.toFixed(3)}
+          {block.tokens !== undefined && (
+            <span className="turn-cost" data-tip="Tokens this turn read and wrote">
+              {compactTokens(block.tokens)}
             </span>
           )}
         </div>
@@ -270,6 +303,18 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   /** Set for one animation when a prompt leaves the box. */
   const [sent, setSent] = useState(0);
   const [clearing, setClearing] = useState(false);
+  /** The `@path` being typed, when one is. Drives the completion popup. */
+  const [mention, setMention] = useState<Mention | null>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * Every worktree this dryad can reach — what `@` searches. A circle tends
+   * several, and naming a file in the one it *isn't* pointed at is exactly the
+   * case a shared dryad exists for.
+   */
+  const members = useMemo(
+    () => circleMembers(worktreeId) ?? [worktreeId],
+    [worktreeId],
+  );
   const [uploading, setUploading] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -291,6 +336,27 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   const [pendingJump, setPendingJump] = useState<number | null>(null);
 
   const blocks = useMemo(() => toBlocks(transcript), [transcript]);
+
+  /**
+   * Grow the composer to whatever has been typed into it.
+   *
+   * Measured rather than counted: a wrapped line is a line, and `\n`s alone
+   * would leave a paragraph pasted in from somewhere else hidden behind a
+   * scrollbar. `height: auto` first, because scrollHeight can only ever report
+   * a box that is already too small.
+   */
+  useLayoutEffect(() => {
+    const node = promptRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    // The `rows` attribute sets the floor: with `auto` in place, scrollHeight
+    // never reports less than the two rows the box starts at.
+    const borders = node.offsetHeight - node.clientHeight;
+    const wanted = node.scrollHeight + borders;
+    const ceiling = promptCeiling();
+    node.style.height = `${Math.min(wanted, ceiling)}px`;
+    node.style.overflowY = wanted > ceiling ? "auto" : "hidden";
+  }, [text]);
 
   const prompts = useMemo<PromptMark[]>(
     () =>
@@ -454,7 +520,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   const clearSession = async () => {
     const ok = await confirm({
       title: "Clear this dryad?",
-      body: "It forgets this conversation entirely — the transcript is deleted and the running cost goes back to zero. Its worktrees and settings stay as they are.",
+      body: "It forgets this conversation entirely — the transcript is deleted and its token count goes back to zero. Its worktrees and settings stay as they are.",
       confirmLabel: "Clear",
       tone: "danger",
     });
@@ -503,8 +569,8 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   return (
     <div className="agent-panel">
       {/* One compact line. Everything here is glanceable — the state, what it
-          has cost, and the two controls that act on the session — so it stays
-          a strip rather than growing into a second header. */}
+          has read and written, and the two controls that act on the session —
+          so it stays a strip rather than growing into a second header. */}
       <div className={`chat-header chat-header-${state}`}>
         <span className="chat-state" data-tip={stateTip}>
           <span className="chat-state-dot" />
@@ -513,14 +579,8 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
 
         {session && (
           <span className="chat-header-facts">
-            <span data-tip="What this session has cost so far">
-              ${session.totalCostUsd.toFixed(3)}
-            </span>
-            <span className="chat-header-sep" aria-hidden>
-              ·
-            </span>
             <span data-tip="Tokens read and written across this session">
-              {compactTokens(session.totalTokens)}
+              {compactTokens(session.totalTokens)} tokens
             </span>
           </span>
         )}
@@ -556,6 +616,39 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
         <div
           className="chat-scroll"
           ref={scrollRef}
+          // Focusable so the arrows reach it. Dragging out a selection puts
+          // focus here on the way, which is exactly when you want them: the
+          // drag has to leave the box to keep scrolling and overshoots by half
+          // a screen, and a key that moves it back by a line fixes that.
+          tabIndex={0}
+          role="region"
+          aria-label="Conversation"
+          onKeyDown={(e) => {
+            const el = e.currentTarget;
+            // Anything with a caret of its own owns its arrow keys.
+            const target = e.target as HTMLElement;
+            if (target !== el && target.closest("input, textarea, [contenteditable]")) return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+            const page = Math.max(el.clientHeight - LINE_STEP, LINE_STEP);
+            const by =
+              e.key === "ArrowDown"
+                ? LINE_STEP
+                : e.key === "ArrowUp"
+                  ? -LINE_STEP
+                  : e.key === "PageDown"
+                    ? page
+                    : e.key === "PageUp"
+                      ? -page
+                      : e.key === "End"
+                        ? el.scrollHeight
+                        : e.key === "Home"
+                          ? -el.scrollHeight
+                          : 0;
+            if (by === 0) return;
+            e.preventDefault();
+            el.scrollBy({ top: by });
+          }}
           onScroll={(e) => {
             const el = e.currentTarget;
             const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_SLACK;
@@ -718,32 +811,65 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
               e.target.value = "";
             }}
           />
-          <textarea
-            rows={2}
-            data-tip="Enter sends · Shift+Enter starts a new line"
-            placeholder={
-              dragging
-                ? "Drop to attach"
-                : running
-                  ? "Queue a follow-up…"
-                  : "Tell the dryad what to do…"
-            }
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onPaste={(e) => {
-              const files = Array.from(e.clipboardData.files);
-              if (files.length) {
-                e.preventDefault();
-                void upload(files);
+          <div className="prompt-field">
+            <textarea
+              ref={promptRef}
+              rows={2}
+              data-tip="Enter sends · Shift+Enter starts a new line · @ names a file"
+              placeholder={
+                dragging
+                  ? "Drop to attach"
+                  : running
+                    ? "Queue a follow-up…"
+                    : "Tell the dryad what to do… (@ to name a file)"
               }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setMention(mentionAt(e.target.value, e.target.selectionStart));
+              }}
+              // The caret can move without the text changing, and an `@` three
+              // words back is no longer being typed once you click away from it.
+              onSelect={(e) =>
+                setMention(mentionAt(text, e.currentTarget.selectionStart))
               }
-            }}
-          />
+              onBlur={() => setMention(null)}
+              onPaste={(e) => {
+                const files = Array.from(e.clipboardData.files);
+                if (files.length) {
+                  e.preventDefault();
+                  void upload(files);
+                }
+              }}
+              onKeyDown={(e) => {
+                // The popup owns Enter while it is open — it means "choose
+                // this file", and PathMentions has already handled it.
+                if (e.key === "Enter" && !e.shiftKey && !mention) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+            <PathMentions
+              members={members}
+              mention={mention}
+              onDismiss={() => setMention(null)}
+              onPick={(path) => {
+                if (!mention) return;
+                const next = applyMention(text, mention, path);
+                setText(next.text);
+                setMention(null);
+                // Put the caret after what was just inserted, once React has
+                // written the new value into the field.
+                requestAnimationFrame(() => {
+                  const node = promptRef.current;
+                  if (!node) return;
+                  node.focus();
+                  node.setSelectionRange(next.caret, next.caret);
+                });
+              }}
+            />
+          </div>
           {running ? (
             <div className="prompt-actions">
               <button

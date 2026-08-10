@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Sparkles, X } from "lucide-react";
+import { ArrowDown, ArrowUp, FileCode2, Sparkles, X } from "lucide-react";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { useDiff, useInvalidate } from "../lib/queries";
@@ -124,6 +124,21 @@ export function GitPanel({
                     ? "staged"
                     : "unstaged"}
               </span>
+              {/* A patch read in isolation is often not enough; this is the
+                  way from "what changed here" to the file it changed. */}
+              <button
+                className="ghost diff-open"
+                onClick={() =>
+                  useSylva.getState().openFileHere({
+                    worktreeId: selection.worktreeId,
+                    path: selection.path,
+                  })
+                }
+                aria-label="Open this file in the Files tab"
+                data-tip="Open this file in the Files tab"
+              >
+                <FileCode2 size={13} />
+              </button>
               <button
                 className="ghost diff-close"
                 onClick={() => onSelect(null)}

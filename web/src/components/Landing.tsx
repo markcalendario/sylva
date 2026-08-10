@@ -47,7 +47,7 @@ export function Landing({ onRegister, onAbout }: { onRegister: () => void; onAbo
           <h2>State at a glance</h2>
           <p>
             Each dryad's animation tells you what its tree is doing — resting, working,
-            celebrating, or stuck — with live diffs, divergence, and cost alongside.
+            celebrating, or stuck — with live diffs, divergence, and token usage alongside.
           </p>
         </section>
         <section className="landing-card">

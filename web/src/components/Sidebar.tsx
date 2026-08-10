@@ -14,7 +14,13 @@ import { circleMembers, type Repo, type Worktree } from "sylva-shared";
 import { api } from "../lib/api";
 import { confirm } from "../lib/confirm";
 import { useInvalidate, useRepos, useWorktrees } from "../lib/queries";
-import { spriteStateFor, useSylva } from "../state/store";
+import {
+  SIDEBAR_DEFAULT,
+  SIDEBAR_MAX,
+  SIDEBAR_MIN,
+  spriteStateFor,
+  useSylva,
+} from "../state/store";
 import { Sprite } from "../sprites/Sprite";
 import { NewWorktreeDialog } from "./dialogs/NewWorktreeDialog";
 import { RegisterRepoDialog } from "./dialogs/RegisterRepoDialog";
@@ -32,13 +38,18 @@ function WorktreeRow({
   collapsed?: boolean;
   repoName?: string;
 }) {
-  // "Open" now means "held by a pane" — as itself, or inside a circle.
-  const open = useSylva((s) =>
-    s.panes.some(
-      (p) =>
-        p.worktreeId === worktree.id ||
-        (p.worktreeId ? (circleMembers(p.worktreeId)?.includes(worktree.id) ?? false) : false),
-    ),
+  // "Open" now means "held by a pane" — as itself, or inside a circle — and
+  // only while the workspace is the thing on screen. In the grove or the
+  // settings the panes are still holding worktrees, but none of them is what
+  // you are looking at, and a lit row saying otherwise is a lie.
+  const open = useSylva(
+    (s) =>
+      s.view === "workspace" &&
+      s.panes.some(
+        (p) =>
+          p.worktreeId === worktree.id ||
+          (p.worktreeId ? (circleMembers(p.worktreeId)?.includes(worktree.id) ?? false) : false),
+      ),
   );
   const spriteState = useSylva((s) => spriteStateFor(s, worktree.id));
   const unseen = useSylva((s) => s.unseenActivity[worktree.id] ?? false);
@@ -151,6 +162,15 @@ function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolea
     if (listed) useSylva.getState().indexWorktrees(repo, listed);
   }, [listed, repo.id, repo.name]);
 
+  const count = listed?.length ?? 0;
+  /** Worktrees in this repo with something uncommitted, for the header. */
+  const busy = useSylva((s) =>
+    (listed ?? []).filter((wt) => {
+      const st = s.statuses[wt.id];
+      return st ? st.staged.length + st.unstaged.length + st.untracked.length > 0 : false;
+    }).length,
+  );
+
   if (collapsed) {
     if (!repo.available) return null;
     return (
@@ -169,18 +189,33 @@ function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolea
   }
 
   return (
-    <div className="repo-group">
+    <section className={`repo-group ${expanded ? "repo-group-open" : ""}`}>
       <div className="repo-head">
         <button
           className="repo-toggle"
           onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
           data-tip={expanded ? "Hide this repo's worktrees" : "Show this repo's worktrees"}
         >
-          <ChevronRight size={13} className={`chevron ${expanded ? "open" : ""}`} />
+          <ChevronRight size={11} className={`chevron ${expanded ? "open" : ""}`} />
+          <FolderGit2 size={11} className="repo-icon" />
           <span className="repo-name">{repo.name}</span>
           {!repo.available && (
             <span className="repo-missing" data-tip="Sylva can't find this repository on disk">
               missing
+            </span>
+          )}
+          {/* The group says how big it is even while shut, so collapsing a repo
+              doesn't also hide the fact that there is anything in it. */}
+          {repo.available && count > 0 && (
+            <span
+              className="repo-count"
+              data-tip={`${count} worktree${count === 1 ? "" : "s"}${
+                busy ? `, ${busy} with uncommitted changes` : ""
+              }`}
+            >
+              {count}
+              {busy > 0 && <span className="repo-count-busy" aria-hidden />}
             </span>
           )}
         </button>
@@ -217,6 +252,9 @@ function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolea
           {worktrees.data?.map((wt) => (
             <WorktreeRow key={wt.id} worktree={wt} onRemove={setRemoving} />
           ))}
+          {count === 0 && !worktrees.isLoading && (
+            <div className="side-note side-note-empty">No worktrees yet.</div>
+          )}
           {worktrees.isError && <div className="side-note">Couldn't list worktrees</div>}
         </div>
       )}
@@ -235,7 +273,7 @@ function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolea
           onClose={() => setRemoving(null)}
         />
       )}
-    </div>
+    </section>
   );
 }
 
@@ -243,7 +281,9 @@ function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolea
 function CircleRow({ id, collapsed = false }: { id: string; collapsed?: boolean }) {
   const members = circleMembers(id) ?? [];
   const index = useSylva((s) => s.worktreeIndex);
-  const open = useSylva((s) => s.panes.some((p) => p.worktreeId === id));
+  const open = useSylva(
+    (s) => s.view === "workspace" && s.panes.some((p) => p.worktreeId === id),
+  );
   const spriteState = useSylva((s) => spriteStateFor(s, id));
   const unseen = useSylva((s) => s.unseenActivity[id] ?? false);
 
@@ -309,11 +349,14 @@ function SharedGroup({ collapsed = false }: { collapsed?: boolean }) {
   }
 
   return (
-    <div className="repo-group">
+    <section className="repo-group repo-group-open">
       <div className="repo-head">
         <span className="repo-toggle repo-shared-head">
-          <Users size={13} />
+          <Users size={11} />
           <span className="repo-name">shared</span>
+          <span className="repo-count" data-tip="Dryads tending more than one worktree">
+            {circles.length}
+          </span>
         </span>
       </div>
       <div className="wt-list">
@@ -321,7 +364,78 @@ function SharedGroup({ collapsed = false }: { collapsed?: boolean }) {
           <CircleRow key={id} id={id} />
         ))}
       </div>
-    </div>
+    </section>
+  );
+}
+
+/**
+ * The edge you drag to make the rail wider or narrower.
+ *
+ * Pointer capture rather than window listeners: it keeps the drag attached to
+ * this element even when the pointer outruns it — which it will, because the
+ * whole gesture is moving faster than a 4px target — and it ends cleanly if the
+ * pointer leaves the window entirely.
+ *
+ * It is also a real control for the keyboard: a separator you can focus and
+ * nudge with the arrows, since a 4px drag target is not reachable otherwise.
+ */
+function SidebarResizer() {
+  const width = useSylva((s) => s.sidebarWidth);
+  const [dragging, setDragging] = useState(false);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Left button only; a right-click here should open the context menu.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging) return;
+    // Measured from the window's left edge, which is where the sidebar starts.
+    // Reading the pointer rather than accumulating deltas means a drag that
+    // hits the clamp and comes back doesn't arrive somewhere else.
+    useSylva.getState().setSidebarWidth(e.clientX);
+  };
+
+  const end = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setDragging(false);
+  };
+
+  return (
+    <div
+      className={`sidebar-resizer ${dragging ? "sidebar-resizer-on" : ""}`}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the sidebar"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR_MIN}
+      aria-valuemax={SIDEBAR_MAX}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onLostPointerCapture={() => setDragging(false)}
+      // Back to where it started, the way a dragged divider always is.
+      onDoubleClick={() => useSylva.getState().setSidebarWidth(SIDEBAR_DEFAULT)}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 32 : 8;
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          useSylva.getState().setSidebarWidth(width - step);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          useSylva.getState().setSidebarWidth(width + step);
+        }
+      }}
+      data-tip="Drag to resize · double-click to reset"
+    />
   );
 }
 
@@ -369,11 +483,21 @@ export function Sidebar() {
   const [showRegister, setShowRegister] = useState(false);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
   const collapsed = useSylva((s) => s.sidebarCollapsed);
+  const width = useSylva((s) => s.sidebarWidth);
   const invalidate = useInvalidate();
+  /**
+   * Nothing in this list is what you're looking at.
+   *
+   * The grove, the fleet and the settings all cover the panes without emptying
+   * them, so the rail keeps describing a worktree that is no longer on screen.
+   * Draining the colour out of the dryads says "none of these" in the one place
+   * you'd look to find out.
+   */
+  const away = useSylva((s) => s.view !== "workspace");
 
   if (collapsed) {
     return (
-      <aside className="sidebar sidebar-collapsed">
+      <aside className={`sidebar sidebar-collapsed ${away ? "sidebar-away" : ""}`}>
         <button
           className="sidebar-toggle"
           onClick={() => useSylva.getState().toggleSidebar()}
@@ -391,7 +515,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${away ? "sidebar-away" : ""}`} style={{ width }}>
       <div className="sidebar-head">
         <span className="sidebar-label" data-tip="Every repository you've registered with Sylva">
           forest
@@ -443,6 +567,7 @@ export function Sidebar() {
           invalidate.worktrees();
         }}
       />
+      <SidebarResizer />
     </aside>
   );
 }

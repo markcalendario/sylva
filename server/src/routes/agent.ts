@@ -6,8 +6,13 @@ import { circleMembers, GROVE_ID, type Attachment } from "sylva-shared";
 import type { AppContext } from "../context.js";
 import { badRequest } from "../lib/errors.js";
 import { openExternal } from "../services/open.js";
+import { searchTranscripts } from "../services/transcriptSearch.js";
 
 const promptSchema = z.object({ text: z.string().min(1) });
+const transcriptSearchSchema = z.object({
+  q: z.string().min(1).max(200),
+  mode: z.enum(["file", "text"]).default("file"),
+});
 const openSchema = z.object({ kind: z.enum(["editor"]) });
 const answerSchema = z.object({
   requestId: z.string().min(1),
@@ -72,6 +77,23 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
   };
 
   app.get("/api/agent/availability", async () => sessions.getAvailability());
+
+  /**
+   * What is left of the Claude plan. Cached and shared — the windows belong to
+   * the login, so asking once serves every pane, and the reading is slow enough
+   * that asking per pane would be felt.
+   */
+  app.get("/api/usage", async () => ctx.usage.current());
+
+  /**
+   * Which dryads touched a file, or said a thing. Reads across every session's
+   * transcript — the whole point is that it answers about worktrees you are no
+   * longer looking at.
+   */
+  app.get("/api/transcripts/search", async (req) => {
+    const { q, mode } = transcriptSearchSchema.parse(req.query);
+    return searchTranscripts(ctx.store, q, mode);
+  });
 
   app.get("/api/sessions", async () => sessions.listSessions());
 

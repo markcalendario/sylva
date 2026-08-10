@@ -21,6 +21,78 @@ const TAB_LABEL: Record<Tab, string> = {
 /** Named once, in the tooltips, so the shortcut is findable without the Help. */
 const chord = tabCycleChord();
 
+/** What the Agent tab shows about itself while you are somewhere else. */
+type AgentTabState = "idle" | "working" | "blocked" | "errored" | "done";
+
+const AGENT_TIP: Record<AgentTabState, string> = {
+  idle: "No agent is running here",
+  working: "The dryad is working right now",
+  blocked: "The dryad is waiting for a permission decision",
+  errored: "The last turn ended in an error",
+  done: "A turn finished here and you haven't read it yet",
+};
+
+/**
+ * What a tab is carrying, worn on the tab itself.
+ *
+ * Every one of these was already knowable, and every one of them needed the tab
+ * opened to know it — which is the wrong way round for a strip whose whole job
+ * is to tell you where to go next. Counts are muted; the Agent's state is the
+ * one thing allowed to use colour, because it is the only one that can mean
+ * "everything here has stopped until you do something".
+ */
+function TabBadge({
+  tab,
+  dirty,
+  terminalCount,
+  anyLive,
+  agentState,
+}: {
+  tab: Tab;
+  dirty: number;
+  terminalCount: number;
+  anyLive: boolean;
+  agentState: AgentTabState;
+}) {
+  if (tab === "agent") {
+    // Resting is the ordinary state and needs no mark; a dot for "nothing is
+    // happening" is just noise on three tabs out of four.
+    if (agentState === "idle") return null;
+    return (
+      <span
+        className={`tab-state tab-state-${agentState}`}
+        data-tip={AGENT_TIP[agentState]}
+        aria-label={AGENT_TIP[agentState]}
+      />
+    );
+  }
+
+  if (tab === "terminal") {
+    if (terminalCount === 0) return null;
+    return (
+      <span
+        className={`tab-count ${anyLive ? "tab-count-live" : ""}`}
+        data-tip={
+          `${terminalCount} terminal${terminalCount === 1 ? "" : "s"} open here` +
+          (anyLive ? " · at least one shell is still running" : "")
+        }
+      >
+        {terminalCount}
+      </span>
+    );
+  }
+
+  if (dirty === 0) return null;
+  return (
+    <span
+      className="tab-count"
+      data-tip={`${dirty} uncommitted file${dirty === 1 ? "" : "s"} in this worktree`}
+    >
+      {dirty}
+    </span>
+  );
+}
+
 const TAB_TIP: Record<Tab, string> = {
   agent: "Prompt the dryad and watch it work",
   files: "Live feed of files changing in this worktree",
@@ -56,9 +128,43 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
 
   // The header still describes a single worktree when there is one.
   const status = circle ? undefined : statuses[members[0] ?? ""];
-  const anyLive = Object.values(terminals).some(
-    (t) => t.status === "running" && members.includes(t.worktreeId),
+  const mine = Object.values(terminals).filter((t) => members.includes(t.worktreeId));
+  const anyLive = mine.some((t) => t.status === "running");
+  const terminalCount = mine.length;
+
+  /**
+   * Uncommitted files across everything this pane holds. The same number the
+   * Files and Git tabs are about, so both wear it — you should be able to tell
+   * there is work waiting without opening the tab that holds it.
+   */
+  const dirty = members.reduce((n, id) => {
+    const st = statuses[id];
+    if (!st) return n;
+    return n + st.staged.length + st.unstaged.length + st.untracked.length;
+  }, 0);
+
+  /**
+   * Permissions waiting on an answer here. Keyed by whatever holds the session
+   * — a worktree id, or a circle's — so both are asked about, and the set stops
+   * an ordinary worktree (which is both) from counting twice.
+   */
+  const permissions = useSylva((s) => s.pendingPermissions);
+  const blocked = [...new Set([targetId, ...members].filter((id): id is string => !!id))].reduce(
+    (n, id) => n + (permissions[id]?.length ?? 0),
+    0,
   );
+
+  /** What the Agent tab's own indicator says, without opening it. */
+  const agentState: AgentTabState =
+    blocked > 0
+      ? "blocked"
+      : session?.status === "running"
+        ? "working"
+        : session?.status === "errored"
+          ? "errored"
+          : spriteState === "success"
+            ? "done"
+            : "idle";
 
   // The session belongs to the target; a circle's transcript is its own.
   useEffect(() => {
@@ -214,9 +320,13 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
               data-tip={`${TAB_TIP[t]} · ${chord} steps through the tabs`}
             >
               {TAB_LABEL[t]}
-              {t === "terminal" && anyLive && (
-                <span className="tab-dot" data-tip="A shell is open and running here" />
-              )}
+              <TabBadge
+                tab={t}
+                dirty={dirty}
+                terminalCount={terminalCount}
+                anyLive={anyLive}
+                agentState={agentState}
+              />
             </button>
           ))}
         </nav>
@@ -225,6 +335,7 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
       {pane.tab === "agent" && <AgentPanel worktreeId={targetId} />}
       {pane.tab === "files" && (
         <FilesPanel
+          pane={pane}
           members={members}
           onOpenDiff={(selection) => store.setPaneDiff(pane.id, selection, "git")}
         />

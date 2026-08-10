@@ -20,6 +20,16 @@
   --ember-dim: #7a3830;
   --stream: #7fb7c9; /* branches, links */
 
+  /* Selected text.
+     Deliberately *not* one of the colours above: the highlight used to be
+     --firefly-dim, which is also what a user's own chat bubble is painted in,
+     so selecting your own prompt looked exactly like not selecting it. A cool
+     blue is the one hue nothing in the forest is already using, which is what
+     makes a selection visible on every surface here — bark, canvas, and the
+     amber of your own words alike. */
+  --select-bg: #3d6377;
+  --select-fg: #f2f7ef;
+
   /* type */
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -63,6 +73,11 @@
   --radius-lg: 10px;
 
   --shadow-raise: 0 4px 24px rgb(0 0 0 / 0.45);
+
+  /* The composer at its shortest: two rows of prompt text, its padding and its
+     border. Everything that sits beside the box — the paperclip, the saved
+     prompts, Send — is this tall, so a growing textarea leaves them alone. */
+  --prompt-min-h: calc(var(--text-sm) * var(--leading-normal) * 2 + var(--pad-2) * 2 + 2px);
 
   /* Terminal colours for the Run tab. Tuned warmer and less saturated than raw
      ANSI so a dev server's output sits in the forest rather than shouting over

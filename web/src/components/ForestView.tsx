@@ -1,5 +1,6 @@
 import { useQueries } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { compactTokens } from "../lib/format";
 import { useRepos } from "../lib/queries";
 import { spriteStateFor, useSylva } from "../state/store";
 import { circleMembers, GROVE_ID } from "sylva-shared";
@@ -53,8 +54,8 @@ export function ForestView() {
       worktree,
       state: spriteStateFor({ sessions, pendingPermissions, celebrating }, worktree.id),
       ...(status ? { status } : {}),
-      ...(sessions[worktree.id]?.totalCostUsd !== undefined
-        ? { cost: sessions[worktree.id]?.totalCostUsd }
+      ...(sessions[worktree.id]?.totalTokens !== undefined
+        ? { tokens: sessions[worktree.id]?.totalTokens }
         : {}),
       unseen: unseenMap[worktree.id] ?? false,
       focused: paneWorktreeIds.includes(worktree.id),
@@ -151,9 +152,12 @@ export function ForestView() {
                       : "needs you"}
               </span>
               <span className="div-zero">no tree</span>
-              {(sessions[GROVE_ID]?.totalCostUsd ?? 0) > 0 && (
-                <span className="ow-chip-cost tabular">
-                  ${(sessions[GROVE_ID]?.totalCostUsd ?? 0).toFixed(2)}
+              {(sessions[GROVE_ID]?.totalTokens ?? 0) > 0 && (
+                <span
+                  className="ow-chip-tokens tabular"
+                  data-tip="Tokens this dryad has read and written"
+                >
+                  {compactTokens(sessions[GROVE_ID]?.totalTokens ?? 0)}
                 </span>
               )}
             </button>
@@ -195,8 +199,13 @@ export function ForestView() {
                   <span className={`tabular ${dirty ? "" : "div-zero"}`}>
                     {dirty === 0 ? "clean" : `${dirty} dirty`}
                   </span>
-                  {plot.cost !== undefined && plot.cost > 0 && (
-                    <span className="ow-chip-cost tabular">${plot.cost.toFixed(2)}</span>
+                  {plot.tokens !== undefined && plot.tokens > 0 && (
+                    <span
+                      className="ow-chip-tokens tabular"
+                      data-tip="Tokens this dryad has read and written"
+                    >
+                      {compactTokens(plot.tokens)}
+                    </span>
                   )}
                 </button>
               );

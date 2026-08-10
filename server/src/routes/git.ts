@@ -1,11 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { FleetDigest, FleetEntry } from "sylva-shared";
 import type { AppContext } from "../context.js";
 import { badRequest } from "../lib/errors.js";
-import { createPullRequest, listPullRequests } from "../services/pr.js";
+import { createPullRequest, currentPullRequest, listPullRequests } from "../services/pr.js";
 
 const treeQuerySchema = z.object({ path: z.string().max(1000).optional() });
 const fileQuerySchema = z.object({ path: z.string().min(1).max(1000) });
+const blameQuerySchema = z.object({
+  path: z.string().min(1).max(1000),
+  line: z.coerce.number().int().min(1),
+});
 const searchQuerySchema = z.object({ q: z.string().max(200).optional() });
 /** The cap matches what `fileContent` will read back, so a save can't truncate. */
 const writeFileSchema = z.object({
@@ -176,11 +181,82 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     return saved;
   });
 
+  /** Who last touched one line — follows the caret in the Files tab. */
+  app.get("/api/worktrees/:worktreeId/blame", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { path, line } = blameQuerySchema.parse(req.query);
+    return gitOps.blameLine(worktreeId, path, line);
+  });
+
+  /** Which lines of a file differ from the last commit, for the gutter. */
+  app.get("/api/worktrees/:worktreeId/changed-lines", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { path } = fileQuerySchema.parse(req.query);
+    return gitOps.changedLines(worktreeId, path);
+  });
+
+  /**
+   * Every registered worktree's status in one answer.
+   *
+   * Asked as one request rather than one per worktree because the whole point
+   * of the digest is the shape of the fleet — thirty round trips arriving
+   * separately would draw it a row at a time.
+   */
+  app.get("/api/fleet", async () => {
+    const entries: FleetEntry[] = [];
+
+    for (const repo of ctx.store.repos) {
+      let worktrees: Awaited<ReturnType<typeof ctx.workspace.listWorktrees>>;
+      try {
+        worktrees = await ctx.workspace.listWorktrees(repo.id);
+      } catch {
+        // A repository that has moved or been deleted takes its worktrees with
+        // it; the rest of the fleet is still worth reporting.
+        continue;
+      }
+
+      for (const worktree of worktrees) {
+        try {
+          const status = await gitOps.status(worktree.id);
+          entries.push({
+            worktreeId: worktree.id,
+            repoId: repo.id,
+            repoName: repo.name,
+            branch: worktree.branch,
+            status,
+            error: null,
+          });
+        } catch (err) {
+          entries.push({
+            worktreeId: worktree.id,
+            repoId: repo.id,
+            repoName: repo.name,
+            branch: worktree.branch,
+            status: null,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    return { entries } satisfies FleetDigest;
+  });
+
   /** Pull requests already open on this repository. */
   app.get("/api/worktrees/:worktreeId/pulls", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     const { worktree } = await ctx.workspace.resolveWorktree(worktreeId);
     return listPullRequests(worktree.path, worktree.branch);
+  });
+
+  /**
+   * The pull request for the branch this worktree is standing on — the one the
+   * Git tab shows inline, so its state is visible without opening a dialog.
+   */
+  app.get("/api/worktrees/:worktreeId/pull", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const { worktree } = await ctx.workspace.resolveWorktree(worktreeId);
+    return currentPullRequest(worktree.path, worktree.branch);
   });
 
   /**

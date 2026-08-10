@@ -193,6 +193,172 @@ export interface PullRequestResult {
   draft: boolean;
 }
 
+/** How GitHub's checks finished on a head commit, rolled up to one word. */
+export type ChecksState = "passing" | "failing" | "pending" | "none";
+
+/**
+ * The pull request for the branch a worktree is standing on.
+ *
+ * Everything here comes from one `gh pr view` — which answers only for the
+ * current branch, and so cannot describe any other. That narrowness is the
+ * point: the Git tab wants the PR you are working in, not a list to pick from.
+ */
+export interface CurrentPullRequest {
+  number: number;
+  title: string;
+  url: string;
+  draft: boolean;
+  /** "OPEN", "MERGED" or "CLOSED", as GitHub spells it. */
+  state: string;
+  branch: string;
+  baseBranch: string;
+  author: string;
+  updatedAt: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  /** Rolled up from the head commit's status checks. */
+  checks: ChecksState;
+  /** Counts behind the rollup, for the tooltip. */
+  checksPassed: number;
+  checksFailed: number;
+  checksPending: number;
+  /** "APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED", or null when unknown. */
+  reviewDecision: string | null;
+  /** Whether GitHub thinks it merges cleanly: "MERGEABLE", "CONFLICTING", … */
+  mergeable: string | null;
+  commentCount: number;
+}
+
+export interface CurrentPullRequestResponse {
+  /** Null when the branch has no PR, or when `gh` couldn't be asked. */
+  pull: CurrentPullRequest | null;
+  /**
+   * Why there is no PR to show, in a sentence. Null when the branch simply
+   * hasn't got one — that is an ordinary state, not a problem to explain.
+   */
+  reason: string | null;
+  /** The compare page, so "no PR yet" is still a way forward. */
+  createUrl: string | null;
+}
+
+/**
+ * Who last touched one line, and in which commit.
+ *
+ * `committed` is false for a line that only exists in the working tree — git
+ * blames those to a zero sha and the name "Not Committed Yet", which is a fact
+ * worth reporting plainly rather than passing through as an author.
+ */
+export interface LineBlame {
+  line: number;
+  committed: boolean;
+  sha: string;
+  /** Short sha, ready to show. Empty for an uncommitted line. */
+  shortSha: string;
+  author: string;
+  authorEmail: string;
+  /** ISO 8601, or empty when uncommitted. */
+  authoredAt: string;
+  /** The commit's subject line. */
+  summary: string;
+}
+
+/**
+ * Which lines of a file differ from the last commit.
+ *
+ * Line numbers are in the file as it is now, which is what the editor draws —
+ * deletions have no line to mark and so are simply absent.
+ */
+export interface ChangedLines {
+  path: string;
+  /** Lines added since the last commit. */
+  added: number[];
+  /** Lines whose content changed. */
+  modified: number[];
+  /** False when the file is untracked, where "changed" means all of it. */
+  tracked: boolean;
+}
+
+/** One worktree's contribution to the fleet digest. */
+export interface FleetEntry {
+  worktreeId: string;
+  repoId: string;
+  repoName: string;
+  branch: string | null;
+  /** Null when the worktree couldn't be read. */
+  status: WorktreeStatus | null;
+  /** Why it couldn't, when it couldn't. */
+  error: string | null;
+}
+
+export interface FleetDigest {
+  entries: FleetEntry[];
+}
+
+/** What a transcript search is asking: about a file, or about words said. */
+export type TranscriptSearchMode = "file" | "text";
+
+/** One moment in one dryad's conversation that matched a search. */
+export interface TranscriptHit {
+  sessionId: string;
+  /** The worktree, circle or grove the session belonged to. */
+  worktreeId: string;
+  repoId: string;
+  at: string;
+  kind: "tool-use" | "user-prompt" | "assistant-text";
+  /** Which tool, when the match was a step rather than something said. */
+  tool?: string;
+  /** The matching line, trimmed to something a row can hold. */
+  summary: string;
+  /** The file the step was about, when the transcript recorded one. */
+  file?: { worktreeId: string; path: string };
+}
+
+export interface TranscriptSearchResponse {
+  query: string;
+  mode: TranscriptSearchMode;
+  /** Newest first — what a dryad did an hour ago beats last Tuesday. */
+  hits: TranscriptHit[];
+  /** How many conversations were read, so "no hits" can be told from "nothing to read". */
+  sessionsSearched: number;
+  /** True when the cap was reached and there is more than this. */
+  truncated: boolean;
+}
+
+/**
+ * One rate-limit window on a Claude plan: how much of it is spent, and when it
+ * refills. Both are nullable because the server may know a window exists
+ * without yet knowing its numbers.
+ */
+export interface UsageWindow {
+  /** Percentage of the window used, 0–100. */
+  utilization: number | null;
+  /** ISO 8601 timestamp when the window resets. */
+  resetsAt: string | null;
+}
+
+/**
+ * What is left of your Claude plan, as the `/usage` command sees it.
+ *
+ * This replaced the dollar figures Sylva used to show. A session cost in USD is
+ * a number nobody acts on when the plan is a subscription — what actually
+ * stops work is the weekly window running out, and that is what this reports.
+ */
+export interface PlanUsage {
+  /** False for API-key, Bedrock and Vertex sessions, where plan limits don't apply. */
+  available: boolean;
+  /** "pro", "max", "team", "enterprise", or null when not a claude.ai plan. */
+  subscription: string | null;
+  fiveHour: UsageWindow | null;
+  sevenDay: UsageWindow | null;
+  /** Per-model weekly windows, when the server reports them. */
+  models: { name: string; utilization: number | null; resetsAt: string | null }[];
+  /** Why there are no numbers, when there are none. */
+  reason: string | null;
+  /** When this snapshot was taken, so the client can say how stale it is. */
+  fetchedAt: string;
+}
+
 export interface DiffLine {
   type: "context" | "add" | "del";
   content: string;
@@ -501,6 +667,14 @@ export type AgentEvent =
       summary: string;
       /** Full text behind a truncated summary, when there's more to see. */
       detail?: string;
+      /**
+       * The file this step was about, when it was about one, resolved to a
+       * worktree Sylva knows. Present so the transcript row can open it — the
+       * summary is a truncated label and the raw input is an absolute path, and
+       * neither can be turned back into "this file, in that worktree" by a
+       * client that doesn't know where the worktrees live.
+       */
+      file?: { worktreeId: string; path: string };
       input?: unknown;
       at: string;
     }
@@ -539,6 +713,51 @@ export interface FileEvent {
   path: string;
   change: "added" | "changed" | "deleted";
   at: string;
+}
+
+// ---------- Tools ----------
+
+/**
+ * One process holding a port open.
+ *
+ * `self` marks Sylva's own server. It is the one listener the tool refuses to
+ * kill: the answer would arrive over a connection the kill had just closed, and
+ * "the app vanished" is a poor way to learn what a button does.
+ */
+export interface PortListener {
+  port: number;
+  pid: number;
+  /** The program's name, as the operating system reports it. */
+  command: string;
+  /** Whoever the process belongs to — killing another user's needs privileges. */
+  user?: string;
+  /** What it is bound to: "*", "127.0.0.1", "[::1]". */
+  address?: string;
+  self: boolean;
+}
+
+export interface PortScan {
+  /** The ports that were asked about, or every listening port when none were. */
+  listeners: PortListener[];
+  /** Ports asked about that nothing is listening on. */
+  free: number[];
+  scannedAt: string;
+}
+
+export type KillOutcome = "killed" | "free" | "refused" | "failed";
+
+/** What became of one port the kill was asked to free. */
+export interface KillPortResult {
+  port: number;
+  outcome: KillOutcome;
+  /** Processes the kill was aimed at, whether or not it reached them. */
+  pids: number[];
+  /** Why, when the outcome isn't "killed" — and how it ended when it is. */
+  note: string;
+}
+
+export interface KillPortsRequest {
+  ports: number[];
 }
 
 // ---------- WebSocket protocol (server -> client) ----------

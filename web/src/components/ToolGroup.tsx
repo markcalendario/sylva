@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { FileCode2 } from "lucide-react";
+import { useSylva } from "../state/store";
 
 export interface ToolItem {
   id: string;
@@ -6,6 +8,8 @@ export interface ToolItem {
   summary: string;
   detail?: string;
   error?: string;
+  /** The file this step touched, when it touched one. */
+  file?: { worktreeId: string; path: string };
 }
 
 const COLLAPSE_AT = 4;
@@ -46,6 +50,19 @@ export function ToolGroup({ items }: { items: ToolItem[] }) {
               </span>
               <span className="tool-summary">{item.summary}</span>
             </button>
+            {/* A step that touched a file offers to show you that file. The
+                summary itself keeps its old job of revealing the raw input —
+                two different questions about the same row, so two controls. */}
+            {item.file && (
+              <button
+                className="ghost tool-open"
+                onClick={() => useSylva.getState().openFileHere(item.file!)}
+                aria-label={`Open ${item.file.path}`}
+                data-tip={`Open ${item.file.path} in the Files tab`}
+              >
+                <FileCode2 size={11} />
+              </button>
+            )}
             {openId === item.id && item.detail && (
               <pre className="tool-detail" data-tip="Exactly what the dryad passed to this tool">
                 {item.detail}

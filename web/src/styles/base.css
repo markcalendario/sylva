@@ -89,7 +89,8 @@ textarea::placeholder {
 }
 
 ::selection {
-  background: var(--firefly-dim);
+  background: var(--select-bg);
+  color: var(--select-fg);
 }
 
 a {

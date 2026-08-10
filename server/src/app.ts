@@ -13,6 +13,7 @@ import { registerBrowseRoutes } from "./routes/browse.js";
 import { registerGitRoutes } from "./routes/git.js";
 import { registerRepoRoutes } from "./routes/repos.js";
 import { registerTerminalRoutes } from "./routes/terminals.js";
+import { registerToolRoutes } from "./routes/tools.js";
 import { originGuard } from "./security.js";
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
@@ -47,6 +48,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerAgentRoutes(app, ctx);
   registerBrowseRoutes(app, ctx);
   registerTerminalRoutes(app, ctx);
+  registerToolRoutes(app);
 
   // Production: serve the built frontend from this same port.
   const webDist = join(dirname(fileURLToPath(import.meta.url)), "../../web/dist");

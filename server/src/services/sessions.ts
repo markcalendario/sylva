@@ -1,5 +1,5 @@
 import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
-import { relative } from "node:path";
+import { isAbsolute, relative } from "node:path";
 import {
   query,
   type CanUseTool,
@@ -169,6 +169,36 @@ function clampTail(text: string, max: number): string {
 interface ToolLabel {
   summary: string;
   detail?: string;
+  /** The absolute path this step was about, when it was about a file. */
+  filePath?: string;
+}
+
+/**
+ * Which worktree a path lives in, and where it sits inside it.
+ *
+ * A session can span several worktrees, so "relative to the session" isn't
+ * enough — the longest matching root wins, which also settles the case of one
+ * worktree nested inside another's directory.
+ */
+export function locateFile(
+  absolutePath: string,
+  roots: { worktreeId: string; path: string }[],
+): { worktreeId: string; path: string } | null {
+  if (!absolutePath) return null;
+  let best: { worktreeId: string; path: string } | null = null;
+  let bestLength = -1;
+
+  for (const root of roots) {
+    if (!root.path) continue;
+    const rel = relative(root.path, absolutePath);
+    // Outside this root, or reached by climbing out of it, is not inside it.
+    if (!rel || rel.startsWith("..") || isAbsolute(rel)) continue;
+    if (root.path.length > bestLength) {
+      bestLength = root.path.length;
+      best = { worktreeId: root.worktreeId, path: rel };
+    }
+  }
+  return best;
 }
 
 /** Build the one-line label shown for a tool call in the chat. */
@@ -192,7 +222,7 @@ export function describeTool(
     case "MultiEdit":
     case "NotebookEdit": {
       const rel = relativize(filePath, root);
-      return { summary: clampTail(rel, 80), detail: filePath };
+      return { summary: clampTail(rel, 80), detail: filePath, filePath };
     }
     case "Glob":
       return { summary: clampHead(str(input.pattern), 80) };
@@ -260,6 +290,18 @@ export class SessionManager {
   getByWorktree(worktreeId: string): SessionInfo | null {
     const id = this.byWorktree.get(worktreeId);
     return id ? (this.sessions.get(id)?.info ?? null) : null;
+  }
+
+  /**
+   * Any live query, for questions that are about the login rather than about a
+   * conversation — plan usage being the one that asks. Borrowing a process that
+   * is already up costs nothing; standing one up for the question costs a spawn.
+   */
+  anyLiveQuery(): Query | null {
+    for (const session of this.sessions.values()) {
+      if (session.q) return session.q;
+    }
+    return null;
   }
 
   async transcript(worktreeId: string): Promise<AgentEvent[]> {
@@ -697,12 +739,24 @@ export class SessionManager {
               (block.input ?? {}) as Record<string, unknown>,
               session.worktreePath,
             );
+            // A step about a file carries which file, so the transcript row can
+            // open it. The grove watches nothing, and its paths belong to no
+            // worktree, so it simply has no reference to give.
+            const file = label.filePath
+              ? locateFile(
+                  label.filePath,
+                  session.watch.length
+                    ? session.watch
+                    : [{ worktreeId: session.info.worktreeId, path: session.worktreePath }],
+                )
+              : null;
             this.appendEvent(session, {
               kind: "tool-use",
               toolUseId: block.id,
               tool: block.name,
               summary: label.summary,
               ...(label.detail && label.detail !== label.summary ? { detail: label.detail } : {}),
+              ...(file ? { file } : {}),
               at: now(),
             });
           }
