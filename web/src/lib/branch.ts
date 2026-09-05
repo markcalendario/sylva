@@ -11,12 +11,13 @@
  * So the branch keeps its prefix and the interface shows the leaf.
  */
 
-export const WORKTREE_KINDS = ["feature", "chore", "docs"] as const;
+export const WORKTREE_KINDS = ["feature", "fix", "chore", "docs"] as const;
 
 export type WorktreeKind = (typeof WORKTREE_KINDS)[number];
 
 export const KIND_TIP: Record<WorktreeKind, string> = {
   feature: "New behaviour — branches as feature/…",
+  fix: "Something that is broken — branches as fix/…",
   chore: "Maintenance, refactors, dependencies — branches as chore/…",
   docs: "Documentation and comments — branches as docs/…",
 };

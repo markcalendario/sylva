@@ -27,11 +27,14 @@ describe("slugifying a name", () => {
 describe("building the branch", () => {
   it("prefixes with the kind", () => {
     expect(branchFor("feature", "Night Mode")).toBe("feature/night-mode");
+    expect(branchFor("fix", "Prescription Settings")).toBe("fix/prescription-settings");
     expect(branchFor("docs", "readme pass")).toBe("docs/readme-pass");
   });
 
   it("leaves a name that already carries a prefix alone", () => {
     expect(branchFor("feature", "chore/deps")).toBe("chore/deps");
+    // Newly true of fix/ as well, now that it is one of the four.
+    expect(branchFor("feature", "fix/login")).toBe("fix/login");
   });
 
   it("is empty when the name is", () => {
