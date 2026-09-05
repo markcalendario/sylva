@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
-  Columns2,
+  Bot,
   FileCode2,
   Flower2,
   GitBranch,
   Layers,
+  LayoutGrid,
   PanelLeft,
   PanelsTopLeft,
   Search,
@@ -14,10 +15,11 @@ import {
   SquareTerminal,
   Trees,
   Wrench,
-  X,
 } from "lucide-react";
 import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
+import { worktreeLabel } from "../lib/branch";
+import { useHasForest, useWords } from "../lib/theme";
 import { attentionQueue, fileKey, TABS, useSylva, type Tab } from "../state/store";
 
 /** One thing the palette can do. */
@@ -39,7 +41,7 @@ const GROUP_ORDER = ["Files", "Worktrees", "Go to", "This pane", "Actions"];
 /**
  * One box that gets you anywhere.
  *
- * Sylva grew a sidebar, two panes, four tabs each, terminals within terminals
+ * Sylva grew a sidebar, a pane with four tabs, terminals within terminals
  * and files within those — and every one of them could only be reached by
  * pointing at it. That is fine at three worktrees and unbearable at ten, which
  * is exactly the number Sylva exists to make possible.
@@ -54,21 +56,21 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const panes = useSylva((s) => s.panes);
-  const activePaneId = useSylva((s) => s.activePaneId);
+  const pane = useSylva((s) => s.pane);
   const index = useSylva((s) => s.worktreeIndex);
   const statuses = useSylva((s) => s.statuses);
   const knownCircles = useSylva((s) => s.knownCircles);
   const sidebarCollapsed = useSylva((s) => s.sidebarCollapsed);
 
-  const pane = panes.find((p) => p.id === activePaneId) ?? panes[0];
-  const targetId = pane?.worktreeId ?? null;
+  const targetId = pane.worktreeId;
   const members = useMemo(
     () => (targetId ? (circleMembers(targetId) ?? [targetId]) : []),
     [targetId],
   );
 
   const files = useFileSearch(members, open ? query : "");
+  const words = useWords();
+  const hasForest = useHasForest();
 
   // Every opening starts clean. A palette that remembers last time's query is
   // one you have to clear before you can use it.
@@ -95,7 +97,7 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
         hint: hit.path,
         icon: <FileCode2 size={13} />,
         run: () => {
-          store.openFileHere({ worktreeId: hit.worktreeId, path: hit.path });
+          store.openFile({ worktreeId: hit.worktreeId, path: hit.path });
           close();
         },
       });
@@ -107,7 +109,7 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
       out.push({
         id: `wt:${id}`,
         group: "Worktrees",
-        label: statuses[id]?.branch ?? place.branch,
+        label: worktreeLabel(statuses[id]?.branch ?? place.branch, id.slice(0, 7)),
         hint: place.repoName,
         keywords: `${place.repoName} ${place.branch} worktree branch`,
         icon: <GitBranch size={13} />,
@@ -119,16 +121,16 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
     }
 
     for (const id of knownCircles) {
-      const names = (circleMembers(id) ?? []).map(
-        (m) => statuses[m]?.branch ?? index[m]?.branch ?? m.slice(0, 7),
+      const names = (circleMembers(id) ?? []).map((m) =>
+        worktreeLabel(statuses[m]?.branch ?? index[m]?.branch, m.slice(0, 7)),
       );
       if (names.length === 0) continue;
       out.push({
         id: `circle:${id}`,
         group: "Worktrees",
         label: names.join(" + "),
-        hint: "one dryad, several worktrees",
-        keywords: "shared circle dryad",
+        hint: `one ${words.agent}, several worktrees`,
+        keywords: "shared circle dryad agent",
         icon: <PanelsTopLeft size={13} />,
         run: () => {
           store.openCircle(circleMembers(id) ?? []);
@@ -142,13 +144,13 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
       {
         id: "go:forest",
         group: "Go to",
-        label: "Forest",
-        hint: "every worktree on one map",
-        icon: <Trees size={13} />,
+        label: words.workspace,
+        hint: hasForest ? "every worktree on one map" : "every worktree in one table",
+        icon: hasForest ? <Trees size={13} /> : <LayoutGrid size={13} />,
         run: () => {
           store.setView("workspace");
           void api.setFocus(null);
-          for (const p of store.panes) store.setPaneWorktree(p.id, null);
+          store.setPaneWorktree(null);
           close();
         },
       },
@@ -167,9 +169,9 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
       {
         id: "go:grove",
         group: "Go to",
-        label: "Grove",
-        hint: "the dryad that belongs to no worktree",
-        icon: <Flower2 size={13} />,
+        label: words.grove,
+        hint: `the ${words.agent} that belongs to no worktree`,
+        icon: hasForest ? <Flower2 size={13} /> : <Bot size={13} />,
         run: () => {
           store.setView("grove");
           close();
@@ -220,7 +222,7 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
           icon: tab === "terminal" ? <SquareTerminal size={13} /> : undefined,
           keywords: tab,
           run: () => {
-            store.setPaneTab(pane.id, tab);
+            store.setPaneTab(tab);
             close();
           },
         });
@@ -235,8 +237,8 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
           keywords: "open file tab",
           icon: <FileCode2 size={13} />,
           run: () => {
-            store.setActiveFile(pane.id, fileKey(file));
-            store.setPaneTab(pane.id, "files");
+            store.setActiveFile(fileKey(file));
+            store.setPaneTab("files");
             close();
           },
         });
@@ -292,7 +294,7 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
             if (first) {
               void api.openTerminal(first).then((info) => {
                 useSylva.getState().setTerminal(info);
-                store.setPaneTab(pane!.id, "terminal");
+                store.setPaneTab("terminal");
               });
             }
             close();
@@ -302,18 +304,6 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
     }
 
     out.push(
-      {
-        id: "act:split",
-        group: "Actions",
-        label: panes.length > 1 ? "Close this pane" : "Split the workspace",
-        icon: panes.length > 1 ? <X size={13} /> : <Columns2 size={13} />,
-        keywords: "pane side by side two",
-        run: () => {
-          if (panes.length > 1 && pane) store.closePane(pane.id);
-          else store.splitPane();
-          close();
-        },
-      },
       {
         id: "act:sidebar",
         group: "Actions",
@@ -328,15 +318,15 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
       {
         id: "act:memory",
         group: "Actions",
-        label: "Search the dryads' memory",
+        label: `Search the ${words.agentsPossessive} memory`,
         hint: "who touched a file, or said a thing",
         icon: <Search size={13} />,
         keywords: "transcript history who touched find said",
         run: () => {
           // Pre-filled with the file being read, when there is one: that is
           // nearly always what the question is about.
-          const file = pane?.files.find((f) => fileKey(f) === pane.activeFile);
-          store.openTranscriptSearch(pane?.tab === "files" && file ? file.path : "");
+          const file = pane.files.find((f) => fileKey(f) === pane.activeFile);
+          store.openTranscriptSearch(pane.tab === "files" && file ? file.path : "");
         },
       },
     );
@@ -347,7 +337,7 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
       out.push({
         id: "act:attention",
         group: "Actions",
-        label: `Go to the next dryad needing you (${waiting.length})`,
+        label: `Go to the next ${words.agent} needing you (${waiting.length})`,
         hint:
           next.reason === "blocked"
             ? "waiting on a permission"
@@ -364,7 +354,19 @@ export function CommandPalette({ onHelp }: { onHelp: () => void }) {
     }
 
     return out;
-  }, [files, index, statuses, knownCircles, pane, targetId, members, panes, sidebarCollapsed, onHelp]);
+  }, [
+    files,
+    index,
+    statuses,
+    knownCircles,
+    pane,
+    targetId,
+    members,
+    sidebarCollapsed,
+    onHelp,
+    words,
+    hasForest,
+  ]);
 
   const results = useMemo(() => rank(commands, query), [commands, query]);
 

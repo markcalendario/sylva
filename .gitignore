@@ -1,6 +1,8 @@
 node_modules/
 dist/
 *.log
+# tsc -b writes one of these per package to cache what it already built.
+*.tsbuildinfo
 .DS_Store
 .env
 .env.*

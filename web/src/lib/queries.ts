@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useRef } from "react";
+import type { FileEvent } from "sylva-shared";
 import { api } from "./api";
+import { useSylva } from "../state/store";
 
 export function useRepos() {
   return useQuery({ queryKey: ["repos"], queryFn: api.listRepos });
@@ -60,7 +63,7 @@ export function useCommitDetail(worktreeId: string | null, sha: string | null) {
   });
 }
 
-/** App-level preferences: the Open target and saved prompts. */
+/** App-level preferences: the Open target, the terminal, and worktree defaults. */
 export function usePreferences() {
   return useQuery({ queryKey: ["preferences"], queryFn: api.preferences, staleTime: 60_000 });
 }
@@ -167,6 +170,76 @@ export function useFleet(enabled: boolean) {
   });
 }
 
+/**
+ * How long changes are collected before anything is re-read. An agent mid-turn
+ * writes in bursts, and re-reading the open file for each write in a burst
+ * would spend a `git diff` on every keystroke it made.
+ */
+const FILE_SETTLE_MS = 500;
+
+/**
+ * Keep what is on screen honest about files changing underneath it.
+ *
+ * The file feed already streams every change in a watched worktree; nothing was
+ * listening to it on this side. So an open file, its diff and its gutter went
+ * stale the moment the dryad edited it, and stayed stale until something
+ * happened to refetch them — which in practice meant leaving the window and
+ * coming back, since focus is when React Query re-asks. Reading a file that
+ * quietly stopped being true is worse than a moment's flicker, and refetching
+ * *everything* on every focus is the other half of the same bad bargain.
+ *
+ * Only the queries currently mounted actually re-read: invalidating a path
+ * nobody has open costs nothing, so every changed path can be named without
+ * thinking about which of them are on screen.
+ */
+export function useFileEventInvalidation(): (worktreeId: string, events: FileEvent[]) => void {
+  const qc = useQueryClient();
+  const pending = useRef(new Map<string, { paths: Set<string>; listing: boolean }>());
+  const timer = useRef(0);
+
+  return useCallback(
+    (worktreeId: string, events: FileEvent[]) => {
+      const entry = pending.current.get(worktreeId) ?? { paths: new Set<string>(), listing: false };
+      for (const event of events) {
+        entry.paths.add(event.path);
+        // A file that merely changed leaves the directory listing as it was;
+        // one that appeared or vanished does not.
+        if (event.change !== "changed") entry.listing = true;
+      }
+      pending.current.set(worktreeId, entry);
+
+      if (timer.current) return;
+      timer.current = window.setTimeout(() => {
+        timer.current = 0;
+        const batch = pending.current;
+        pending.current = new Map();
+
+        for (const [id, { paths, listing }] of batch) {
+          for (const path of paths) {
+            void qc.invalidateQueries({ queryKey: ["file", id, path] });
+            void qc.invalidateQueries({ queryKey: ["changed-lines", id, path] });
+            // Blame is cached forever per line, which is only true while the
+            // file is: an edit above moves every line below it.
+            void qc.invalidateQueries({ queryKey: ["blame", id, path] });
+          }
+          // The working-tree diff, but not a commit's — what a commit changed
+          // was settled when it was made, and re-reading it through a build
+          // would be a `git show` every half second for an answer that cannot
+          // have moved.
+          void qc.invalidateQueries({
+            predicate: (query) => {
+              const key = query.queryKey;
+              return key[0] === "diff" && key[1] === id && key[4] === null;
+            },
+          });
+          if (listing) void qc.invalidateQueries({ queryKey: ["tree", id] });
+        }
+      }, FILE_SETTLE_MS);
+    },
+    [qc],
+  );
+}
+
 export function useInvalidate() {
   const qc = useQueryClient();
   return {
@@ -176,6 +249,28 @@ export function useInvalidate() {
     branches: () => void qc.invalidateQueries({ queryKey: ["branches"] }),
     status: (worktreeId?: string) =>
       void qc.invalidateQueries({ queryKey: worktreeId ? ["status", worktreeId] : ["status"] }),
+    /**
+     * Re-read a worktree's git status right now, and put it in the store.
+     *
+     * Invalidating the query is not enough: the dirty counts on the sidebar and
+     * the tab badges read the *store*, which is fed by the watcher over the
+     * socket. Committing through the app used to leave both saying what was
+     * true before — the working tree hadn't changed, so the watcher had nothing
+     * to report, and the count sat there until something else happened.
+     *
+     * The watcher now notices a commit too, so this is belt and braces — but it
+     * is the half that lands immediately, and it covers a worktree that isn't
+     * being watched at all.
+     */
+    statusNow: (worktreeId: string) => {
+      void qc.invalidateQueries({ queryKey: ["status", worktreeId] });
+      void api
+        .status(worktreeId)
+        .then((status) => useSylva.getState().setStatus(status))
+        .catch(() => {
+          // The worktree may have just been removed; the next event corrects it.
+        });
+    },
     diffs: () => {
       void qc.invalidateQueries({ queryKey: ["diff"] });
       // The gutter is the same fact read another way; they must move together.

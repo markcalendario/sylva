@@ -1,5 +1,6 @@
 import type {
   AgentAvailability,
+  AgentCommand,
   AgentEvent,
   AgentSettings,
   AppPreferences,
@@ -94,18 +95,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ parentPath, name }),
     }),
-  removeRepo: (repoId: string) => request<{ ok: true }>(`/api/repos/${repoId}`, { method: "DELETE" }),
+  removeRepo: (repoId: string) =>
+    request<{ ok: true }>(`/api/repos/${repoId}`, { method: "DELETE" }),
 
   listWorktrees: (repoId: string) => request<Worktree[]>(`/api/repos/${repoId}/worktrees`),
-  createWorktree: (repoId: string, body: { branch: string; baseRef?: string; path?: string }) =>
+  createWorktree: (
+    repoId: string,
+    body: { branch: string; baseRef?: string; path?: string; pull?: boolean },
+  ) =>
     request<CreatedWorktree>(`/api/repos/${repoId}/worktrees`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  removeWorktree: (worktreeId: string, force: boolean) =>
+  removeWorktree: (worktreeId: string, force: boolean, deleteBranch: boolean) =>
     request<{ ok: true }>(`/api/worktrees/${worktreeId}`, {
       method: "DELETE",
-      body: JSON.stringify({ force }),
+      body: JSON.stringify({ force, deleteBranch }),
     }),
 
   getFocus: () => request<{ worktreeId: string | null }>("/api/focus"),
@@ -165,7 +170,10 @@ export const api = {
       body: JSON.stringify({ setUpstream }),
     }),
   pull: (worktreeId: string) =>
-    request<{ output: string }>(`/api/worktrees/${worktreeId}/pull`, { method: "POST", body: "{}" }),
+    request<{ output: string }>(`/api/worktrees/${worktreeId}/pull`, {
+      method: "POST",
+      body: "{}",
+    }),
 
   session: (worktreeId: string) =>
     request<{
@@ -272,6 +280,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ kind }),
     }),
+
+  /** The slash commands this dryad answers to, for the `/` popup. */
+  listCommands: (worktreeId: string) =>
+    request<AgentCommand[]>(`/api/worktrees/${worktreeId}/commands`),
 
   preferences: () => request<AppPreferences>("/api/preferences"),
   setPreferences: (prefs: AppPreferences) =>

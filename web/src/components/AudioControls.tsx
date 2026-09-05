@@ -7,6 +7,7 @@ import {
   setVolume,
   subscribe,
 } from "../lib/audio";
+import { useWords } from "../lib/theme";
 
 /**
  * Drawn rather than emoji: platform emoji render full-colour and read as a
@@ -49,6 +50,7 @@ function SpeakerIcon({ muted }: { muted: boolean }) {
  * instantly; the rest lives in Settings.
  */
 export function AudioControls({ compact = false }: { compact?: boolean }) {
+  const words = useWords();
   const state = useSyncExternalStore(subscribe, getAudioState, getAudioState);
 
   if (compact) {
@@ -102,7 +104,10 @@ export function AudioControls({ compact = false }: { compact?: boolean }) {
       </label>
 
       <label className="audio-row">
-        <span className="audio-row-label" data-tip="The looping forest bed, independent of cues">
+        <span
+          className="audio-row-label"
+          data-tip={`The looping ${words.ambience} bed, independent of cues`}
+        >
           Ambience
         </span>
         <input
@@ -122,11 +127,11 @@ export function AudioControls({ compact = false }: { compact?: boolean }) {
           onClick={() => setAmbient(!state.ambient)}
           role="switch"
           aria-checked={state.ambient}
-          aria-label="Forest ambience"
+          aria-label={`${words.ambience} on or off`}
           data-tip={
             state.ambient
-              ? "Stop the forest ambience"
-              : "Play a forest ambience — wind, a low pad, the odd cricket"
+              ? `Stop the ${words.ambience}`
+              : `Play an ${words.ambience} — wind, a low pad, the odd cricket`
           }
         >
           ♪

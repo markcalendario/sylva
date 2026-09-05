@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FileCode2 } from "lucide-react";
+import { useWords } from "../lib/theme";
 import { useSylva } from "../state/store";
 
 export interface ToolItem {
@@ -20,6 +21,7 @@ const KEEP_VISIBLE = 3;
  * chain of steps doesn't drown out the conversation around it.
  */
 export function ToolGroup({ items }: { items: ToolItem[] }) {
+  const words = useWords();
   const [expanded, setExpanded] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -42,10 +44,10 @@ export function ToolGroup({ items }: { items: ToolItem[] }) {
                   ? openId === item.id
                     ? "Hide the full input"
                     : "Show the full input for this step"
-                  : "A step the dryad took"
+                  : `A step the ${words.agent} took`
               }
             >
-              <span className="tool-chip" data-tip="Tool the dryad reached for">
+              <span className="tool-chip" data-tip={`Tool the ${words.agent} reached for`}>
                 {item.tool}
               </span>
               <span className="tool-summary">{item.summary}</span>
@@ -56,7 +58,7 @@ export function ToolGroup({ items }: { items: ToolItem[] }) {
             {item.file && (
               <button
                 className="ghost tool-open"
-                onClick={() => useSylva.getState().openFileHere(item.file!)}
+                onClick={() => useSylva.getState().openFile(item.file!)}
                 aria-label={`Open ${item.file.path}`}
                 data-tip={`Open ${item.file.path} in the Files tab`}
               >
@@ -64,7 +66,10 @@ export function ToolGroup({ items }: { items: ToolItem[] }) {
               </button>
             )}
             {openId === item.id && item.detail && (
-              <pre className="tool-detail" data-tip="Exactly what the dryad passed to this tool">
+              <pre
+                className="tool-detail"
+                data-tip={`Exactly what the ${words.agent} passed to this tool`}
+              >
                 {item.detail}
               </pre>
             )}
@@ -81,9 +86,13 @@ export function ToolGroup({ items }: { items: ToolItem[] }) {
         <button
           className="tool-more"
           onClick={() => setExpanded((e) => !e)}
-          data-tip={expanded ? "Collapse back to the first few steps" : "Show every step in this run"}
+          data-tip={
+            expanded ? "Collapse back to the first few steps" : "Show every step in this run"
+          }
         >
-          {expanded ? "show fewer steps" : `+${hiddenCount} more step${hiddenCount === 1 ? "" : "s"}`}
+          {expanded
+            ? "show fewer steps"
+            : `+${hiddenCount} more step${hiddenCount === 1 ? "" : "s"}`}
         </button>
       )}
     </div>

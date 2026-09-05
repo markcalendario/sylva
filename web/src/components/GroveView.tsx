@@ -1,5 +1,6 @@
 import { GROVE_ID } from "sylva-shared";
 import { useRepos } from "../lib/queries";
+import { useWords } from "../lib/theme";
 import { Sprite } from "../sprites/Sprite";
 import { spriteStateFor, useSylva } from "../state/store";
 import { AgentPanel } from "./AgentPanel";
@@ -12,6 +13,7 @@ import { AgentPanel } from "./AgentPanel";
  * better", "what did I call that helper". This is that somewhere.
  */
 export function GroveView() {
+  const words = useWords();
   const repos = useRepos();
   const spriteState = useSylva((s) => spriteStateFor(s, GROVE_ID));
   const available = (repos.data ?? []).filter((r) => r.available);
@@ -22,7 +24,7 @@ export function GroveView() {
         <Sprite state={spriteState} scale={2} />
         <div className="wt-header-text">
           <div className="wt-header-branch" data-tip="An agent that belongs to no worktree">
-            the grove
+            the {words.grove.toLowerCase()}
           </div>
           <div className="wt-header-sub">
             <span
@@ -30,7 +32,7 @@ export function GroveView() {
               data-tip={
                 available.length
                   ? available.map((r) => r.path).join("\n")
-                  : "Register a repository and the grove will be able to read it"
+                  : `Register a repository and the ${words.grove.toLowerCase()} will be able to read it`
               }
             >
               {available.length === 0
@@ -39,7 +41,10 @@ export function GroveView() {
                   ? "can read 1 repository"
                   : `can read ${available.length} repositories`}
             </span>
-            <span className="wt-header-state" data-tip="The grove works in a scratch folder of its own">
+            <span
+              className="wt-header-state"
+              data-tip={`The ${words.grove.toLowerCase()} works in a scratch folder of its own`}
+            >
               works outside your repos
             </span>
           </div>

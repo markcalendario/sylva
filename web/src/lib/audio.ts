@@ -26,6 +26,18 @@ let ambientBus: GainNode | null = null;
 let ambient: AmbientNodes | null = null;
 let unlocked = false;
 
+/**
+ * Which set of sounds plays — the bed and the cues alike.
+ *
+ * A theme's sound is part of the theme: a forest at night, and a chiptune blip
+ * when a turn lands, under a black-and-white interface with no forest in it is
+ * a soundtrack to a different app. The value is set by the theme
+ * (lib/theme.ts) rather than read from it here, so audio stays a module that
+ * knows nothing about how anything looks.
+ */
+export type SoundVoice = "forest" | "studio";
+let voice: SoundVoice = "forest";
+
 let volume = readNumber(VOLUME_KEY, 0.6);
 let ambientVolume = readNumber(AMBIENT_VOLUME_KEY, 0.35);
 let muted = readBool(MUTED_KEY, false);
@@ -82,7 +94,9 @@ export function getAudioState(): AudioState {
 
 function ensureContext(): AudioContext | null {
   if (ctx) return ctx;
-  const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  const Ctor =
+    window.AudioContext ??
+    (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) return null;
   ctx = new Ctor();
   master = ctx.createGain();
@@ -151,6 +165,19 @@ export function setMuted(next: boolean): void {
   notify();
 }
 
+/**
+ * Swap the sound set. Cues change on the next one played; the bed has to be
+ * rebuilt, which is only worth doing while one is actually running — switching
+ * themes with the ambience off should not start it.
+ */
+export function setSoundVoice(next: SoundVoice): void {
+  if (next === voice) return;
+  voice = next;
+  if (!ambient) return;
+  stopAmbient();
+  startAmbient();
+}
+
 export function setAmbient(next: boolean): void {
   ambientOn = next;
   localStorage.setItem(AMBIENT_KEY, String(ambientOn));
@@ -212,6 +239,10 @@ function schedule(context: AudioContext, notes: Note[]): void {
   }
 }
 
+/**
+ * The forest's cues: chiptune, to match the pixel sprites. Square and triangle
+ * waves, fast decays, the sound of a thing that happened in a game.
+ */
 const CUES: Record<Cue, Note[]> = {
   // Rising major arpeggio — an agent finished cleanly.
   done: [
@@ -240,8 +271,49 @@ const CUES: Record<Cue, Note[]> = {
   queue: [{ freq: 520, at: 0, dur: 0.05, type: "sine", gain: 0.08 }],
 };
 
+/**
+ * The studio's cues.
+ *
+ * The same six events, said the way a piece of equipment says them rather than
+ * the way a game does. Sine throughout — no square, no sawtooth, nothing with
+ * an edge on it — longer decays, and intervals from the same minor set the
+ * studio bed is built on, so a cue lands *in* the music instead of over it.
+ *
+ * Quieter across the board, and the attention cue is the only one that repeats
+ * itself. A blocked agent is the one thing here worth interrupting you for.
+ */
+const STUDIO_CUES: Record<Cue, Note[]> = {
+  // Two notes rising a fourth, unhurried. Finished, not fanfare.
+  done: [
+    { freq: 587, at: 0, dur: 0.5, type: "sine", gain: 0.09 },
+    { freq: 880, at: 0.11, dur: 0.7, type: "sine", gain: 0.075 },
+  ],
+  // A fifth, struck twice. Open rather than dissonant: it should read as
+  // "come back", not as something breaking.
+  attention: [
+    { freq: 659, at: 0, dur: 0.34, type: "sine", gain: 0.1 },
+    { freq: 988, at: 0.05, dur: 0.4, type: "sine", gain: 0.07 },
+    { freq: 659, at: 0.42, dur: 0.34, type: "sine", gain: 0.09 },
+    { freq: 988, at: 0.47, dur: 0.5, type: "sine", gain: 0.065 },
+  ],
+  // Falling a whole tone, low and short. A shrug, not an alarm — the error is
+  // already on screen in red, and the sound only has to make you look.
+  error: [
+    { freq: 392, at: 0, dur: 0.3, type: "sine", gain: 0.085 },
+    { freq: 294, at: 0.14, dur: 0.55, type: "sine", gain: 0.08 },
+  ],
+  // One note with its octave a beat behind, which is what a thing being filed
+  // away sounds like.
+  commit: [
+    { freq: 440, at: 0, dur: 0.26, type: "sine", gain: 0.08 },
+    { freq: 880, at: 0.07, dur: 0.34, type: "sine", gain: 0.05 },
+  ],
+  send: [{ freq: 784, at: 0, dur: 0.11, type: "sine", gain: 0.055 }],
+  queue: [{ freq: 587, at: 0, dur: 0.11, type: "sine", gain: 0.045 }],
+};
+
 export function playCue(cue: Cue): void {
-  play(CUES[cue]);
+  play((voice === "forest" ? CUES : STUDIO_CUES)[cue]);
 }
 
 // ---------- scenery sounds ----------
@@ -442,11 +514,21 @@ function startAmbient(): void {
   if (!context || !ambientBus || ambient) return;
   if (context.state === "suspended") return; // starts when audio unlocks
 
+  // The fade and the bus are the same either way; only what hangs off the bed
+  // is a voice's business.
   const bed = context.createGain();
   bed.gain.value = 0;
   bed.connect(ambientBus);
   bed.gain.setTargetAtTime(0.5, context.currentTime, 3);
 
+  ambient = {
+    gain: bed,
+    stop: voice === "forest" ? forestBed(context, bed) : studioBed(context, bed),
+  };
+}
+
+/** Everything the forest bed builds, and how to take it down again. */
+function forestBed(context: AudioContext, bed: GainNode): () => void {
   // ---- air, well underneath everything ----
   const seconds = 6;
   const buffer = context.createBuffer(1, context.sampleRate * seconds, context.sampleRate);
@@ -632,22 +714,190 @@ function startAmbient(): void {
   };
   scheduleChirp();
 
-  ambient = {
-    gain: bed,
-    stop: () => {
-      for (const t of [chordTimer, melodyTimer, chirpTimer]) {
-        if (t !== undefined) clearTimeout(t);
-      }
-      const end = context.currentTime;
-      bed.gain.setTargetAtTime(0, end, 0.8);
-      window.setTimeout(() => {
-        noise.stop();
-        breath.stop();
-        for (const osc of padVoices) osc.stop();
-        sweep.stop();
-        bed.disconnect();
-      }, 3000);
-    },
+  return () => {
+    for (const t of [chordTimer, melodyTimer, chirpTimer]) {
+      if (t !== undefined) clearTimeout(t);
+    }
+    const end = context.currentTime;
+    bed.gain.setTargetAtTime(0, end, 0.8);
+    window.setTimeout(() => {
+      noise.stop();
+      breath.stop();
+      for (const osc of padVoices) osc.stop();
+      sweep.stop();
+      bed.disconnect();
+    }, 3000);
+  };
+}
+
+/* ---------- the studio bed ---------- */
+
+/**
+ * The professional theme's music.
+ *
+ * The forest bed is a music box in a wood: a bright major scale, a tune you
+ * can hum, crickets. None of that belongs under a black-and-white interface —
+ * it would be a soundtrack to a different app playing over this one.
+ *
+ * So this is the other tradition of ambient music: sustained tones that change
+ * so slowly you notice they have changed rather than watching them change. No
+ * melody, no pulse, nothing to tap along to. Two things only — a chord that
+ * takes most of a minute to become the next chord, and single struck tones
+ * that fall a long way apart.
+ *
+ * Minor, and low. The forest is C major an octave up because it wanted to feel
+ * like company; this wants to feel like a room you are working in, and a room
+ * is not cheerful at you.
+ */
+
+/** A minor, spread wide. Every voicing keeps A sounding, so it never travels. */
+const STUDIO_CHORDS = [
+  [45, 57, 64, 72], // Am add9, open
+  [45, 55, 62, 69], // Am7, closer
+  [41, 57, 60, 67], // Fmaj7 over A
+  [45, 57, 63, 70], // Am6
+];
+
+/** The tones a struck note may land on: A minor pentatonic, two octaves up. */
+const STUDIO_TONES = [69, 72, 74, 76, 79, 81, 84, 86];
+
+const STUDIO_CHORD_SECONDS = 26;
+
+function studioBed(context: AudioContext, bed: GainNode): () => void {
+  // ---- room tone: quieter and duller than the forest's air ----
+  const seconds = 6;
+  const buffer = context.createBuffer(1, context.sampleRate * seconds, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < data.length; i++) {
+    last = (last + Math.random() * 2 - 1) * 0.5;
+    data[i] = last * 0.5;
+  }
+  const noise = context.createBufferSource();
+  noise.buffer = buffer;
+  noise.loop = true;
+  const noiseFilter = context.createBiquadFilter();
+  noiseFilter.type = "lowpass";
+  // Lower than the forest's 1100Hz: this is the hum of a room rather than
+  // moving air, and it should be felt more than heard.
+  noiseFilter.frequency.value = 620;
+  const noiseGain = context.createGain();
+  noiseGain.gain.value = 0.012;
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(bed);
+  noise.start();
+
+  // ---- the chord: four voices, gliding ----
+  const padGain = context.createGain();
+  padGain.gain.value = 0.03;
+  padGain.connect(bed);
+
+  const padFilter = context.createBiquadFilter();
+  padFilter.type = "lowpass";
+  padFilter.frequency.value = 1200;
+  padFilter.Q.value = 0.3;
+  padFilter.connect(padGain);
+
+  const padVoices = STUDIO_CHORDS[0]!.map((note, i) => {
+    const osc = context.createOscillator();
+    osc.type = "sine";
+    // A couple of cents off true on the upper voices. Two sines at exactly the
+    // same pitch sound like one synthesiser; detuned they beat slowly against
+    // each other, which is most of what makes a pad sound like it is in a room.
+    osc.frequency.value = midi(note) * (i === 0 ? 1 : 1 + (i % 2 ? 0.0012 : -0.0009));
+    const voice = context.createGain();
+    voice.gain.value = i === 0 ? 0.9 : 0.5;
+    osc.connect(voice);
+    voice.connect(padFilter);
+    osc.start();
+    return osc;
+  });
+
+  let chord = 0;
+  let chordTimer: number | undefined;
+  const advanceChord = (): void => {
+    chordTimer = window.setTimeout(() => {
+      chord = (chord + 1) % STUDIO_CHORDS.length;
+      const next = STUDIO_CHORDS[chord]!;
+      const at = context.currentTime;
+      padVoices.forEach((osc, i) => {
+        const target = midi(next[i] ?? next[0]!);
+        // Eight seconds to arrive. Long enough that you cannot hear it start.
+        osc.frequency.exponentialRampToValueAtTime(target, at + 8);
+      });
+      advanceChord();
+    }, STUDIO_CHORD_SECONDS * 1000);
+  };
+
+  // ---- struck tones, far apart ----
+  /**
+   * Glass rather than piano: a sine fundamental with one high inharmonic
+   * partial above it and a very long tail. The partial is what stops it
+   * sounding like a test tone.
+   */
+  const strike = (note: number): void => {
+    const now = context.currentTime;
+    const freq = midi(note);
+    for (const [ratio, gain, dur] of [
+      [1, 0.05, 6],
+      [2.76, 0.012, 2.6],
+      [5.4, 0.004, 1.2],
+    ] as const) {
+      const osc = context.createOscillator();
+      const env = context.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq * ratio;
+      env.gain.setValueAtTime(0, now);
+      env.gain.linearRampToValueAtTime(gain, now + 0.03);
+      env.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(env);
+      env.connect(bed);
+      osc.start(now);
+      osc.stop(now + dur + 0.1);
+    }
+  };
+
+  let toneTimer: number | undefined;
+  const scheduleTone = (): void => {
+    toneTimer = window.setTimeout(
+      () => {
+        if (ambient && !muted) {
+          strike(STUDIO_TONES[Math.floor(Math.random() * STUDIO_TONES.length)] ?? 72);
+          // Now and then a second note lands under the first and holds with it.
+          // Two is a chord; three would be a phrase, and a phrase is a tune.
+          if (Math.random() < 0.35) {
+            window.setTimeout(
+              () => {
+                if (ambient && !muted) {
+                  strike((STUDIO_TONES[Math.floor(Math.random() * 4)] ?? 69) - 12);
+                }
+              },
+              900 + Math.random() * 1400,
+            );
+          }
+        }
+        scheduleTone();
+      },
+      // Nine to twenty-five seconds. The silence is the instrument.
+      9000 + Math.random() * 16000,
+    );
+  };
+
+  advanceChord();
+  scheduleTone();
+
+  return () => {
+    for (const t of [chordTimer, toneTimer]) {
+      if (t !== undefined) clearTimeout(t);
+    }
+    const end = context.currentTime;
+    bed.gain.setTargetAtTime(0, end, 0.8);
+    window.setTimeout(() => {
+      noise.stop();
+      for (const osc of padVoices) osc.stop();
+      bed.disconnect();
+    }, 3000);
   };
 }
 

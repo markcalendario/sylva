@@ -1,6 +1,6 @@
 import { access, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type { CreatedWorktree, Repo, Worktree } from "sylva-shared";
+import type { CreatedWorktree, Repo, Worktree, WorktreePull } from "sylva-shared";
 import { badRequest, conflict, HttpError, notFound } from "../lib/errors.js";
 import { pathId } from "../lib/id.js";
 import { parseWorktreeList } from "../lib/parse.js";
@@ -157,9 +157,110 @@ export class Workspace {
     return parseWorktreeList(stdout, repoId);
   }
 
+  /** The remote-tracking branch a ref follows, or null when it follows none. */
+  private async upstreamOf(repoPath: string, ref: string): Promise<string | null> {
+    try {
+      const { stdout } = await this.git.run(repoPath, [
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        `${ref}@{upstream}`,
+      ]);
+      const name = stdout.trim();
+      return name || null;
+    } catch {
+      // No upstream, or no such ref. Either way there is nothing to freshen.
+      return null;
+    }
+  }
+
+  /**
+   * Bring the repository up to date before a worktree is cut from it.
+   *
+   * "Pull first" is two different things depending on which branch you are
+   * growing. A *new* branch has a base ref, and the freshest form of that ref
+   * is its remote-tracking counterpart — so the new branch starts from
+   * `origin/main` rather than from whatever `main` was when you last touched
+   * it. An *existing* branch is the thing being checked out, so it is the thing
+   * that has to move, and it may only move by a fast-forward: git is allowed to
+   * catch a branch up, never to throw away commits on the way.
+   *
+   * A repository with no remote is not an error — there is simply nothing to
+   * fetch, and saying so would be pedantry about a local-only repo.
+   */
+  private async freshen(
+    repo: Omit<Repo, "available">,
+    opts: { branch: string; baseRef?: string },
+  ): Promise<{ pull: WorktreePull; baseRef?: string }> {
+    const repoPath = repo.path;
+    const { stdout: remotes } = await this.git.run(repoPath, ["remote"]).catch(() => ({
+      stdout: "",
+    }));
+    if (!remotes.trim()) {
+      return { pull: { fetched: false, basedOn: null, fastForwarded: null }, ...(opts.baseRef ? { baseRef: opts.baseRef } : {}) };
+    }
+
+    try {
+      await this.git.runExclusive(repoPath, ["fetch", "--prune"]);
+    } catch (err) {
+      // Asked to start from the latest and we couldn't get it: the premise of
+      // the request is broken, so stop rather than quietly cut a stale tree.
+      // Untick the box and it is created from what is already here.
+      const detail = err instanceof Error ? err.message : String(err);
+      throw badRequest(`Couldn't fetch before creating the worktree: ${detail}`);
+    }
+
+    // A new branch: base it on the freshest form of the ref that was named.
+    if (opts.baseRef) {
+      const upstream = await this.upstreamOf(repoPath, opts.baseRef);
+      if (!upstream || upstream === opts.baseRef) {
+        return { pull: { fetched: true, basedOn: null, fastForwarded: null }, baseRef: opts.baseRef };
+      }
+      return {
+        pull: { fetched: true, basedOn: upstream, fastForwarded: null },
+        baseRef: upstream,
+      };
+    }
+
+    // An existing branch: it is what gets checked out, so catch it up in place.
+    const upstream = await this.upstreamOf(repoPath, opts.branch);
+    if (!upstream) return { pull: { fetched: true, basedOn: null, fastForwarded: null } };
+
+    // Never touch a branch that something is standing on: rewriting the ref
+    // under a checked-out worktree leaves its index describing a tree that is
+    // no longer there. Failing to find out counts as "yes, leave it alone".
+    const checkedOut = await this.listWorktrees(repo.id).then(
+      (list) => list.some((w) => w.branch === opts.branch),
+      () => true,
+    );
+    if (checkedOut) return { pull: { fetched: true, basedOn: null, fastForwarded: null } };
+
+    try {
+      // Strictly behind, so moving it forward loses nothing. Anything else —
+      // diverged, already current — is left exactly as it is.
+      await this.git.run(repoPath, ["merge-base", "--is-ancestor", opts.branch, upstream]);
+      const [{ stdout: at }, { stdout: to }] = await Promise.all([
+        this.git.run(repoPath, ["rev-parse", opts.branch]),
+        this.git.run(repoPath, ["rev-parse", upstream]),
+      ]);
+      if (at.trim() === to.trim()) {
+        return { pull: { fetched: true, basedOn: null, fastForwarded: null } };
+      }
+      await this.git.runExclusive(repoPath, [
+        "update-ref",
+        `refs/heads/${opts.branch}`,
+        upstream,
+      ]);
+      return { pull: { fetched: true, basedOn: null, fastForwarded: opts.branch } };
+    } catch {
+      // Diverged from its upstream. The branch is yours; git keeps it.
+      return { pull: { fetched: true, basedOn: null, fastForwarded: null } };
+    }
+  }
+
   async createWorktree(
     repoId: string,
-    opts: { branch: string; baseRef?: string; path?: string },
+    opts: { branch: string; baseRef?: string; path?: string; pull?: boolean },
   ): Promise<CreatedWorktree> {
     const repo = this.requireRepo(repoId);
     if (!opts.branch.trim()) throw badRequest("Branch name is required");
@@ -170,9 +271,17 @@ export class Workspace {
       ? resolve(opts.path)
       : join(dirname(repo.path), `${basename(repo.path)}-worktrees`, branch.replace(/\//g, "-"));
 
+    // Before anything is written to disk, so a fetch that fails leaves no
+    // half-made worktree behind to clean up.
+    const wantsPull = opts.pull ?? this.store.preferences.pullBeforeWorktree;
+    const freshened = wantsPull
+      ? await this.freshen(repo, { branch, ...(opts.baseRef ? { baseRef: opts.baseRef } : {}) })
+      : null;
+    const baseRef = freshened?.baseRef ?? opts.baseRef;
+
     const args = ["worktree", "add"];
-    if (opts.baseRef) {
-      args.push("-b", branch, targetPath, opts.baseRef);
+    if (baseRef) {
+      args.push("-b", branch, targetPath, baseRef);
     } else {
       args.push(targetPath, branch);
     }
@@ -196,16 +305,45 @@ export class Workspace {
       ? await copyEnvFiles(this.git, repo.path, created.path).catch(() => [])
       : [];
 
-    return { worktree: created, copiedEnvFiles };
+    return { worktree: created, copiedEnvFiles, pull: freshened?.pull ?? null };
   }
 
-  async removeWorktree(worktreeId: string, force: boolean): Promise<void> {
+  /**
+   * Take a worktree off disk, and optionally its branch out of git with it.
+   *
+   * `git worktree remove` deletes the directory and the registration git keeps
+   * for it — but the branch it had checked out survives, along with every
+   * commit on it. That is the right default: the work is what you were after,
+   * and the folder is only where it happened. `deleteBranch` is for the other
+   * case, where the whole line of work is being abandoned and leaving the
+   * branch behind just means finding it again in six months and not knowing.
+   *
+   * The branch goes second on purpose: git refuses to delete a branch that is
+   * still checked out somewhere, so the worktree has to be gone first.
+   */
+  async removeWorktree(
+    worktreeId: string,
+    force: boolean,
+    deleteBranch = false,
+  ): Promise<void> {
     const { repo, worktree } = await this.resolveWorktree(worktreeId);
     if (worktree.isMain) throw badRequest("The main worktree cannot be removed");
     const args = ["worktree", "remove"];
     if (force) args.push("--force");
     args.push(worktree.path);
     await this.git.runExclusive(repo.path, args);
+
+    if (deleteBranch && worktree.branch) {
+      // -D when the removal was forced, because someone who has just agreed to
+      // throw away uncommitted work is not asking to be stopped by "this branch
+      // isn't merged"; -d otherwise, so unmerged commits still get a say.
+      await this.git.runExclusive(repo.path, [
+        "branch",
+        force ? "-D" : "-d",
+        worktree.branch,
+      ]);
+    }
+
     if (this.focusedWorktreeId === worktreeId) this.setFocus(null);
   }
 

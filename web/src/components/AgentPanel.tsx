@@ -1,26 +1,40 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { circleMembers, type AgentEvent, type Attachment, type PermissionRequest } from "sylva-shared";
+import { circleMembers, GROVE_ID, type Attachment, type PermissionRequest } from "sylva-shared";
 import { applyMention, mentionAt, PathMentions, type Mention } from "./PathMentions";
+import { applySlash, slashAt, SlashCommands, type SlashToken } from "./SlashCommands";
 import { api, ApiFailure } from "../lib/api";
+import { worktreeLabel } from "../lib/branch";
 import { playCue } from "../lib/audio";
 import { compactTokens } from "../lib/format";
+import {
+  attachmentLabels,
+  attachmentNote,
+  attachmentToken,
+  relabelAttachments,
+} from "../lib/attachments";
+import { insertAtCaret, removeFromText } from "../lib/insertAtCaret";
 import { ensureNotifyPermission } from "../lib/notify";
-import { ArrowDown, Eraser, Paperclip, Sparkles, Square, X } from "lucide-react";
+import { useWords } from "../lib/theme";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Eraser,
+  GitBranch,
+  ListPlus,
+  Paperclip,
+  Square,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { confirm } from "../lib/confirm";
-import { AgentSettingsButton } from "./AgentSettingsButton";
+import { ComposerSettings } from "./ComposerSettings";
 import { CopyButton } from "./CopyButton";
-import { SavedPromptsButton } from "./SavedPromptsButton";
 import { EMPTY_DRAFT, NO_EVENTS, useSylva } from "../state/store";
 import { Markdown } from "./Markdown";
 import { PromptNav, type PromptMark } from "./PromptNav";
-import { ToolGroup, type ToolItem } from "./ToolGroup";
-
-type Block =
-  | { kind: "user"; text: string }
-  | { kind: "assistant"; text: string }
-  | { kind: "tools"; items: ToolItem[] }
-  | { kind: "result"; outcome: "success" | "error" | "interrupted"; tokens?: number }
-  | { kind: "notice"; text: string };
+import { ToolGroup } from "./ToolGroup";
+import { sameBlock, useBlocks, type Block } from "./transcriptBlocks";
 
 /**
  * How much of a long conversation is drawn at once, and how much more each
@@ -28,7 +42,7 @@ type Block =
  *
  * A day-long session runs to thousands of blocks, and every one of them is
  * markdown that React re-reconciles on each streamed chunk — which is what
- * makes a long chat crawl while the dryad is mid-answer. The newest blocks are
+ * makes a long chat crawl while the agent is mid-answer. The newest blocks are
  * the ones being read; the rest are history, and history can wait to be asked
  * for.
  */
@@ -56,87 +70,8 @@ function promptCeiling(): number {
   return Math.min(280, Math.round(window.innerHeight * 0.4));
 }
 
-const LEGACY_CD_PREFIX = /^\s*cd\s+(?:"[^"]*"|'[^']*'|[^\s&|;]+)\s*&&\s*/;
-
-/**
- * Transcripts written before the server learned to strip these still carry
- * `cd "<worktree>" && …` labels; tidy them on the way to the screen so old
- * conversations read as well as new ones.
- */
-function tidySummary(summary: string): string {
-  let out = summary;
-  while (LEGACY_CD_PREFIX.test(out)) out = out.replace(LEGACY_CD_PREFIX, "");
-  return out.trim() || summary;
-}
-
-/**
- * Fold the raw event stream into renderable blocks: consecutive tool calls
- * become one group, and streamed assistant chunks rejoin into one document so
- * markdown spanning several chunks still parses.
- */
-function toBlocks(events: AgentEvent[]): Block[] {
-  const blocks: Block[] = [];
-  const last = () => blocks[blocks.length - 1];
-
-  for (const event of events) {
-    switch (event.kind) {
-      case "user-prompt":
-        blocks.push({ kind: "user", text: event.text });
-        break;
-
-      case "assistant-text": {
-        const tail = last();
-        if (tail?.kind === "assistant") tail.text += `\n\n${event.text}`;
-        else blocks.push({ kind: "assistant", text: event.text });
-        break;
-      }
-
-      case "tool-use": {
-        const tail = last();
-        const item: ToolItem = {
-          id: event.toolUseId,
-          tool: event.tool,
-          summary: tidySummary(event.summary),
-          ...(event.detail ? { detail: event.detail } : {}),
-          ...(event.file ? { file: event.file } : {}),
-        };
-        if (tail?.kind === "tools") tail.items.push(item);
-        else blocks.push({ kind: "tools", items: [item] });
-        break;
-      }
-
-      case "tool-result": {
-        // Successful results are implied by the next step; only failures earn a row.
-        if (!event.isError) break;
-        for (let i = blocks.length - 1; i >= 0; i--) {
-          const block = blocks[i];
-          if (block?.kind !== "tools") continue;
-          const item = block.items.find((it) => it.id === event.toolUseId);
-          if (item) {
-            item.error = event.summary || "Tool failed";
-            break;
-          }
-        }
-        break;
-      }
-
-      case "result":
-        blocks.push({
-          kind: "result",
-          outcome: event.outcome,
-          ...(event.tokens !== undefined ? { tokens: event.tokens } : {}),
-        });
-        break;
-
-      case "error":
-        blocks.push({ kind: "notice", text: event.message });
-        break;
-    }
-  }
-  return blocks;
-}
-
 function PermissionCard({ request }: { request: PermissionRequest }) {
+  const words = useWords();
   const [busy, setBusy] = useState(false);
   const answer = (a: "allow" | "allow-always" | "deny") => {
     setBusy(true);
@@ -145,12 +80,12 @@ function PermissionCard({ request }: { request: PermissionRequest }) {
   return (
     <div className="permission-card">
       <div className="permission-title">
-        <span className="pixel-label" data-tip="The dryad is paused until you answer">
+        <span className="pixel-label" data-tip={`The ${words.agent} is paused until you answer`}>
           permission
         </span>
-        The dryad wants to use <strong>{request.tool}</strong>
+        The {words.agent} wants to use <strong>{request.tool}</strong>
       </div>
-      <pre className="permission-summary" data-tip="Exactly what the dryad wants to run">
+      <pre className="permission-summary" data-tip={`Exactly what the ${words.agent} wants to run`}>
         {request.summary}
       </pre>
       <div className="permission-actions">
@@ -174,7 +109,7 @@ function PermissionCard({ request }: { request: PermissionRequest }) {
           className="btn-danger"
           disabled={busy}
           onClick={() => answer("deny")}
-          data-tip="Refuse — the dryad continues without it"
+          data-tip={`Refuse — the ${words.agent} continues without it`}
         >
           Deny
         </button>
@@ -183,117 +118,88 @@ function PermissionCard({ request }: { request: PermissionRequest }) {
   );
 }
 
-/**
- * Two blocks that would draw identically.
- *
- * `toBlocks` rebuilds the whole list from the event stream on every streamed
- * chunk, so every block is a new object even when nothing about it changed —
- * which means identity tells React nothing and it re-renders (and re-parses
- * the markdown of) the entire conversation for each token that arrives.
- * Comparing what is actually drawn is what makes the memo below bite.
- */
-function sameBlock(a: Block, b: Block): boolean {
-  if (a.kind !== b.kind) return false;
-  switch (a.kind) {
-    case "user":
-    case "assistant":
-      return a.text === (b as typeof a).text;
-    case "notice":
-      return a.text === (b as typeof a).text;
-    case "result": {
-      const other = b as typeof a;
-      return a.outcome === other.outcome && a.tokens === other.tokens;
-    }
-    case "tools": {
-      const other = b as typeof a;
-      if (a.items.length !== other.items.length) return false;
-      return a.items.every((item, i) => {
-        const there = other.items[i];
+const BlockRow = memo(
+  function BlockRow({ block, fresh }: { block: Block; fresh: boolean }) {
+    const words = useWords();
+    switch (block.kind) {
+      case "user":
         return (
-          !!there &&
-          item.id === there.id &&
-          item.summary === there.summary &&
-          item.detail === there.detail &&
-          item.error === there.error &&
-          item.file?.path === there.file?.path &&
-          item.file?.worktreeId === there.file?.worktreeId
-        );
-      });
-    }
-  }
-}
-
-const BlockRow = memo(function BlockRow({ block }: { block: Block }) {
-  switch (block.kind) {
-    case "user":
-      return (
-        <div className="msg-block msg-block-user">
-          <div className="msg msg-user">{block.text}</div>
-          <CopyButton text={block.text} className="msg-copy" tip="Copy this message" />
-        </div>
-      );
-    case "assistant":
-      return (
-        <div className="msg-block msg-block-assistant">
-          <div className="msg msg-assistant">
-            <Markdown text={block.text} />
+          <div className="msg-block msg-block-user">
+            <div className="msg msg-user">{block.text}</div>
+            <CopyButton text={block.text} className="msg-copy" tip="Copy this message" />
           </div>
-          {/* The markdown as the dryad wrote it, not as it was drawn: pasting
+        );
+      case "assistant":
+        return (
+          <div className="msg-block msg-block-assistant">
+            <div className="msg msg-assistant">
+              <Markdown text={block.text} />
+            </div>
+            {/* The markdown as the agent wrote it, not as it was drawn: pasting
               a rendered heading into a file loses the thing that made it one. */}
-          <CopyButton text={block.text} className="msg-copy" tip="Copy this reply as markdown" />
-        </div>
-      );
-    case "tools":
-      return <ToolGroup items={block.items} />;
-    case "result":
-      return (
-        <div
-          className={`turn-result turn-${block.outcome}`}
-          data-tip={
-            block.outcome === "success"
-              ? "The dryad finished this turn cleanly"
-              : block.outcome === "interrupted"
-                ? "You stopped this turn before it finished"
-                : "This turn ended in an error"
-          }
-        >
-          {block.outcome === "success" ? (
-            <>
-              <Sparkles size={12} /> turn complete
-            </>
-          ) : (
-            <>
-              <X size={12} /> {block.outcome}
-            </>
-          )}
-          {block.tokens !== undefined && (
-            <span className="turn-cost" data-tip="Tokens this turn read and wrote">
-              {compactTokens(block.tokens)}
+            <CopyButton text={block.text} className="msg-copy" tip="Copy this reply as markdown" />
+          </div>
+        );
+      case "tools":
+        return <ToolGroup items={block.items} />;
+      case "result":
+        return (
+          <div
+            className={`turn-seal turn-${block.outcome} ${fresh ? "turn-fresh" : ""}`}
+            data-tip={
+              block.outcome === "success"
+                ? `The ${words.agent} finished this turn cleanly`
+                : block.outcome === "interrupted"
+                  ? "You stopped this turn before it finished"
+                  : "This turn ended in an error"
+            }
+          >
+            <span className="turn-seal-rule" aria-hidden />
+            <span className="turn-seal-badge">
+              <span className="turn-seal-icon" aria-hidden>
+                {block.outcome === "success" ? (
+                  <Check size={11} strokeWidth={2.5} />
+                ) : block.outcome === "interrupted" ? (
+                  /* The shape of the button you pressed to cause it. */
+                  <Square size={9} fill="currentColor" strokeWidth={0} />
+                ) : (
+                  <TriangleAlert size={11} />
+                )}
+              </span>
+              {block.outcome === "success" ? "complete" : block.outcome}
+              {block.tokens !== undefined && (
+                <span className="turn-seal-cost" data-tip="Tokens this turn read and wrote">
+                  {compactTokens(block.tokens)}
+                </span>
+              )}
             </span>
-          )}
-        </div>
-      );
-    case "notice":
-      return (
-        <div className="tool-result-error" data-tip="Something went wrong in this session">
-          {block.text}
-        </div>
-      );
-  }
-}, (prev, next) => sameBlock(prev.block, next.block));
+            <span className="turn-seal-rule" aria-hidden />
+          </div>
+        );
+      case "notice":
+        return (
+          <div className="tool-result-error" data-tip="Something went wrong in this session">
+            {block.text}
+          </div>
+        );
+    }
+  },
+  (prev, next) => prev.fresh === next.fresh && sameBlock(prev.block, next.block),
+);
 
 export function AgentPanel({ worktreeId }: { worktreeId: string }) {
+  const words = useWords();
   const transcript = useSylva((s) => s.transcripts[worktreeId] ?? NO_EVENTS);
   const session = useSylva((s) => s.sessions[worktreeId]);
   const permissions = useSylva((s) => s.pendingPermissions[worktreeId] ?? NO_EVENTS);
   const availability = useSylva((s) => s.availability);
-
   // The draft lives in the store so switching tabs (which unmounts this panel)
   // doesn't discard what you've typed.
   const draft = useSylva((s) => s.drafts[worktreeId] ?? EMPTY_DRAFT);
   const { text, attachments } = draft;
-  const setText = (next: string) =>
-    useSylva.getState().setDraft(worktreeId, { text: next });
+  /** What each attached file is called in the prompt. Order decides it. */
+  const attachLabels = attachmentLabels(attachments.map((a) => a.name));
+  const setText = (next: string) => useSylva.getState().setDraft(worktreeId, { text: next });
   const setAttachments = (next: (current: Attachment[]) => Attachment[]) => {
     const store = useSylva.getState();
     const current = store.drafts[worktreeId]?.attachments ?? EMPTY_DRAFT.attachments;
@@ -305,16 +211,47 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   const [clearing, setClearing] = useState(false);
   /** The `@path` being typed, when one is. Drives the completion popup. */
   const [mention, setMention] = useState<Mention | null>(null);
+  /** The `/command` being typed, when one is. Same idea, at the start only. */
+  const [slash, setSlash] = useState<SlashToken | null>(null);
+  /**
+   * Where the caret was last seen.
+   *
+   * Kept in a ref rather than read at the moment it is needed, because the
+   * moment it is needed the textarea has usually just lost focus — clicking the
+   * paperclip, dropping a file, opening the file picker. The caret is gone by
+   * then, and this is the memory of where it was.
+   */
+  const caretRef = useRef(0);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   /**
    * Every worktree this dryad can reach — what `@` searches. A circle tends
    * several, and naming a file in the one it *isn't* pointed at is exactly the
    * case a shared dryad exists for.
    */
-  const members = useMemo(
-    () => circleMembers(worktreeId) ?? [worktreeId],
-    [worktreeId],
+  const members = useMemo(() => circleMembers(worktreeId) ?? [worktreeId], [worktreeId]);
+
+  /*
+   * What this conversation is about, in git's own words.
+   *
+   * The pane header above says it too, but that header belongs to the *pane* —
+   * it is still there when you are reading a diff three tabs away, and it goes
+   * when the grove or a circle is what's open. This one belongs to the
+   * session: it names every worktree the agent can actually touch, which for a
+   * circle is several and for the grove is none.
+   *
+   * Select the maps themselves, never a derived array: a fresh array on each
+   * call changes the snapshot identity every render and spins the loop.
+   */
+  const statuses = useSylva((s) => s.statuses);
+  const index = useSylva((s) => s.worktreeIndex);
+  const branches = useMemo(
+    () =>
+      worktreeId === GROVE_ID
+        ? []
+        : members.map((id) => statuses[id]?.branch ?? index[id]?.branch ?? null),
+    [members, statuses, index, worktreeId],
   );
+  const named = branches.filter((b): b is string => Boolean(b));
   const [uploading, setUploading] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -335,7 +272,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   /** A prompt to jump to once the window has grown far enough back to hold it. */
   const [pendingJump, setPendingJump] = useState<number | null>(null);
 
-  const blocks = useMemo(() => toBlocks(transcript), [transcript]);
+  const blocks = useBlocks(transcript);
 
   /**
    * Grow the composer to whatever has been typed into it.
@@ -358,13 +295,28 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
     node.style.overflowY = wanted > ceiling ? "auto" : "hidden";
   }, [text]);
 
-  const prompts = useMemo<PromptMark[]>(
-    () =>
-      blocks.flatMap((block, i) =>
-        block.kind === "user" ? [{ blockIndex: i, text: block.text }] : [],
-      ),
-    [blocks],
-  );
+  /**
+   * The jump rail, and which of its entries didn't work out.
+   *
+   * A turn's outcome is announced at the far end of it, which by then is
+   * several screens below the prompt that caused it — so the rail, which is
+   * the one place the whole conversation is visible at once, was the one place
+   * that couldn't tell you a prompt had failed. Walking the blocks once pairs
+   * each result with the prompt it belongs to.
+   */
+  const prompts = useMemo<PromptMark[]>(() => {
+    const marks: PromptMark[] = [];
+    for (const [i, block] of blocks.entries()) {
+      if (block.kind === "user") marks.push({ blockIndex: i, text: block.text, failed: false });
+      else if (block.kind === "result" && block.outcome !== "success") {
+        const last = marks[marks.length - 1];
+        // Only the prompt that started this turn, and only once: a result with
+        // no prompt above it belongs to a turn from before the window.
+        if (last && !last.failed) marks[marks.length - 1] = { ...last, failed: true };
+      }
+    }
+    return marks;
+  }, [blocks]);
 
   /**
    * The tail of the conversation, and how much of it is being withheld. Indices
@@ -443,7 +395,10 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
     if (!container || !el) return;
     stickToBottom.current = false;
     setAtBottom(false);
-    container.scrollTo({ top: el.offsetTop - container.offsetTop - 12, behavior: "smooth" });
+    container.scrollTo({
+      top: el.offsetTop - container.offsetTop - 12,
+      behavior: "smooth",
+    });
     setActivePrompt(blockIndex);
   };
 
@@ -468,13 +423,30 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
   }, [pendingJump, windowSize]);
 
   const running = session?.status === "running";
+  /**
+   * Working, but not necessarily its turn.
+   *
+   * `running` is the turn — it decides whether a prompt is sent or queued, and
+   * whether there is anything to stop. Background work is neither: you can talk
+   * to a dryad whose subagent is still grinding away. Only the parts that say
+   * what is happening read this one.
+   */
+  const busy = running || (session?.backgroundTasks.length ?? 0) > 0;
   const waiting = permissions.length > 0;
   /**
    * What the dryad is doing, as one word. Everything in the chat that reacts —
    * the header, the ambient motes, the composer's glow — reads this, so there
    * is one answer rather than four opinions.
    */
-  const state = waiting ? "waiting" : running ? "working" : session?.status === "errored" ? "trouble" : session ? "resting" : "new";
+  const state = waiting
+    ? "waiting"
+    : busy
+      ? "working"
+      : session?.status === "errored"
+        ? "trouble"
+        : session
+          ? "resting"
+          : "new";
   const stateWord =
     state === "waiting"
       ? "needs you"
@@ -496,6 +468,36 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
             ? "Waiting for your next prompt"
             : "Nothing has been asked here yet";
 
+  /**
+   * Which completion popup, if either, the caret is currently in.
+   *
+   * Asked in one place because they are mutually exclusive: `/` only means a
+   * command at the very start, `@` never does, and running both tests from the
+   * same event is what keeps them from both claiming the Enter key.
+   */
+  const syncPopups = (value: string, caret: number) => {
+    caretRef.current = caret;
+    setMention(mentionAt(value, caret));
+    setSlash(slashAt(value, caret));
+  };
+
+  /** Put the caret after what was just inserted, once React has written it. */
+  const moveCaret = (caret: number) => {
+    requestAnimationFrame(() => {
+      const node = promptRef.current;
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(caret, caret);
+    });
+  };
+
+  /**
+   * Attach files, and write each one's *name* into the prompt where you were.
+   *
+   * Reading the draft out of the store rather than closing over `text`: several
+   * files upload one after another, and each has to build on the sentence the
+   * one before it just changed.
+   */
   const upload = async (files: FileList | File[]) => {
     setUploadError(null);
     for (const file of Array.from(files)) {
@@ -503,6 +505,18 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
       try {
         const attachment = await api.attach(worktreeId, file);
         setAttachments((list) => [...list, attachment]);
+
+        const store = useSylva.getState();
+        const current = store.drafts[worktreeId]?.text ?? "";
+        // Labelled against the list this file is joining. A first arrival keeps
+        // its own name, which is why nothing already in the sentence has to
+        // move when one more file lands.
+        const list = store.drafts[worktreeId]?.attachments ?? [];
+        const labels = attachmentLabels([...list.map((a) => a.name), attachment.name]);
+        const label = labels[labels.length - 1] ?? attachment.name;
+        const next = insertAtCaret(current, caretRef.current, attachmentToken(label));
+        store.setDraft(worktreeId, { text: next.text });
+        caretRef.current = next.caret;
       } catch (e) {
         setUploadError(
           e instanceof ApiFailure ? (e.detail ?? e.message) : `Couldn't attach ${file.name}`,
@@ -511,6 +525,8 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
         setUploading((n) => n - 1);
       }
     }
+    // Back to the sentence, after the last path that went into it.
+    moveCaret(caretRef.current);
   };
 
   /**
@@ -519,7 +535,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
    */
   const clearSession = async () => {
     const ok = await confirm({
-      title: "Clear this dryad?",
+      title: `Clear this ${words.agent}?`,
       body: "It forgets this conversation entirely — the transcript is deleted and its token count goes back to zero. Its worktrees and settings stay as they are.",
       confirmLabel: "Clear",
       tone: "danger",
@@ -540,17 +556,18 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
     if (!prompt && attachments.length === 0) return;
     ensureNotifyPermission();
     playCue(running ? "queue" : "send");
-    // The agent reads attachments off disk, so the prompt carries paths only.
-    const attachmentNote = attachments.length
-      ? `\n\nAttached files (read them from these paths):\n${attachments
-          .map((a) => `- ${a.path}`)
-          .join("\n")}`
-      : "";
+    // The sentence says `[photo.png]` where you attached it; the paths follow
+    // it as a block. Every attachment is listed, not only the ones you deleted
+    // out of the sentence — a name mid-prompt needs somewhere to resolve.
+    const labels = attachmentLabels(attachments.map((a) => a.name));
+    const note = attachmentNote(
+      attachments.map((a, i) => ({ label: labels[i] ?? a.name, path: a.path })),
+    );
     useSylva.getState().clearDraft(worktreeId);
     // Bump a counter rather than toggling a boolean: sending twice quickly has
     // to restart the animation, and re-adding a class it already has doesn't.
     setSent((n) => n + 1);
-    void api.prompt(worktreeId, `${prompt}${attachmentNote}`.trim());
+    void api.prompt(worktreeId, `${prompt}${note}`.trim());
   };
 
   if (!availability.available) {
@@ -577,6 +594,22 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           {stateWord}
         </span>
 
+        {named.length > 0 && (
+          <span
+            className="chat-branch"
+            data-tip={
+              named.length === 1
+                ? `Branch checked out where this ${words.agent} works`
+                : `Branches this ${words.agent} works across:\n${named.join("\n")}`
+            }
+          >
+            <GitBranch size={11} />
+            {/* The leaf, as everywhere else — with the prefixes in the tooltip,
+                which is where a name you already know belongs. */}
+            {named.map((b) => worktreeLabel(b, b)).join(" + ")}
+          </span>
+        )}
+
         {session && (
           <span className="chat-header-facts">
             <span data-tip="Tokens read and written across this session">
@@ -590,7 +623,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
             <button
               className="chat-stop"
               onClick={() => void api.interrupt(worktreeId)}
-              data-tip="Interrupt the dryad's current turn"
+              data-tip={`Interrupt the ${words.agent}'s current turn`}
             >
               <Square size={11} fill="currentColor" />
               Stop
@@ -609,7 +642,6 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
               Clear
             </button>
           )}
-          <AgentSettingsButton worktreeId={worktreeId} />
         </div>
       </div>
       <div className={`agent-body agent-body-${state}`}>
@@ -662,7 +694,7 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
         >
           {blocks.length === 0 && (
             <div className="chat-empty">
-              Ask for anything — the dryad works right here in this worktree.
+              Ask for anything — the {words.agent} works right here in this worktree.
             </div>
           )}
           {hidden > 0 && (
@@ -675,27 +707,40 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
             return (
               <div
                 key={index}
-                className="block-anchor"
+                className={`block-anchor ${i === shown.length - 1 ? "block-fresh" : ""}`}
                 ref={(el) => {
                   if (el) blockRefs.current.set(index, el);
                   else blockRefs.current.delete(index);
                 }}
               >
-                <BlockRow block={block} />
+                <BlockRow block={block} fresh={i === shown.length - 1} />
               </div>
             );
           })}
           {permissions.map((p) => (
             <PermissionCard key={p.id} request={p} />
           ))}
-          {running && permissions.length === 0 && (
-            <div className="thinking" data-tip="Output streams in live as the agent works">
+          {busy && permissions.length === 0 && (
+            <div
+              className="thinking"
+              data-tip={
+                running
+                  ? "Output streams in live as the agent works"
+                  : "The turn is over, but work it started is still running"
+              }
+            >
               <span className="fireflies" aria-hidden>
                 <i />
                 <i />
                 <i />
               </span>
-              the dryad is working…
+              {running
+                ? `the ${words.agent} is working…`
+                : `still running: ${session?.backgroundTasks[0]?.description ?? "background work"}${
+                    (session?.backgroundTasks.length ?? 0) > 1
+                      ? ` +${(session?.backgroundTasks.length ?? 1) - 1} more`
+                      : ""
+                  }`}
             </div>
           )}
         </div>
@@ -721,7 +766,10 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
         <div className="queue-list">
           {session?.queuedPrompts.map((q) => (
             <div key={q.id} className="queue-item">
-              <span className="queue-text" data-tip="Queued prompt — sends when the current turn ends">
+              <span
+                className="queue-text"
+                data-tip="Queued prompt — sends when the current turn ends"
+              >
                 {q.text}
               </span>
               <button
@@ -759,20 +807,47 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
       >
         {(attachments.length > 0 || uploading > 0 || uploadError) && (
           <div className="attach-list">
-            {attachments.map((a) => (
-              <span key={a.path} className="attach-chip" data-tip={`Attached · ${a.path}`}>
-                {a.name}
-                <button
-                  type="button"
-                  className="ghost"
-                  aria-label={`Remove ${a.name}`}
-                  data-tip="Remove this attachment"
-                  onClick={() => setAttachments((l) => l.filter((x) => x.path !== a.path))}
+            {attachments.map((a, i) => {
+              const label = attachLabels[i] ?? a.name;
+              return (
+                <span
+                  key={a.path}
+                  className="attach-chip"
+                  data-tip={
+                    text.includes(attachmentToken(label))
+                      ? `Named as [${label}] in your prompt · ${a.path}`
+                      : `Attached — listed under Attachments when you send · ${a.path}`
+                  }
                 >
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
+                  {label}
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-label={`Remove ${label}`}
+                    data-tip="Remove this attachment, and its name from the prompt"
+                    onClick={() => {
+                      const rest = attachments.filter((x) => x.path !== a.path);
+                      setAttachments(() => rest);
+                      // The name went into the sentence when the file arrived,
+                      // so it comes back out when the file goes — and whatever
+                      // was called "photo (2).png" because of this file is
+                      // called "photo.png" again, in the sentence too.
+                      const without = removeFromText(text, attachmentToken(label));
+                      const remaining = attachLabels.filter((_, j) => j !== i);
+                      setText(
+                        relabelAttachments(
+                          without,
+                          remaining,
+                          attachmentLabels(rest.map((x) => x.name)),
+                        ),
+                      );
+                    }}
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              );
+            })}
             {uploading > 0 && (
               <span className="attach-pending" data-tip="Copying files into the worktree">
                 attaching {uploading}…
@@ -786,65 +861,48 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
           </div>
         )}
 
-        <div className="prompt-row">
-          <button
-            type="button"
-            className="attach-btn"
-            aria-label="Attach a file"
-            data-tip="Attach files for the dryad to read — or just drop them here"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Paperclip size={15} />
-          </button>
-          <SavedPromptsButton
-            onInsert={(snippet) =>
-              setText(text.trim().length > 0 ? `${text.trimEnd()}\n\n${snippet}` : snippet)
-            }
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => {
-              if (e.target.files?.length) void upload(e.target.files);
-              e.target.value = "";
-            }}
-          />
-          <div className="prompt-field">
+        <div className="composer-box">
+          <div className="composer-field">
             <textarea
               ref={promptRef}
               rows={2}
-              data-tip="Enter sends · Shift+Enter starts a new line · @ names a file"
+              className="composer-input"
+              data-tip="Enter sends · Shift+Enter starts a new line · @ names a file · / lists commands · an attached file's name lands at the caret"
               placeholder={
                 dragging
                   ? "Drop to attach"
                   : running
                     ? "Queue a follow-up…"
-                    : "Tell the dryad what to do… (@ to name a file)"
+                    : `Tell the ${words.agent} what to do…`
               }
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
-                setMention(mentionAt(e.target.value, e.target.selectionStart));
+                syncPopups(e.target.value, e.target.selectionStart);
               }}
               // The caret can move without the text changing, and an `@` three
               // words back is no longer being typed once you click away from it.
-              onSelect={(e) =>
-                setMention(mentionAt(text, e.currentTarget.selectionStart))
-              }
-              onBlur={() => setMention(null)}
+              onSelect={(e) => syncPopups(text, e.currentTarget.selectionStart)}
+              onBlur={(e) => {
+                // The popups go, but where you were does not: an attachment
+                // arriving a moment later still belongs at that spot.
+                caretRef.current = e.currentTarget.selectionStart;
+                setMention(null);
+                setSlash(null);
+              }}
               onPaste={(e) => {
                 const files = Array.from(e.clipboardData.files);
                 if (files.length) {
                   e.preventDefault();
+                  // A pasted screenshot belongs exactly where you pasted it.
+                  caretRef.current = e.currentTarget.selectionStart;
                   void upload(files);
                 }
               }}
               onKeyDown={(e) => {
-                // The popup owns Enter while it is open — it means "choose
-                // this file", and PathMentions has already handled it.
-                if (e.key === "Enter" && !e.shiftKey && !mention) {
+                // A popup owns Enter while it is open — it means "choose this
+                // one", and the popup has already handled it.
+                if (e.key === "Enter" && !e.shiftKey && !mention && !slash) {
                   e.preventDefault();
                   send();
                 }
@@ -859,46 +917,78 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
                 const next = applyMention(text, mention, path);
                 setText(next.text);
                 setMention(null);
-                // Put the caret after what was just inserted, once React has
-                // written the new value into the field.
-                requestAnimationFrame(() => {
-                  const node = promptRef.current;
-                  if (!node) return;
-                  node.focus();
-                  node.setSelectionRange(next.caret, next.caret);
-                });
+                moveCaret(next.caret);
+              }}
+            />
+            <SlashCommands
+              worktreeId={worktreeId}
+              token={slash}
+              onDismiss={() => setSlash(null)}
+              onPick={(name) => {
+                if (!slash) return;
+                const next = applySlash(text, slash, name);
+                setText(next.text);
+                setSlash(null);
+                moveCaret(next.caret);
               }}
             />
           </div>
-          {running ? (
-            <div className="prompt-actions">
-              <button
-                type="submit"
-                className="btn-quiet"
-                disabled={!text.trim()}
-                data-tip="Line this up to send once the current turn ends"
-              >
-                Queue
-              </button>
+
+          {/* Everything that acts on what you have written, on the floor of the
+              same box — so the box is the composer rather than one control in a
+              row of them. What it will be sent *with* sits on the left, what
+              sends it on the right. */}
+          <div className="composer-foot">
+            <ComposerSettings worktreeId={worktreeId} />
+
+            <div className="composer-tools">
               <button
                 type="button"
-                className="btn-danger"
-                onClick={() => void api.interrupt(worktreeId)}
-                data-tip="Interrupt the dryad's current turn"
+                className="composer-icon"
+                aria-label="Attach a file"
+                data-tip={`Attach files for the ${words.agent} to read — their names land where the caret is, and their paths at the end. Or just drop them here.`}
+                onClick={() => fileInputRef.current?.click()}
               >
-                Stop
+                <Paperclip size={15} />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => {
+                  if (e.target.files?.length) void upload(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+
+              {running && (
+                <button
+                  type="button"
+                  className="composer-icon composer-stop"
+                  onClick={() => void api.interrupt(worktreeId)}
+                  aria-label="Stop the current turn"
+                  data-tip={`Interrupt the ${words.agent}'s current turn`}
+                >
+                  <Square size={11} fill="currentColor" strokeWidth={0} />
+                </button>
+              )}
+
+              <button
+                type="submit"
+                className="composer-send"
+                disabled={running ? !text.trim() : !text.trim() && attachments.length === 0}
+                aria-label={running ? "Queue this prompt" : "Send this prompt"}
+                data-tip={
+                  running
+                    ? "Line this up to send once the current turn ends"
+                    : `Send this prompt to the ${words.agent}`
+                }
+              >
+                {running ? <ListPlus size={15} /> : <ArrowUp size={16} strokeWidth={2.4} />}
               </button>
             </div>
-          ) : (
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={!text.trim() && attachments.length === 0}
-              data-tip="Send this prompt to the dryad"
-            >
-              Send
-            </button>
-          )}
+          </div>
         </div>
       </form>
     </div>

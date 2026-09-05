@@ -1,6 +1,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { clampScrollback, PREFERENCE_DEFAULTS } from "sylva-shared";
 import { api } from "./api";
 import { sendWs } from "./ws";
 
@@ -26,6 +27,31 @@ interface View {
 }
 
 const views = new Map<string, View>();
+
+/**
+ * How many lines each emulator keeps above the top of the screen.
+ *
+ * A module-level number rather than a prop, for the same reason the emulators
+ * themselves live here: a terminal outlives every component that draws it, and
+ * a setting it reads has to outlive them too. The saved preference replaces
+ * this as soon as it has been fetched.
+ */
+let scrollback = PREFERENCE_DEFAULTS.terminalScrollback;
+
+/**
+ * Set the scrollback for every terminal, now and hereafter.
+ *
+ * xterm trims immediately when the limit drops, which is the point: the setting
+ * exists because the lines already held are costing something, and one that
+ * only applied to terminals opened later would leave that cost exactly where it
+ * was until the next reload.
+ */
+export function setTerminalScrollback(lines: number): void {
+  const next = clampScrollback(lines);
+  if (next === scrollback) return;
+  scrollback = next;
+  for (const view of views.values()) view.term.options.scrollback = next;
+}
 
 /** One CSS custom property, resolved to whatever the stylesheet says it is. */
 function token(name: string, fallback: string): string {
@@ -96,8 +122,9 @@ function create(terminalId: string): View {
     lineHeight: 1.2,
     cursorBlink: true,
     // The server keeps only the last stretch of output; the emulator is where a
-    // long build log is actually scrolled back through.
-    scrollback: 10_000,
+    // long build log is actually scrolled back through — and where its cost is
+    // paid, one object per cell, which is why the depth is yours to choose.
+    scrollback,
     allowProposedApi: true,
     theme: theme(),
   });
@@ -169,13 +196,36 @@ export function focusTerminal(terminalId: string): void {
   views.get(terminalId)?.term.focus();
 }
 
-/** The terminal is gone for good — throw the emulator away with it. */
+/**
+ * The terminal is gone for good — throw the emulator away with it.
+ *
+ * `dispose` is what actually frees the scrollback: the buffer, its cells and
+ * the renderer's canvases all hang off the Terminal, and dropping the map entry
+ * alone would leave every line of a build log alive for as long as the tab is.
+ */
 export function disposeTerminal(terminalId: string): void {
   const view = views.get(terminalId);
   if (!view) return;
   views.delete(terminalId);
+  view.queue.length = 0;
   view.host.remove();
   view.term.dispose();
+}
+
+/**
+ * Throw away every emulator the server no longer has a terminal for.
+ *
+ * Closing a terminal broadcasts, and the broadcast disposes it — but a close
+ * that happened while this tab was disconnected has no broadcast to hear, and
+ * its scrollback would otherwise sit in memory until the page was reloaded.
+ * Called with the server's own list, on reconnect, which is the moment we stop
+ * believing anything we remember.
+ */
+export function disposeMissingTerminals(liveIds: string[]): void {
+  const live = new Set(liveIds);
+  for (const id of [...views.keys()]) {
+    if (!live.has(id)) disposeTerminal(id);
+  }
 }
 
 /** Re-theme every open terminal, after the palette or the text size changes. */

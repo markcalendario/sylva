@@ -1,7 +1,10 @@
+import { useHasForest, useWords } from "../../lib/theme";
 import { Sprite } from "../../sprites/Sprite";
 import { Dialog } from "../Dialog";
 
 export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const hasForest = useHasForest();
+  const words = useWords();
   return (
     <Dialog title="About Sylva" open={open} onClose={onClose}>
       <div className="about-sprites">
@@ -12,8 +15,10 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
       </div>
 
       <p className="dialog-hint">
-        A local mission control for git worktrees and Claude agents. Every worktree is a tree in
-        your forest, tended by a dryad you can put to work — and watch.
+        A local mission control for git worktrees and Claude agents.{" "}
+        {hasForest
+          ? "Every worktree is a tree in your forest, tended by a dryad you can put to work — and watch."
+          : "Every worktree gets an agent you can put to work — and watch."}
       </p>
 
       <div className="credits">
@@ -53,8 +58,8 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
       </div>
 
       <p className="credits-colophon">
-        Built with Claude Code. Sprites, sounds, and type are generated in the browser — no image
-        or audio files ship with the app.
+        Built with Claude Code. Sprites, sounds, and type are generated in the browser — no image or
+        audio files ship with the app.
       </p>
 
       <div className="dialog-actions">
@@ -64,7 +69,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
           onClick={onClose}
           data-tip="Close and go back to Sylva"
         >
-          Back to the forest
+          Back to the {words.workspace.toLowerCase()}
         </button>
       </div>
     </Dialog>

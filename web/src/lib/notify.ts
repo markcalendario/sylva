@@ -29,10 +29,8 @@ function show(worktreeId: string, title: string, body: string): void {
 
 /** True when the user isn't already looking at this worktree. */
 function backgrounded(worktreeId: string): boolean {
-  const { panes } = useSylva.getState();
-  // Held by a pane counts as being looked at — both halves of a split are
-  // on screen, so neither deserves an interruption.
-  return !panes.some((p) => p.worktreeId === worktreeId) || document.hidden;
+  // Held by the pane counts as being looked at.
+  return useSylva.getState().pane.worktreeId !== worktreeId || document.hidden;
 }
 
 /**

@@ -1,88 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  EDITOR_TARGETS,
+  clampScrollback,
+  TERMINAL_SCROLLBACK_MAX,
+  TERMINAL_SCROLLBACK_MIN,
+  TERMINAL_TARGETS,
   type AppPreferences,
-  type OpenChoice,
-  type SavedPrompt,
+  type TerminalTarget,
 } from "sylva-shared";
-
-/** One "open with" chooser, plus its command box when set to custom. */
-function TargetField({
-  title,
-  choices,
-  target,
-  command,
-  onTarget,
-  onCommand,
-}: {
-  title: string;
-  choices: OpenChoice[];
-  target: AppPreferences["editorTarget"];
-  command: string;
-  onTarget: (next: AppPreferences["editorTarget"]) => void;
-  onCommand: (next: string) => void;
-}) {
-  return (
-    <>
-      <div className="field">
-        <span data-tip={`Which application the ${title.toLowerCase()} button opens`}>{title}</span>
-        <div className="settings-control">
-          <select
-            value={target}
-            onChange={(e) => onTarget(e.target.value as AppPreferences["editorTarget"])}
-            data-tip={`Pick what the ${title.toLowerCase()} button launches`}
-          >
-            {choices.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <span className="field-hint">{choices.find((c) => c.id === target)?.note}</span>
-      </div>
-
-      {target === "custom" && (
-        <label className="field">
-          Command
-          <input
-            className="mono-input"
-            value={command}
-            placeholder="code {path}"
-            onChange={(e) => onCommand(e.target.value)}
-            data-tip="{path} is replaced with the worktree directory"
-          />
-          <span className="field-hint">
-            Run directly, never through a shell — so it can launch one program with arguments, and
-            nothing else. <code>{"{path}"}</code> becomes the worktree directory.
-          </span>
-        </label>
-      )}
-    </>
-  );
-}
-
-/** Where the Open button sends a worktree. */
-export function OpenTargetField({
-  value,
-  onChange,
-}: {
-  value: AppPreferences;
-  onChange: (next: AppPreferences) => void;
-}) {
-  return (
-    <>
-      <TargetField
-        title="Open in editor"
-        choices={EDITOR_TARGETS}
-        target={value.editorTarget}
-        command={value.editorCommand}
-        onTarget={(editorTarget) => onChange({ ...value, editorTarget })}
-        onCommand={(editorCommand) => onChange({ ...value, editorCommand })}
-      />
-    </>
-  );
-}
 
 /**
  * Which shell the Terminal tab opens. Empty means whatever you log in with,
@@ -108,10 +32,76 @@ export function TerminalShellField({
       />
       <span className="field-hint">
         Leave this empty and Sylva uses your login shell. Give an absolute path —{" "}
-        <code>/opt/homebrew/bin/fish</code> — to use something else. Terminals already open keep
-        the shell they started with.
+        <code>/opt/homebrew/bin/fish</code> — to use something else. Terminals already open keep the
+        shell they started with.
       </span>
     </label>
+  );
+}
+
+/**
+ * Which terminal application the worktree opens in.
+ *
+ * Not the same setting as the shell above, and worth keeping apart: that one
+ * is the program a Terminal tab runs inside Sylva, this one is the terminal
+ * Sylva hands the worktree to when a tab isn't enough — a full-screen TUI, a
+ * build you want to keep watching after this window is closed, tmux.
+ *
+ * iTerm2 is hidden off a Mac because it doesn't exist there, and offering a
+ * choice that can only fail is worse than not offering it.
+ */
+export function TerminalAppField({
+  value,
+  onChange,
+}: {
+  value: AppPreferences;
+  onChange: (next: AppPreferences) => void;
+}) {
+  const mac = typeof navigator !== "undefined" && /Mac OS X|Macintosh/.test(navigator.userAgent);
+  const choices = TERMINAL_TARGETS.filter((choice) => mac || !choice.macOnly);
+  return (
+    <>
+      <div className="field">
+        <span data-tip="The terminal application Sylva opens a worktree in">Terminal app</span>
+        <div className="settings-control">
+          <select
+            value={value.terminalApp}
+            onChange={(e) => onChange({ ...value, terminalApp: e.target.value as TerminalTarget })}
+            data-tip="Used by Open in terminal, not by the Terminal tab"
+          >
+            {choices.map((choice) => (
+              <option key={choice.id} value={choice.id}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <span className="field-hint">
+          Where <em>Open in terminal</em> sends a worktree — a separate thing from the shell above:
+          that one runs inside Sylva's own Terminal tab, this one is your real terminal, in a window
+          of its own. <em>Off</em> hides the action.
+        </span>
+      </div>
+
+      {value.terminalApp === "custom" && (
+        <label className="field">
+          Command
+          <input
+            className="mono-input"
+            value={value.terminalAppCommand}
+            placeholder="alacritty --working-directory {path}"
+            spellCheck={false}
+            onChange={(e) => onChange({ ...value, terminalAppCommand: e.target.value })}
+            data-tip="{path} is replaced with the worktree directory"
+          />
+          <span className="field-hint">
+            Run directly, never through a shell — so it can launch one program with arguments, and
+            nothing else. <code>{"{path}"}</code> becomes the worktree directory; leave it out and
+            the command is simply started in the worktree instead.
+          </span>
+        </label>
+      )}
+    </>
   );
 }
 
@@ -163,81 +153,76 @@ export function CopyEnvFilesField({
   );
 }
 
-/** Snippets the prompt bar can append to whatever you've typed. */
-export function SavedPromptsField({
+/**
+ * How far a terminal can be scrolled back.
+ *
+ * Scrollback lives in the browser, so this is a memory setting wearing a
+ * convenience setting's clothes: every line is held as cells, and several
+ * terminals with a build's worth of output each is enough to make the whole
+ * window stutter.
+ */
+export function TerminalScrollbackField({
   value,
   onChange,
 }: {
   value: AppPreferences;
   onChange: (next: AppPreferences) => void;
 }) {
-  const [label, setLabel] = useState("");
-  const [text, setText] = useState("");
+  /**
+   * What is in the box, which is not always a number yet.
+   *
+   * Clamping every keystroke would make "2000" impossible to type: the "2"
+   * would be pulled up to the minimum before the second digit arrived. So the
+   * field holds text, commits whenever the text is a value in range, and only
+   * clamps once you have finished — which is what blur means.
+   */
+  const [text, setText] = useState(String(value.terminalScrollback));
+  useEffect(() => setText(String(value.terminalScrollback)), [value.terminalScrollback]);
 
-  const prompts = value.savedPrompts;
-  const update = (next: SavedPrompt[]) => onChange({ ...value, savedPrompts: next });
-
-  const add = () => {
-    const trimmedLabel = label.trim();
-    const trimmedText = text.trim();
-    if (!trimmedLabel || !trimmedText) return;
-    update([
-      ...prompts,
-      { id: `p${Date.now().toString(36)}`, label: trimmedLabel, text: trimmedText },
-    ]);
-    setLabel("");
-    setText("");
+  const commit = () => {
+    const next = clampScrollback(Number(text));
+    setText(String(next));
+    if (next !== value.terminalScrollback) onChange({ ...value, terminalScrollback: next });
   };
 
   return (
-    <div className="field">
-      <span data-tip="Reusable prompts, added to whatever is already in the box">
-        Saved prompts
-      </span>
-      <ul className="saved-editor">
-        {prompts.length === 0 && <li className="field-hint">None yet.</li>}
-        {prompts.map((p) => (
-          <li key={p.id} className="saved-editor-row">
-            <span className="saved-editor-label">{p.label}</span>
-            <span className="saved-editor-text">{p.text}</span>
-            <button
-              className="ghost"
-              onClick={() => update(prompts.filter((x) => x.id !== p.id))}
-              aria-label={`Delete ${p.label}`}
-              data-tip="Delete this saved prompt"
-            >
-              ✕
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      <div className="saved-editor-new">
-        <input
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="Name"
-          data-tip="Shown in the prompt bar menu"
-        />
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={2}
-          placeholder="The prompt text"
-          data-tip="Appended to whatever you've already typed"
-        />
-        <button
-          className="btn-quiet"
-          onClick={add}
-          disabled={!label.trim() || !text.trim()}
-          data-tip="Add this to your saved prompts"
-        >
-          Add
-        </button>
-      </div>
+    <label className="field">
+      <span data-tip="How many lines of output each terminal keeps">Scrollback</span>
+      <input
+        className="mono-input"
+        type="number"
+        min={TERMINAL_SCROLLBACK_MIN}
+        max={TERMINAL_SCROLLBACK_MAX}
+        step={100}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          const typed = Number(e.target.value);
+          if (
+            e.target.value.trim() !== "" &&
+            Number.isFinite(typed) &&
+            typed >= TERMINAL_SCROLLBACK_MIN &&
+            typed <= TERMINAL_SCROLLBACK_MAX
+          ) {
+            onChange({ ...value, terminalScrollback: Math.round(typed) });
+          }
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          }
+        }}
+        data-tip={`Between ${TERMINAL_SCROLLBACK_MIN} and ${TERMINAL_SCROLLBACK_MAX.toLocaleString()} lines`}
+      />
       <span className="field-hint">
-        Picking one adds it to what you've already typed rather than replacing it, so they stack.
+        Lines kept above the top of each terminal, between {TERMINAL_SCROLLBACK_MIN} and{" "}
+        {TERMINAL_SCROLLBACK_MAX.toLocaleString()}. They are held in this browser tab, so a large
+        number across several busy terminals is paid for in memory — and eventually in how smoothly
+        everything else moves. Applies to terminals already open as well as new ones; lines already
+        past the new limit are dropped.
       </span>
-    </div>
+    </label>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkClass, highlightLines, languageFor } from "./highlight";
+import { chunkClass, highlightLines, languageFor, languageForFence } from "./highlight";
 
 /** The text of a highlighted line, to check nothing was lost or reordered. */
 function text(line: { text: string }[]): string {
@@ -46,7 +46,10 @@ describe("highlightLines", () => {
   it("colours a token that spans several lines", () => {
     // The whole point of tokenising before splitting: a line-by-line
     // highlighter would treat lines two and three as code.
-    const lines = highlightLines("const a = 1;\n/* still\na comment */\nconst b = 2;", "typescript");
+    const lines = highlightLines(
+      "const a = 1;\n/* still\na comment */\nconst b = 2;",
+      "typescript",
+    );
     expect(lines[1]?.every((c) => c.type?.includes("comment"))).toBe(true);
     expect(lines[2]?.some((c) => c.type?.includes("comment"))).toBe(true);
     expect(lines[3]?.some((c) => c.type?.includes("keyword"))).toBe(true);
@@ -72,5 +75,23 @@ describe("chunkClass", () => {
 
   it("says nothing about plain text", () => {
     expect(chunkClass(undefined)).toBeUndefined();
+  });
+});
+
+describe("fence languages", () => {
+  it("takes the names people actually type", () => {
+    expect(languageForFence("ts")).toBe("typescript");
+    expect(languageForFence("TSX")).toBe("tsx");
+    expect(languageForFence("console")).toBe("bash");
+    expect(languageForFence("sh")).toBe("bash");
+    expect(languageForFence("python")).toBe("python");
+  });
+
+  it("returns null rather than guessing", () => {
+    // Plain text is named, not unknown — but both must render uncoloured, or a
+    // fence gets a grammar it was never written in.
+    expect(languageForFence("text")).toBeNull();
+    expect(languageForFence("")).toBeNull();
+    expect(languageForFence("brainfuck")).toBeNull();
   });
 });

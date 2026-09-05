@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, FileCode2, Sparkles, X } from "lucide-react";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { useDiff, useInvalidate } from "../lib/queries";
+import { useWords } from "../lib/theme";
 import { useSylva, type DiffSelection } from "../state/store";
 import { CommitGraph } from "./CommitGraph";
 import { DiffView } from "./DiffView";
@@ -89,7 +90,9 @@ export function GitPanel({
             ))}
         </div>
 
-        {view === "changes" && shared && <SharedCommit members={members} onFeedback={setFeedback} />}
+        {view === "changes" && shared && (
+          <SharedCommit members={members} onFeedback={setFeedback} />
+        )}
 
         {feedback && (
           <div className="git-feedback" data-tip="Result of the last git command">
@@ -129,7 +132,7 @@ export function GitPanel({
               <button
                 className="ghost diff-open"
                 onClick={() =>
-                  useSylva.getState().openFileHere({
+                  useSylva.getState().openFile({
                     worktreeId: selection.worktreeId,
                     path: selection.path,
                   })
@@ -183,6 +186,7 @@ function SharedToolbar({
   members: string[];
   onFeedback: (message: string | null) => void;
 }) {
+  const words = useWords();
   const [busy, setBusy] = useState(false);
   const invalidate = useInvalidate();
 
@@ -203,6 +207,7 @@ function SharedToolbar({
       }
     }
     invalidate.diffs();
+    for (const id of members) invalidate.statusNow(id);
     setBusy(false);
     onFeedback(
       failures.length === 0
@@ -221,7 +226,7 @@ function SharedToolbar({
           className="btn-quiet"
           disabled={busy}
           onClick={() => void all("Pulled", (id) => api.pull(id))}
-          data-tip="Pull in every worktree this dryad tends"
+          data-tip={`Pull in every worktree this ${words.agent} tends`}
         >
           <ArrowDown size={13} /> Pull all
         </button>
@@ -229,7 +234,7 @@ function SharedToolbar({
           className="btn-quiet"
           disabled={busy}
           onClick={() => void all("Pushed", (id) => api.push(id, false))}
-          data-tip="Push every worktree this dryad tends"
+          data-tip={`Push every worktree this ${words.agent} tends`}
         >
           <ArrowUp size={13} /> Push all
         </button>

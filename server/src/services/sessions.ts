@@ -133,6 +133,24 @@ interface ActiveSession {
   pendingPermissions: Map<string, PendingPermission>;
   loopDone: Promise<void> | null;
   /**
+   * Live background work, by task id.
+   *
+   * Held as a map rather than the array on `info` because the SDK talks about
+   * these one id at a time — started, updated, reported back — and only
+   * sometimes hands over the whole set at once.
+   */
+  tasks: Map<string, string>;
+  /**
+   * Whether this CLI sends the whole live set of background tasks.
+   *
+   * It is the signal to trust when it exists — the SDK says as much — and the
+   * per-task started/finished messages are then not to be mixed with it: their
+   * order relative to it is unspecified, so a late "started" for work the set
+   * has already dropped would leave a dryad working forever. They are the
+   * fallback for a CLI that doesn't send the set at all.
+   */
+  taskSetSeen: boolean;
+  /**
    * Set when the session has been cleared out from under a query that is still
    * shutting down. Everything that writes about a session checks this: the loop
    * persists on its way out, and without the flag a clear could be undone
@@ -252,7 +270,7 @@ export function describeTool(
 
 function differs(a: AgentSettings, b: AgentSettings): boolean {
   return (
-    a.bypassPermissions !== b.bypassPermissions || a.model !== b.model || a.effort !== b.effort
+    a.permissionMode !== b.permissionMode || a.model !== b.model || a.effort !== b.effort
   );
 }
 
@@ -304,6 +322,22 @@ export class SessionManager {
     return null;
   }
 
+  /**
+   * The live query for one target, when that target has a turn's process up.
+   *
+   * Narrower than `anyLiveQuery` on purpose: what a session can be *asked* that
+   * is specific to where it is running — the slash commands a directory offers,
+   * say — has to come from a process actually running there.
+   */
+  liveQueryFor(targetId: string): Query | null {
+    return this.activeByWorktree(targetId)?.q ?? null;
+  }
+
+  /** Where a target runs, for anything that needs to ask Claude Code in place. */
+  async cwdFor(targetId: string): Promise<string> {
+    return (await this.resolveTarget(targetId)).cwd;
+  }
+
   async transcript(worktreeId: string): Promise<AgentEvent[]> {
     const persisted = this.store.sessions.find((s) => s.worktreeId === worktreeId);
     const sessionId = this.byWorktree.get(worktreeId) ?? persisted?.id;
@@ -339,6 +373,10 @@ export class SessionManager {
     const session = this.requireActive(worktreeId);
     if (session.q) await session.q.interrupt().catch(() => {});
     session.info.status = "interrupted";
+    // Interrupting stops the turn and everything it had running with it, so
+    // nothing is left in the background to keep the dryad looking busy.
+    session.tasks.clear();
+    session.info.backgroundTasks = [];
     this.appendEvent(session, { kind: "result", outcome: "interrupted", at: now() });
     this.broadcastSession(session);
     return session.info;
@@ -606,6 +644,7 @@ export class SessionManager {
       totalCostUsd: persisted?.totalCostUsd ?? 0,
       totalTokens: persisted?.totalTokens ?? 0,
       queuedPrompts: [],
+      backgroundTasks: [],
       createdAt: persisted?.createdAt ?? now(),
     };
 
@@ -620,6 +659,8 @@ export class SessionManager {
       alwaysAllow: new Set(),
       pendingPermissions: new Map(),
       loopDone: null,
+      tasks: new Map(),
+      taskSetSeen: false,
       cleared: false,
     };
     this.sessions.set(info.id, session);
@@ -645,21 +686,24 @@ export class SessionManager {
         : {}),
     };
 
-    // Bypass mode skips every check, so there is nothing for canUseTool to ask
-    // about; wiring it up anyway would imply approvals that never happen.
-    const options: Options = prefs.bypassPermissions
-      ? {
-          cwd: target.cwd,
-          permissionMode: "bypassPermissions",
-          allowDangerouslySkipPermissions: true,
-          ...tuning,
-        }
-      : {
-          cwd: target.cwd,
-          permissionMode: "acceptEdits",
-          canUseTool: this.makeCanUseTool(session),
-          ...tuning,
-        };
+    // Full access skips every check, so there is nothing for canUseTool to ask
+    // about; wiring it up anyway would imply approvals that never happen. The
+    // other two both ask — they differ only in whether a file edit counts as
+    // something worth stopping for.
+    const options: Options =
+      prefs.permissionMode === "full"
+        ? {
+            cwd: target.cwd,
+            permissionMode: "bypassPermissions",
+            allowDangerouslySkipPermissions: true,
+            ...tuning,
+          }
+        : {
+            cwd: target.cwd,
+            permissionMode: prefs.permissionMode === "supervised" ? "default" : "acceptEdits",
+            canUseTool: this.makeCanUseTool(session),
+            ...tuning,
+          };
 
     session.q = query({ prompt: session.input, options });
     session.loopDone = this.runLoop(session).catch(() => {});
@@ -705,6 +749,10 @@ export class SessionManager {
         pending.resolve("timeout");
       }
       session.pendingPermissions.clear();
+      // The query is gone, and with it anything it had running: a background
+      // task can only report back into a conversation that is still open.
+      session.tasks.clear();
+      session.info.backgroundTasks = [];
       // Only unregister what is still ours. A clear tears the session out of
       // these maps itself and may already have let a new one take its place;
       // deleting by id alone would drop the replacement's watchers instead.
@@ -724,12 +772,29 @@ export class SessionManager {
       case "system": {
         if (message.subtype === "init") {
           session.info.sdkSessionId = message.session_id;
+          // A fresh CLI process has no background work and says nothing about
+          // it until something changes, so anything held from the last one is
+          // a claim nobody is going to correct.
+          session.tasks.clear();
+          session.taskSetSeen = false;
+          session.info.backgroundTasks = [];
           void this.persist(session);
           this.broadcastSession(session);
+          break;
         }
+        this.trackBackgroundTask(session, message);
         break;
       }
       case "assistant": {
+        // A result is not always the last word. Background work reporting back
+        // — a subagent finishing, a task waking the model — starts it talking
+        // again with no prompt from you, and a session that went idle on that
+        // result would sit there claiming to rest while it types.
+        //
+        // The model's own messages only. A subagent's arrive with a parent tool
+        // use, and while they do the model really is idle: counting them would
+        // put your next prompt in a queue behind work that isn't its turn.
+        if (message.parent_tool_use_id === null) this.markRunning(session);
         for (const block of message.message.content) {
           if (block.type === "text" && block.text.trim()) {
             this.appendEvent(session, { kind: "assistant-text", text: block.text, at: now() });
@@ -866,6 +931,85 @@ export class SessionManager {
       event,
     });
     void appendFile(this.store.transcriptPath(session.info.id), `${JSON.stringify(event)}\n`, "utf8");
+  }
+
+  /**
+   * Follow the work a turn leaves running behind it.
+   *
+   * A result is the end of the dryad's turn, not always the end of the work:
+   * a backgrounded subagent keeps going, and will wake the model when it
+   * reports back. Between those two moments the session is genuinely idle — you
+   * can prompt it, and your prompt goes straight through — but the dryad is not
+   * resting, and everything that draws one needs to be able to tell the
+   * difference.
+   *
+   * `background_tasks_changed` carries the whole live set and replaces ours
+   * outright — a level, not an edge, and the one the SDK says to prefer for
+   * exactly this question. Once a CLI has sent one, the per-task messages are
+   * ignored rather than merged: they are bookends whose order relative to the
+   * set is unspecified, and a "started" arriving after the set had already
+   * dropped that task would leave a dryad working at nothing until the next
+   * change. They stand in only for a CLI that never sends the set.
+   */
+  private trackBackgroundTask(
+    session: ActiveSession,
+    message: SDKMessage & { type: "system" },
+  ): void {
+    switch (message.subtype) {
+      case "background_tasks_changed":
+        session.taskSetSeen = true;
+        session.tasks.clear();
+        for (const task of message.tasks) session.tasks.set(task.task_id, task.description);
+        break;
+      case "task_started":
+      case "task_progress":
+        if (session.taskSetSeen) return;
+        session.tasks.set(message.task_id, message.description);
+        break;
+      case "task_updated": {
+        if (session.taskSetSeen) return;
+        const status = message.patch.status;
+        if (status && status !== "pending" && status !== "running" && status !== "paused") {
+          session.tasks.delete(message.task_id);
+        } else if (message.patch.description && session.tasks.has(message.task_id)) {
+          session.tasks.set(message.task_id, message.patch.description);
+        }
+        break;
+      }
+      case "task_notification":
+        // Reported back, whatever it has to say. It is no longer running.
+        if (session.taskSetSeen) return;
+        session.tasks.delete(message.task_id);
+        break;
+      default:
+        return;
+    }
+
+    const next = [...session.tasks].map(([id, description]) => ({ id, description }));
+    const same =
+      next.length === session.info.backgroundTasks.length &&
+      next.every((t, i) => {
+        const held = session.info.backgroundTasks[i];
+        return held?.id === t.id && held.description === t.description;
+      });
+    // A progress ping a second, each one re-rendering the forest, for a set of
+    // work that hasn't changed — no.
+    if (same) return;
+    session.info.backgroundTasks = next;
+    this.broadcastSession(session);
+  }
+
+  /**
+   * Say the dryad is working again, having been left for idle.
+   *
+   * Only from idle: a turn that was interrupted, or a query that died, has
+   * nothing left to resume, and a straggling message from either is the end of
+   * something rather than the start of it.
+   */
+  private markRunning(session: ActiveSession): void {
+    if (session.info.status !== "idle") return;
+    session.info.status = "running";
+    this.broadcastSession(session);
   }
 
   private broadcastSession(session: ActiveSession): void {

@@ -4,6 +4,8 @@ export interface PromptMark {
   /** Index of the block in the rendered transcript. */
   blockIndex: number;
   text: string;
+  /** The turn this prompt started ended in an error, or you stopped it. */
+  failed: boolean;
 }
 
 /**
@@ -38,10 +40,12 @@ export function PromptNav({
     // chat body, not the rail, so offsets here are about the wrong box.
     const railBox = rail.getBoundingClientRect();
     const itemBox = item.getBoundingClientRect();
-    const drift =
-      itemBox.top + itemBox.height / 2 - (railBox.top + railBox.height / 2);
+    const drift = itemBox.top + itemBox.height / 2 - (railBox.top + railBox.height / 2);
 
-    const top = Math.max(0, Math.min(rail.scrollTop + drift, rail.scrollHeight - rail.clientHeight));
+    const top = Math.max(
+      0,
+      Math.min(rail.scrollTop + drift, rail.scrollHeight - rail.clientHeight),
+    );
     // Already centred — within a pixel, which rounding alone can produce.
     if (Math.abs(top - rail.scrollTop) < 1) return;
 
@@ -64,10 +68,16 @@ export function PromptNav({
           return (
             <li key={p.blockIndex}>
               <button
-                className={`prompt-nav-item ${active ? "prompt-nav-on" : ""}`}
+                className={`prompt-nav-item ${active ? "prompt-nav-on" : ""} ${
+                  p.failed ? "prompt-nav-failed" : ""
+                }`}
                 {...(active ? { ref: activeRef } : {})}
                 onClick={() => onJump(p.blockIndex)}
-                data-tip={`Jump to this prompt · ${p.text}`}
+                data-tip={
+                  p.failed
+                    ? `This turn ended in an error, or you stopped it · ${p.text}`
+                    : `Jump to this prompt · ${p.text}`
+                }
                 aria-current={active ? "true" : undefined}
               >
                 <span className="prompt-nav-num">{i + 1}</span>

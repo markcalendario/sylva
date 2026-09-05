@@ -2,12 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Plus, X } from "lucide-react";
 import type { TerminalInfo } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
-import {
-  attachTerminal,
-  disposeTerminal,
-  fitTerminal,
-  focusTerminal,
-} from "../lib/terminals";
+import { attachTerminal, disposeTerminal, fitTerminal, focusTerminal } from "../lib/terminals";
 import { useSylva } from "../state/store";
 import "@xterm/xterm/css/xterm.css";
 
@@ -29,6 +24,54 @@ import "@xterm/xterm/css/xterm.css";
  */
 const lastActive = new Map<string, string>();
 
+/**
+ * Panes whose terminals you closed on purpose.
+ *
+ * The tab opens a shell for you the first time you visit it, which is right —
+ * and then went on doing it every time you came back, which is not: closing the
+ * last terminal is a decision, and a tab that immediately spawns another has
+ * overruled it. Remembered across reloads because the terminals themselves
+ * survive one; if closing them all didn't, the reload would undo it.
+ */
+const EMPTIED_KEY = "sylva.terminalsEmptied";
+
+/**
+ * Panes already given their one automatic shell in this page session. Outside
+ * React because leaving the tab unmounts this panel, and a guard that unmounts
+ * with it is a guard that only holds while you stay put.
+ */
+const autoOpened = new Set<string>();
+
+function loadEmptied(): Set<string> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(EMPTIED_KEY) ?? "[]") as unknown;
+    return new Set(
+      Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+const emptied = loadEmptied();
+
+function rememberEmptied(memberKey: string, deliberate: boolean): void {
+  if (deliberate === emptied.has(memberKey)) return;
+  if (deliberate) emptied.add(memberKey);
+  else emptied.delete(memberKey);
+  try {
+    localStorage.setItem(EMPTIED_KEY, JSON.stringify([...emptied]));
+  } catch {
+    // Private mode or a full quota; it just won't survive a reload.
+  }
+}
+
+/** How many terminals a pane holds right now, asked of the store. */
+function countMine(memberKey: string): number {
+  const ids = new Set(memberKey ? memberKey.split(",") : []);
+  return Object.values(useSylva.getState().terminals).filter((t) => ids.has(t.worktreeId)).length;
+}
+
 export function TerminalPanel({ members }: { members: string[] }) {
   const terminals = useSylva((s) => s.terminals);
   const index = useSylva((s) => s.worktreeIndex);
@@ -39,7 +82,14 @@ export function TerminalPanel({ members }: { members: string[] }) {
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(() => lastActive.get(memberKey) ?? null);
-  const opened = useRef(false);
+  /**
+   * The pane whose terminals the server has answered about.
+   *
+   * Auto-opening waits for this. Without it, a pane that loads straight onto
+   * the Terminal tab decides it is empty in the moment before the list arrives,
+   * and opens a second shell alongside the one that was already there.
+   */
+  const [listed, setListed] = useState<string | null>(null);
 
   /** This pane's terminals, oldest first — the order they were opened in. */
   const mine = useMemo(() => {
@@ -52,14 +102,26 @@ export function TerminalPanel({ members }: { members: string[] }) {
   // The server is the authority on what exists: it holds the ptys, and they
   // outlive this tab, this pane and this page.
   useEffect(() => {
-    for (const id of memberKey ? memberKey.split(",") : []) {
-      void api
-        .terminals(id)
-        .then((infos) => {
-          for (const info of infos) useSylva.getState().setTerminal(info);
-        })
-        .catch(() => {});
-    }
+    let live = true;
+    setListed(null);
+    const ids = memberKey ? memberKey.split(",") : [];
+    void Promise.all(
+      ids.map((id) =>
+        api
+          .terminals(id)
+          .then((infos) => {
+            for (const info of infos) useSylva.getState().setTerminal(info);
+          })
+          // A member we couldn't ask about still counts as answered: the pane
+          // would otherwise wait forever for a worktree that has gone.
+          .catch(() => {}),
+      ),
+    ).then(() => {
+      if (live) setListed(memberKey);
+    });
+    return () => {
+      live = false;
+    };
   }, [memberKey]);
 
   const open = async (worktreeId: string) => {
@@ -69,6 +131,8 @@ export function TerminalPanel({ members }: { members: string[] }) {
     try {
       const info = await api.openTerminal(worktreeId);
       useSylva.getState().setTerminal(info);
+      // Asking for a terminal here takes back "I want this pane empty".
+      rememberEmptied(memberKey, false);
       select(info.id);
     } catch (e) {
       setError(e instanceof ApiFailure ? (e.detail ?? e.message) : String(e));
@@ -90,19 +154,33 @@ export function TerminalPanel({ members }: { members: string[] }) {
       // Already gone on the server; the local teardown below is what matters.
     }
     useSylva.getState().removeTerminal(terminalId);
+    // The scrollback goes with it: closing a terminal is closing what it said,
+    // and the server has already dropped its copy.
     disposeTerminal(terminalId);
+    // Whether the pane is now empty is a question about what is left, so it is
+    // asked afterwards and of the store — not of a count this render captured
+    // before two close buttons were clicked in a row.
+    rememberEmptied(memberKey, countMine(memberKey) === 0);
   };
 
-  // Arriving at an empty worktree, open one. A tab called Terminal that shows
-  // no terminal until you ask for one is a tab that makes you ask twice.
+  // Arriving at an empty worktree, open one — once, ever. A tab called Terminal
+  // that shows no terminal until you ask for one is a tab that makes you ask
+  // twice; a tab that opens another every time you come back is worse, because
+  // it overrules the last thing you did here.
   useEffect(() => {
-    if (opened.current || shared || busy) return;
-    if (mine.length > 0 || !members[0]) return;
-    opened.current = true;
+    if (shared || busy || !members[0]) return;
+    // Not yet told what exists here. Deciding now would be guessing.
+    if (listed !== memberKey) return;
+    if (mine.length > 0) {
+      autoOpened.add(memberKey);
+      return;
+    }
+    // Either this pane has already been given its one free shell, or you closed
+    // the last one — which was itself the answer to this question.
+    if (autoOpened.has(memberKey) || emptied.has(memberKey)) return;
+    autoOpened.add(memberKey);
     void open(members[0]);
-    // The ref is the real guard: this opens one terminal per pane, once, and
-    // only while there is genuinely nothing here to show.
-  }, [mine.length, members, shared, busy]);
+  }, [mine.length, members, memberKey, listed, shared, busy]);
 
   // Keep the selection pointing at something that exists — a terminal closed
   // from another window, or one that was never here, must not leave a blank.
@@ -306,11 +384,7 @@ function TerminalView({ info, onOpenAnother }: { info: TerminalInfo; onOpenAnoth
 
   return (
     <div className="term-stage">
-      <div
-        className="term-surface"
-        ref={holder}
-        onMouseDown={() => focusTerminal(info.id)}
-      />
+      <div className="term-surface" ref={holder} onMouseDown={() => focusTerminal(info.id)} />
       {info.status === "exited" && (
         <div className="term-dead-bar">
           <span>

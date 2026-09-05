@@ -12,10 +12,9 @@ import { ToolsView } from "./ToolsView";
 import { WorktreePane } from "./WorktreePane";
 
 /**
- * The main area: the workspace (one or two worktree panes, or the forest when
- * no pane holds anything), the settings page, or the grove. Panes persist
- * behind the other two views, so leaving settings puts you back exactly where
- * you were.
+ * The main area: the workspace (the worktree pane, or the forest when it holds
+ * nothing), the settings page, or the grove. The pane persists behind the
+ * other views, so leaving settings puts you back exactly where you were.
  */
 export function MainPanel({
   onRegister,
@@ -25,16 +24,16 @@ export function MainPanel({
   onAbout: () => void;
 }) {
   const repos = useRepos();
-  const panes = useSylva((s) => s.panes);
+  const pane = useSylva((s) => s.pane);
   const view = useSylva((s) => s.view);
 
-  // Tell the server which worktrees have to stay live. Without this the second
-  // pane is a still photograph: no file feed, no git status, no refresh.
+  // Tell the server which worktrees have to stay live. Without this the pane is
+  // a still photograph: no file feed, no git status, no refresh.
   //
   // A circle is expanded into its members: the circle id names a session, not a
   // worktree, and the server can only watch things that exist on disk.
-  const openIds = panes
-    .flatMap((p) => (p.worktreeId ? (circleMembers(p.worktreeId) ?? [p.worktreeId]) : []))
+  const held = pane.worktreeId;
+  const openIds = (held ? (circleMembers(held) ?? [held]) : [])
     .filter((id) => id !== GROVE_ID)
     .join(",");
   useEffect(() => {
@@ -91,9 +90,8 @@ export function MainPanel({
     );
   }
 
-  // Nothing open anywhere: first run gets the landing page, otherwise the map.
-  const anyOpen = panes.some((p) => p.worktreeId !== null);
-  if (!anyOpen) {
+  // Nothing open: first run gets the landing page, otherwise the map.
+  if (pane.worktreeId === null) {
     const hasRepos = (repos.data?.length ?? 0) > 0;
     return (
       <main className="main main-scroll">
@@ -102,12 +100,9 @@ export function MainPanel({
     );
   }
 
-  const split = panes.length > 1;
   return (
-    <main className={`main ${split ? "main-split" : ""}`}>
-      {panes.map((pane) => (
-        <WorktreePane key={pane.id} pane={pane} split={split} />
-      ))}
+    <main className="main">
+      <WorktreePane pane={pane} />
     </main>
   );
 }

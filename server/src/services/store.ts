@@ -2,8 +2,10 @@ import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  clampScrollback,
   GLOBAL_DEFAULTS,
   PREFERENCE_DEFAULTS,
+  toPermissionMode,
   type AgentSettings,
   type AppPreferences,
   type Repo,
@@ -53,7 +55,7 @@ function blankRegistry(): RegistryFile {
 function blankSettings(): SettingsFile {
   return {
     globalSettings: { ...GLOBAL_DEFAULTS },
-    preferences: { ...PREFERENCE_DEFAULTS, savedPrompts: [...PREFERENCE_DEFAULTS.savedPrompts] },
+    preferences: { ...PREFERENCE_DEFAULTS },
     prefs: {},
   };
 }
@@ -66,6 +68,49 @@ function blankSettings(): SettingsFile {
  *
  * None of it lives in your repository, so none of it can be committed.
  */
+/**
+ * Bring a settings file written before permission modes up to date.
+ *
+ * Every installation that existed before this has `bypassPermissions: true |
+ * false` on disk instead of a mode. Reading it as a mode is one line
+ * (toPermissionMode), but the old key has to be dropped as well — left in
+ * place it would be written back out on the next save, and a file carrying
+ * both would be ambiguous to anything reading it later.
+ */
+function migrateSettings(base: AgentSettings, stored: unknown): AgentSettings {
+  if (!stored || typeof stored !== "object") return { ...base };
+  const source = stored as Partial<AgentSettings> & { bypassPermissions?: unknown };
+  return {
+    permissionMode:
+      source.permissionMode !== undefined || source.bypassPermissions !== undefined
+        ? toPermissionMode(source.permissionMode ?? source.bypassPermissions)
+        : base.permissionMode,
+    model: source.model !== undefined ? source.model : base.model,
+    effort: source.effort !== undefined ? source.effort : base.effort,
+  };
+}
+
+/** The same, per worktree — where every key is optional and absence means
+ *  "inherit", so a key that was never set must stay unset. */
+function migrateOverrides(stored: unknown): Record<string, WorktreeOverrides> {
+  if (!stored || typeof stored !== "object") return {};
+  const out: Record<string, WorktreeOverrides> = {};
+  for (const [worktreeId, value] of Object.entries(stored as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const source = value as WorktreeOverrides & { bypassPermissions?: unknown };
+    const overrides: WorktreeOverrides = {};
+    if (source.permissionMode !== undefined) {
+      overrides.permissionMode = toPermissionMode(source.permissionMode);
+    } else if (source.bypassPermissions !== undefined) {
+      overrides.permissionMode = toPermissionMode(source.bypassPermissions);
+    }
+    if (source.model !== undefined) overrides.model = source.model;
+    if (source.effort !== undefined) overrides.effort = source.effort;
+    if (Object.keys(overrides).length > 0) out[worktreeId] = overrides;
+  }
+  return out;
+}
+
 export class Store {
   readonly baseDir: string;
   readonly sessionsDir: string;
@@ -115,7 +160,7 @@ export class Store {
     // renamed or dropped since the file was written doesn't linger in it
     // forever, quietly accumulating.
     this.settings = {
-      globalSettings: { ...base.globalSettings, ...(source.globalSettings ?? {}) },
+      globalSettings: migrateSettings(base.globalSettings, source.globalSettings),
       preferences: {
         editorTarget: saved.editorTarget ?? base.preferences.editorTarget,
         editorCommand: saved.editorCommand ?? base.preferences.editorCommand,
@@ -123,15 +168,22 @@ export class Store {
           typeof saved.terminalShell === "string"
             ? saved.terminalShell
             : base.preferences.terminalShell,
+        terminalApp: saved.terminalApp ?? base.preferences.terminalApp,
+        terminalAppCommand: saved.terminalAppCommand ?? base.preferences.terminalAppCommand,
+        terminalScrollback:
+          typeof saved.terminalScrollback === "number"
+            ? clampScrollback(saved.terminalScrollback)
+            : base.preferences.terminalScrollback,
         copyEnvFiles:
           typeof saved.copyEnvFiles === "boolean"
             ? saved.copyEnvFiles
             : base.preferences.copyEnvFiles,
-        savedPrompts: Array.isArray(saved.savedPrompts)
-          ? saved.savedPrompts
-          : base.preferences.savedPrompts,
+        pullBeforeWorktree:
+          typeof saved.pullBeforeWorktree === "boolean"
+            ? saved.pullBeforeWorktree
+            : base.preferences.pullBeforeWorktree,
       },
-      prefs: source.prefs && typeof source.prefs === "object" ? source.prefs : {},
+      prefs: migrateOverrides(source.prefs),
     };
 
     // First run after the split: write settings.json so it exists to be edited,

@@ -142,6 +142,43 @@ describe("terminals", () => {
     expect(alive).toBe(false);
   });
 
+  /**
+   * The retained output is capped, and the cap is enforced by dropping the
+   * oldest chunks rather than rebuilding the string — so what the invariant
+   * says (`bufferLength`) and what is actually held have to stay in step, and
+   * the newest output must be the part that survives.
+   */
+  it("keeps the tail of a runaway terminal, and no more", async () => {
+    const { terminals } = await harness();
+    const info = await terminals.create("wt1");
+    const inner = terminals as unknown as {
+      sessions: Map<string, { chunks: string[]; bufferLength: number }>;
+      retain: (session: unknown, data: string) => void;
+    };
+    const session = inner.sessions.get(info.id)!;
+    // From a known state: the shell has already said hello by now.
+    session.chunks.length = 0;
+    session.bufferLength = 0;
+
+    const width = 1_000;
+    const chunks = 400; // 400_000 characters, comfortably past the cap
+    const line = (i: number) => `${i}`.padStart(width, ".");
+    for (let i = 0; i < chunks; i++) inner.retain(session, line(i));
+
+    const held = session.chunks.join("");
+    expect(held.length).toBe(session.bufferLength);
+    expect(held.length).toBeLessThan(width * chunks);
+    // The end of the output is what a terminal is for; the beginning is what
+    // a cap is allowed to take.
+    expect(held.endsWith(line(chunks - 1))).toBe(true);
+    expect(held.includes(line(0))).toBe(false);
+
+    terminals.close(info.id);
+    // Closing is the end of what it said, not just of what it was running.
+    expect(session.chunks).toEqual([]);
+    expect(session.bufferLength).toBe(0);
+  });
+
   it("forgets a closed terminal", async () => {
     const { terminals, events } = await harness();
     const info = await terminals.create("wt1");
@@ -157,6 +194,113 @@ describe("terminals", () => {
     await terminals.create("wt2");
     await terminals.closeAll();
     expect(terminals.all()).toEqual([]);
+  });
+
+  /**
+   * A hangup is a request. A shell that has been told to ignore it — which is
+   * a line anyone's dotfiles might contain, and what `trap` is for — used to
+   * survive the shutdown that asked, because nothing waited to find out.
+   */
+  it("insists, on the way out, when a shell declines to hang up", async () => {
+    const { terminals } = await harness();
+    const info = await terminals.create("wt1");
+    const inner = terminals as unknown as {
+      sessions: Map<string, { pty: { pid: number } | null }>;
+    };
+    const pid = inner.sessions.get(info.id)?.pty?.pid;
+    expect(pid).toBeGreaterThan(0);
+
+    terminals.write(info.id, "trap '' HUP; echo DEAF\n");
+    await until(() => terminals.buffer(info.id).data, /DEAF/);
+
+    await terminals.closeAll();
+
+    // The kill lands the moment the grace period is up; being reaped, and so
+    // stopping answering signal 0, takes a moment longer.
+    const deadline = Date.now() + 5000;
+    let alive = true;
+    while (Date.now() < deadline && alive) {
+      try {
+        process.kill(pid!, 0);
+        await new Promise((r) => setTimeout(r, 50));
+      } catch {
+        alive = false;
+      }
+    }
+    expect(alive).toBe(false);
+  }, 20_000);
+
+  /**
+   * A worktree that is being removed takes its terminals with it. Afterwards
+   * there is nowhere left in Sylva that lists them — so a shell left running
+   * is one nobody can see, in a directory that no longer exists.
+   */
+  it("closes every terminal in a worktree that is going away", async () => {
+    const { terminals, events } = await harness();
+    const first = await terminals.create("wt1");
+    const second = await terminals.create("wt1");
+    const other = await terminals.create("wt2");
+
+    terminals.closeForWorktree("wt1");
+
+    expect(terminals.list("wt1")).toEqual([]);
+    expect(terminals.list("wt2").map((t) => t.id)).toEqual([other.id]);
+    const closed = events.filter((e) => e.type === "terminal.closed").map((e) => e.terminalId);
+    expect(closed).toEqual([first.id, second.id]);
+
+    terminals.close(other.id);
+  });
+
+  it("closes every terminal belonging to a repository being forgotten", async () => {
+    const { terminals } = await harness();
+    await terminals.create("wt1");
+    await terminals.create("wt2");
+
+    // The harness answers for one repository, so both terminals are its own.
+    terminals.closeForRepo("r1");
+    expect(terminals.all()).toEqual([]);
+  });
+
+  /**
+   * A finished terminal is a tab holding what it said, not a shell. Counting
+   * it against the per-worktree limit made twelve conversations with `exit` at
+   * the end enough to refuse a thirteenth terminal in a worktree running none.
+   */
+  it("doesn't let finished terminals hold slots open", async () => {
+    const { terminals } = await harness();
+    const inner = terminals as unknown as { sessions: Map<string, unknown> };
+    for (let i = 0; i < 12; i++) {
+      inner.sessions.set(`dead-${i}`, {
+        info: {
+          id: `dead-${i}`,
+          worktreeId: "wt1",
+          repoId: "r1",
+          title: "sh",
+          shell: "/bin/sh",
+          cwd: "/tmp",
+          status: "exited",
+          exitCode: 0,
+          cols: 80,
+          rows: 24,
+          startedAt: new Date().toISOString(),
+          exitedAt: new Date().toISOString(),
+        },
+        pty: null,
+        chunks: [],
+        bufferLength: 0,
+        seq: 0,
+        pending: "",
+        timer: null,
+      });
+    }
+
+    const info = await terminals.create("wt1");
+    expect(info.status).toBe("running");
+    // And the dead ones stop piling up: what is kept is the recent handful,
+    // which is what anyone actually comes back to read.
+    expect(terminals.list("wt1").filter((t) => t.status === "exited")).toHaveLength(6);
+
+    terminals.close(info.id);
   });
 
   it("says so rather than failing silently when the shell doesn't exist", async () => {

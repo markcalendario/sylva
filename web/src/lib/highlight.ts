@@ -85,17 +85,43 @@ export function languageFor(path: string): string | null {
   return BY_EXTENSION[name.slice(dot + 1)] ?? null;
 }
 
+/**
+ * The language named on a markdown fence.
+ *
+ * A fence carries a name rather than a path — ```ts, ```sh, ```console — so the
+ * extension table above answers most of it, and the rest are the aliases people
+ * actually type. Unknown names return null, which renders the block plain
+ * rather than guessing a grammar and colouring it wrong.
+ */
+const FENCE_ALIASES: Record<string, string> = {
+  console: "bash",
+  shell: "bash",
+  sh: "bash",
+  shellsession: "bash",
+  jsonc: "json",
+  text: "",
+  txt: "",
+  plaintext: "",
+};
+
+export function languageForFence(name: string): string | null {
+  const key = name.trim().toLowerCase();
+  if (!key) return null;
+  const alias = FENCE_ALIASES[key];
+  if (alias !== undefined) return alias || null;
+  // The extension table first: Prism answers to "ts" as an alias, but the
+  // canonical name is what the editor uses for the same file, and one language
+  // reaching the tokeniser under two names is how the two drift apart.
+  return BY_EXTENSION[key] ?? (Prism.languages[key] ? key : null);
+}
+
 function flatten(tokens: (string | Prism.Token)[], parent: string | undefined, out: Chunk[]): void {
   for (const token of tokens) {
     if (typeof token === "string") {
       out.push(parent ? { text: token, type: parent } : { text: token });
       continue;
     }
-    const aliases = Array.isArray(token.alias)
-      ? token.alias
-      : token.alias
-        ? [token.alias]
-        : [];
+    const aliases = Array.isArray(token.alias) ? token.alias : token.alias ? [token.alias] : [];
     const type = [parent, token.type, ...aliases].filter(Boolean).join(" ");
     if (typeof token.content === "string") out.push({ text: token.content, type });
     else if (Array.isArray(token.content)) flatten(token.content, type, out);

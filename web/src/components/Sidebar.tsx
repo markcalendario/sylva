@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Check,
   ChevronRight,
@@ -12,12 +12,15 @@ import {
 } from "lucide-react";
 import { circleMembers, type Repo, type Worktree } from "sylva-shared";
 import { api } from "../lib/api";
+import { hasPrefix, worktreeLabel } from "../lib/branch";
 import { confirm } from "../lib/confirm";
+import { useWords } from "../lib/theme";
 import { useInvalidate, useRepos, useWorktrees } from "../lib/queries";
 import {
   SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
   SIDEBAR_MIN,
+  orderWorktrees,
   spriteStateFor,
   useSylva,
 } from "../state/store";
@@ -26,31 +29,106 @@ import { NewWorktreeDialog } from "./dialogs/NewWorktreeDialog";
 import { RegisterRepoDialog } from "./dialogs/RegisterRepoDialog";
 import { RemoveWorktreeDialog } from "./dialogs/RemoveWorktreeDialog";
 
+/**
+ * What a row needs to be draggable, handed down from the list that owns the
+ * order. The row knows how to *look* mid-drag; only the list knows what the
+ * order is or what moving something means.
+ */
+interface DragHandlers {
+  /** This row is the one being carried. */
+  lifting: boolean;
+  /** The carried row would land here. */
+  dropping: boolean;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+}
+
+/**
+ * Reordering a list of worktrees by dragging.
+ *
+ * HTML5 drag rather than pointer maths, for the same reason the editor tabs
+ * use it: the browser draws the ghost, handles the escape key and the drop
+ * outside, and gives it back to the OS if you drag it somewhere else.
+ *
+ * The order is the ids in their current on-screen order — not indices — so a
+ * list that changes underneath the drag (a worktree removed elsewhere, a
+ * fetch landing) can't move the wrong row.
+ */
+function useReorder(repoId: string, ids: string[]) {
+  const [carrying, setCarrying] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+
+  const move = (from: string, to: string) => {
+    if (from === to) return;
+    const next = ids.filter((id) => id !== from);
+    const at = next.indexOf(to);
+    if (at === -1) return;
+    // Dropping onto a row puts the carried one where that row was: dragging
+    // down lands after it, dragging up lands before it, which is what the
+    // pointer looks like it is doing either way.
+    const above = ids.indexOf(from) < ids.indexOf(to);
+    next.splice(above ? at + 1 : at, 0, from);
+    useSylva.getState().setWorktreeOrder(repoId, next);
+  };
+
+  return (id: string): DragHandlers => ({
+    lifting: carrying === id,
+    dropping: over === id && carrying !== null && carrying !== id,
+    onDragStart: (e) => {
+      setCarrying(id);
+      e.dataTransfer.effectAllowed = "move";
+      // Firefox refuses to start a drag with an empty payload.
+      e.dataTransfer.setData("text/plain", id);
+    },
+    onDragEnd: () => {
+      setCarrying(null);
+      setOver(null);
+    },
+    onDragOver: (e) => {
+      if (!carrying) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setOver(id);
+    },
+    onDragLeave: () => setOver((o) => (o === id ? null : o)),
+    onDrop: (e) => {
+      e.preventDefault();
+      if (carrying) move(carrying, id);
+      setCarrying(null);
+      setOver(null);
+    },
+  });
+}
+
 function WorktreeRow({
   worktree,
   onRemove,
   collapsed = false,
   repoName,
+  drag,
 }: {
   worktree: Worktree;
   onRemove: (worktree: Worktree) => void;
   /** Just the dryad, in the narrow rail. */
   collapsed?: boolean;
   repoName?: string;
+  /** Reordering, when the list this row is in can be reordered. */
+  drag?: DragHandlers;
 }) {
-  // "Open" now means "held by a pane" — as itself, or inside a circle — and
-  // only while the workspace is the thing on screen. In the grove or the
-  // settings the panes are still holding worktrees, but none of them is what
-  // you are looking at, and a lit row saying otherwise is a lie.
-  const open = useSylva(
-    (s) =>
-      s.view === "workspace" &&
-      s.panes.some(
-        (p) =>
-          p.worktreeId === worktree.id ||
-          (p.worktreeId ? (circleMembers(p.worktreeId)?.includes(worktree.id) ?? false) : false),
-      ),
-  );
+  const words = useWords();
+  // "Open" means "held by the pane" — as itself, or inside a circle — and only
+  // while the workspace is the thing on screen. In the grove or the settings
+  // the pane is still holding a worktree, but it isn't what you are looking at,
+  // and a lit row saying otherwise is a lie.
+  const open = useSylva((s) => {
+    if (s.view !== "workspace") return false;
+    const held = s.pane.worktreeId;
+    if (!held) return false;
+    return held === worktree.id || (circleMembers(held)?.includes(worktree.id) ?? false);
+  });
   const spriteState = useSylva((s) => spriteStateFor(s, worktree.id));
   const unseen = useSylva((s) => s.unseenActivity[worktree.id] ?? false);
   const selection = useSylva((s) => s.selection);
@@ -61,6 +139,12 @@ function WorktreeRow({
   // Live status wins over the fetched list: it arrives first after a checkout.
   const liveBranch = useSylva((s) => s.statuses[worktree.id]?.branch);
   const branch = liveBranch ?? worktree.branch;
+  /* The leaf is what this worktree is *called*; the branch is what git calls
+     it. Both are on the row, because a sidebar of `feature/…` is a column you
+     have to read past the prefix to use, and a sidebar with the prefix gone
+     entirely can't tell you which of two `login` branches you're looking at. */
+  const label = worktreeLabel(branch, `${worktree.head.slice(0, 7)}`);
+  const detached = !branch;
 
   const selecting = selection !== null;
   const picked = selection?.includes(worktree.id) ?? false;
@@ -84,10 +168,10 @@ function WorktreeRow({
         onClick={activate}
         aria-pressed={selecting ? picked : undefined}
         data-tip={`${repoName ? `${repoName} / ` : ""}${branch ?? "detached"}${
-          selecting ? " · click to add to the shared dryad" : ""
+          selecting ? ` · click to add to the shared ${words.agent}` : ""
         }`}
       >
-        <Sprite state={spriteState} scale={1} title={branch ?? "detached"} />
+        <Sprite state={spriteState} scale={1} title={label} />
         {unseen && !open && <span className="rail-dot" />}
         {dirtyCount > 0 && <span className="rail-count">{dirtyCount}</span>}
       </button>
@@ -95,7 +179,17 @@ function WorktreeRow({
   }
 
   return (
-    <div className={`wt-row ${open ? "focused" : ""} ${picked ? "wt-picked" : ""}`}>
+    <div
+      className={`wt-row ${open ? "focused" : ""} ${picked ? "wt-picked" : ""} ${
+        drag?.dropping ? "wt-row-drop" : ""
+      } ${drag?.lifting ? "wt-row-lift" : ""}`}
+      draggable={drag ? !selecting : undefined}
+      onDragStart={drag?.onDragStart}
+      onDragEnd={drag?.onDragEnd}
+      onDragOver={drag?.onDragOver}
+      onDragLeave={drag?.onDragLeave}
+      onDrop={drag?.onDrop}
+    >
       <button
         className="wt-open"
         onClick={activate}
@@ -104,8 +198,10 @@ function WorktreeRow({
           selecting
             ? picked
               ? "Picked — click to drop it from the set"
-              : "Click to add this worktree to the shared dryad"
-            : "Open this worktree · shift-click to share one dryad between several"
+              : `Click to add this worktree to the shared ${words.agent}`
+            : `${branch ?? "detached"} · open it, shift-click to share one ${
+                words.agent
+              } between several, drag to reorder`
         }
       >
         {selecting ? (
@@ -113,14 +209,21 @@ function WorktreeRow({
             {picked ? <Check size={12} strokeWidth={3} /> : null}
           </span>
         ) : (
-          <Sprite state={spriteState} scale={1} title={branch ?? "detached"} />
+          <Sprite state={spriteState} scale={1} title={label} />
         )}
-        <span className="wt-name" data-tip="Branch checked out in this worktree">
-          {branch ?? `${worktree.head.slice(0, 7)} (detached)`}
-          {worktree.isMain && (
-            <span className="wt-main-tag" data-tip="The repository's original checkout">
-              main worktree
-            </span>
+        <span className="wt-text">
+          <span className="wt-name">
+            {label}
+            {worktree.isMain && (
+              <span className="wt-main-tag" data-tip="The repository's original checkout">
+                main
+              </span>
+            )}
+          </span>
+          {/* The branch, only when it says something the name doesn't. A row
+              for `main` would otherwise carry the word twice. */}
+          {(hasPrefix(branch) || detached) && (
+            <span className="wt-branch">{detached ? "detached" : branch}</span>
           )}
         </span>
       </button>
@@ -138,7 +241,7 @@ function WorktreeRow({
         <button
           className="ghost wt-remove"
           data-tip="Delete this worktree's folder; the branch stays"
-          aria-label={`Remove worktree ${worktree.branch ?? worktree.path}`}
+          aria-label={`Remove worktree ${label}`}
           onClick={() => onRemove(worktree)}
         >
           <X size={13} />
@@ -162,20 +265,29 @@ function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolea
     if (listed) useSylva.getState().indexWorktrees(repo, listed);
   }, [listed, repo.id, repo.name]);
 
+  /* git lists worktrees in the order it made them; you arranged them. */
+  const order = useSylva((st) => st.worktreeOrder[repo.id]);
+  const trees = useMemo(() => orderWorktrees(listed ?? [], order ?? []), [listed, order]);
+  const dragFor = useReorder(
+    repo.id,
+    trees.map((wt) => wt.id),
+  );
+
   const count = listed?.length ?? 0;
   /** Worktrees in this repo with something uncommitted, for the header. */
-  const busy = useSylva((s) =>
-    (listed ?? []).filter((wt) => {
-      const st = s.statuses[wt.id];
-      return st ? st.staged.length + st.unstaged.length + st.untracked.length > 0 : false;
-    }).length,
+  const busy = useSylva(
+    (s) =>
+      (listed ?? []).filter((wt) => {
+        const st = s.statuses[wt.id];
+        return st ? st.staged.length + st.unstaged.length + st.untracked.length > 0 : false;
+      }).length,
   );
 
   if (collapsed) {
     if (!repo.available) return null;
     return (
       <div className="rail-group" data-tip={repo.name}>
-        {worktrees.data?.map((wt) => (
+        {trees.map((wt) => (
           <WorktreeRow
             key={wt.id}
             worktree={wt}
@@ -249,8 +361,8 @@ function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolea
       </div>
       {expanded && repo.available && (
         <div className="wt-list">
-          {worktrees.data?.map((wt) => (
-            <WorktreeRow key={wt.id} worktree={wt} onRemove={setRemoving} />
+          {trees.map((wt) => (
+            <WorktreeRow key={wt.id} worktree={wt} onRemove={setRemoving} drag={dragFor(wt.id)} />
           ))}
           {count === 0 && !worktrees.isLoading && (
             <div className="side-note side-note-empty">No worktrees yet.</div>
@@ -279,11 +391,10 @@ function RepoGroup({ repo, collapsed = false }: { repo: Repo; collapsed?: boolea
 
 /** One shared dryad in the sidebar: which trees it tends, and a way back in. */
 function CircleRow({ id, collapsed = false }: { id: string; collapsed?: boolean }) {
+  const words = useWords();
   const members = circleMembers(id) ?? [];
   const index = useSylva((s) => s.worktreeIndex);
-  const open = useSylva(
-    (s) => s.view === "workspace" && s.panes.some((p) => p.worktreeId === id),
-  );
+  const open = useSylva((s) => s.view === "workspace" && s.pane.worktreeId === id);
   const spriteState = useSylva((s) => spriteStateFor(s, id));
   const unseen = useSylva((s) => s.unseenActivity[id] ?? false);
 
@@ -308,7 +419,9 @@ function CircleRow({ id, collapsed = false }: { id: string; collapsed?: boolean 
       <button
         className="wt-open"
         onClick={() => useSylva.getState().openCircle(members)}
-        data-tip={members.map((m) => `${index[m]?.repoName ?? "?"} / ${index[m]?.branch ?? m}`).join("\n")}
+        data-tip={members
+          .map((m) => `${index[m]?.repoName ?? "?"} / ${index[m]?.branch ?? m}`)
+          .join("\n")}
       >
         <Sprite state={spriteState} scale={1} title={names.join(" + ")} />
         <span className="wt-name circle-name">{names.join(" + ")}</span>
@@ -317,14 +430,14 @@ function CircleRow({ id, collapsed = false }: { id: string; collapsed?: boolean 
         {unseen && !open && (
           <span className="unseen-dot" data-tip="New agent activity you haven't looked at" />
         )}
-        <span className="circle-count" data-tip="Worktrees this dryad tends">
+        <span className="circle-count" data-tip={`Worktrees this ${words.agent} tends`}>
           {members.length}
         </span>
       </span>
       <button
         className="ghost wt-remove"
         onClick={() => useSylva.getState().forgetCircle(id)}
-        aria-label={`Forget the shared dryad for ${names.join(" and ")}`}
+        aria-label={`Forget the shared ${words.agent} for ${names.join(" and ")}`}
         data-tip="Take this off the list. The conversation is kept — picking the same worktrees again returns to it."
       >
         <X size={13} />
@@ -333,14 +446,15 @@ function CircleRow({ id, collapsed = false }: { id: string; collapsed?: boolean 
   );
 }
 
-/** Shared dryads, above the repositories: they span all of them. */
+/** Shared sessions, above the repositories: they span all of them. */
 function SharedGroup({ collapsed = false }: { collapsed?: boolean }) {
+  const words = useWords();
   const circles = useSylva((s) => s.knownCircles);
   if (circles.length === 0) return null;
 
   if (collapsed) {
     return (
-      <div className="rail-group rail-group-shared" data-tip="Shared dryads">
+      <div className="rail-group rail-group-shared" data-tip={`Shared ${words.agents}`}>
         {circles.map((id) => (
           <CircleRow key={id} id={id} collapsed />
         ))}
@@ -354,7 +468,7 @@ function SharedGroup({ collapsed = false }: { collapsed?: boolean }) {
         <span className="repo-toggle repo-shared-head">
           <Users size={11} />
           <span className="repo-name">shared</span>
-          <span className="repo-count" data-tip="Dryads tending more than one worktree">
+          <span className="repo-count" data-tip={`${words.agents} tending more than one worktree`}>
             {circles.length}
           </span>
         </span>
@@ -444,6 +558,7 @@ function SidebarResizer() {
  * says how many, because "share a dryad" is meaningless with one.
  */
 function SelectionBar() {
+  const words = useWords();
   const selection = useSylva((s) => s.selection);
   if (!selection) return null;
 
@@ -460,11 +575,11 @@ function SelectionBar() {
         onClick={() => useSylva.getState().openCircle(selection)}
         data-tip={
           enough
-            ? "One dryad tends all of these, and can carry what it learns between them"
-            : "Pick at least two worktrees to share a dryad"
+            ? `One ${words.agent} tends all of these, and can carry what it learns between them`
+            : `Pick at least two worktrees to share a ${words.agent}`
         }
       >
-        Share a dryad
+        Share {words.agent === "dryad" ? "a dryad" : "an agent"}
       </button>
       <button
         className="ghost"
@@ -479,6 +594,7 @@ function SelectionBar() {
 }
 
 export function Sidebar() {
+  const words = useWords();
   const repos = useRepos();
   const [showRegister, setShowRegister] = useState(false);
   const [showNewWorktree, setShowNewWorktree] = useState(false);
@@ -488,8 +604,8 @@ export function Sidebar() {
   /**
    * Nothing in this list is what you're looking at.
    *
-   * The grove, the fleet and the settings all cover the panes without emptying
-   * them, so the rail keeps describing a worktree that is no longer on screen.
+   * The grove, the fleet and the settings all cover the pane without emptying
+   * it, so the rail keeps describing a worktree that is no longer on screen.
    * Draining the colour out of the dryads says "none of these" in the one place
    * you'd look to find out.
    */
@@ -502,13 +618,15 @@ export function Sidebar() {
           className="sidebar-toggle"
           onClick={() => useSylva.getState().toggleSidebar()}
           aria-label="Show the sidebar"
-          data-tip="Show the forest"
+          data-tip={`Show the ${words.workspace.toLowerCase()}`}
         >
           <PanelLeftOpen size={16} />
         </button>
         <div className="rail-scroll">
           <SharedGroup collapsed />
-          {repos.data?.map((r) => <RepoGroup key={r.id} repo={r} collapsed />)}
+          {repos.data?.map((r) => (
+            <RepoGroup key={r.id} repo={r} collapsed />
+          ))}
         </div>
       </aside>
     );
@@ -518,20 +636,22 @@ export function Sidebar() {
     <aside className={`sidebar ${away ? "sidebar-away" : ""}`} style={{ width }}>
       <div className="sidebar-head">
         <span className="sidebar-label" data-tip="Every repository you've registered with Sylva">
-          forest
+          {words.workspace.toLowerCase()}
         </span>
         <button
           className="sidebar-toggle"
           onClick={() => useSylva.getState().toggleSidebar()}
           aria-label="Hide the sidebar"
-          data-tip="Hide the forest and give the space to your work"
+          data-tip={`Hide the ${words.workspace.toLowerCase()} and give the space to your work`}
         >
           <PanelLeftClose size={15} />
         </button>
       </div>
       <div className="sidebar-scroll">
         <SharedGroup />
-        {repos.data?.map((r) => <RepoGroup key={r.id} repo={r} />)}
+        {repos.data?.map((r) => (
+          <RepoGroup key={r.id} repo={r} />
+        ))}
         {repos.data?.length === 0 && (
           <div className="side-note">No repositories yet — plant one below.</div>
         )}

@@ -11,15 +11,19 @@ const createWorktreeSchema = z.object({
   branch: z.string().min(1),
   baseRef: z.string().min(1).optional(),
   path: z.string().min(1).optional(),
+  /** Fetch before cutting the worktree. Falls back to the saved preference. */
+  pull: z.boolean().optional(),
 });
-const removeWorktreeSchema = z.object({ force: z.boolean().optional() }).default({});
+const removeWorktreeSchema = z
+  .object({ force: z.boolean().optional(), deleteBranch: z.boolean().optional() })
+  .default({});
 const focusSchema = z.object({ worktreeId: z.string().nullable() });
 const openWorktreesSchema = z
   .object({ worktreeIds: z.array(z.string().min(1)).max(8).default([]) })
   .default({ worktreeIds: [] });
 
 export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const { workspace } = ctx;
+  const { workspace, terminals } = ctx;
 
   app.get("/api/repos", async () => workspace.listRepos());
 
@@ -40,6 +44,10 @@ export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.delete("/api/repos/:repoId", async (req) => {
     const { repoId } = req.params as { repoId: string };
+    // Forgetting a repository takes its worktrees off every list in the app,
+    // and a terminal in one is reachable from nowhere afterwards — a shell of
+    // ours, running, with no way left to see or stop it.
+    terminals.closeForRepo(repoId);
     await workspace.removeRepo(repoId);
     return { ok: true };
   });
@@ -60,7 +68,12 @@ export function registerRepoRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.delete("/api/worktrees/:worktreeId", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     const body = removeWorktreeSchema.parse(req.body ?? {});
-    await workspace.removeWorktree(worktreeId, body.force ?? false);
+    // Before git deletes the directory, not after: a shell sitting in it is
+    // one more thing holding the folder open, and once the worktree is gone
+    // its terminals are unreachable — still running, in a directory that
+    // isn't there any more.
+    terminals.closeForWorktree(worktreeId);
+    await workspace.removeWorktree(worktreeId, body.force ?? false, body.deleteBranch ?? false);
     return { ok: true };
   });
 

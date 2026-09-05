@@ -1,8 +1,11 @@
-import { useEffect, useMemo } from "react";
-import { Columns2, PanelsTopLeft, X } from "lucide-react";
-import { circleMembers } from "sylva-shared";
+import { useEffect, useMemo, useState } from "react";
+import { PanelsTopLeft } from "lucide-react";
+import { circleMembers, sessionBusy, type BackgroundTask } from "sylva-shared";
 import { api } from "../lib/api";
+import { worktreeLabel } from "../lib/branch";
 import { tabCycleChord } from "../lib/shortcuts";
+import { useWords } from "../lib/theme";
+import type { Words } from "../lib/words";
 import { spriteStateFor, TABS, useSylva, type Pane, type Tab } from "../state/store";
 import { Sprite } from "../sprites/Sprite";
 import { AgentPanel } from "./AgentPanel";
@@ -21,16 +24,36 @@ const TAB_LABEL: Record<Tab, string> = {
 /** Named once, in the tooltips, so the shortcut is findable without the Help. */
 const chord = tabCycleChord();
 
+/**
+ * Name the work still running when the turn itself is over.
+ *
+ * "Working" with nothing else said would be a puzzle here — the composer is
+ * open and the Stop button is gone, which reads like a mistake until you know
+ * that what is working isn't the agent's own turn.
+ */
+function backgroundTip(tasks: BackgroundTask[]): string {
+  const first = tasks[0]?.description;
+  if (tasks.length === 1 && first) return `Still running in the background: ${first}`;
+  return `${tasks.length} background tasks still running here`;
+}
+
 /** What the Agent tab shows about itself while you are somewhere else. */
 type AgentTabState = "idle" | "working" | "blocked" | "errored" | "done";
 
-const AGENT_TIP: Record<AgentTabState, string> = {
-  idle: "No agent is running here",
-  working: "The dryad is working right now",
-  blocked: "The dryad is waiting for a permission decision",
-  errored: "The last turn ended in an error",
-  done: "A turn finished here and you haven't read it yet",
-};
+function agentTip(state: AgentTabState, words: Words): string {
+  switch (state) {
+    case "idle":
+      return "No agent is running here";
+    case "working":
+      return `The ${words.agent} is working right now`;
+    case "blocked":
+      return `The ${words.agent} is waiting for a permission decision`;
+    case "errored":
+      return "The last turn ended in an error";
+    case "done":
+      return "A turn finished here and you haven't read it yet";
+  }
+}
 
 /**
  * What a tab is carrying, worn on the tab itself.
@@ -47,24 +70,21 @@ function TabBadge({
   terminalCount,
   anyLive,
   agentState,
+  words,
 }: {
   tab: Tab;
   dirty: number;
   terminalCount: number;
   anyLive: boolean;
   agentState: AgentTabState;
+  words: Words;
 }) {
   if (tab === "agent") {
     // Resting is the ordinary state and needs no mark; a dot for "nothing is
     // happening" is just noise on three tabs out of four.
     if (agentState === "idle") return null;
-    return (
-      <span
-        className={`tab-state tab-state-${agentState}`}
-        data-tip={AGENT_TIP[agentState]}
-        aria-label={AGENT_TIP[agentState]}
-      />
-    );
+    const tip = agentTip(agentState, words);
+    return <span className={`tab-state tab-state-${agentState}`} data-tip={tip} aria-label={tip} />;
   }
 
   if (tab === "terminal") {
@@ -94,18 +114,15 @@ function TabBadge({
 }
 
 const TAB_TIP: Record<Tab, string> = {
-  agent: "Prompt the dryad and watch it work",
+  agent: "Prompt the agent and watch it work",
   files: "Live feed of files changing in this worktree",
   git: "Stage, diff, commit, push and pull",
   terminal: "Real shells in this worktree — as many as you need",
 };
 
-/**
- * One worktree, with its header and its tabs. Extracted from MainPanel so that
- * two of them can sit side by side — everything below here already took a
- * worktreeId and needed no changes at all.
- */
-export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
+/** One worktree, with its header and its tabs. */
+export function WorktreePane({ pane }: { pane: Pane }) {
+  const words = useWords();
   /** The session this pane talks to: a worktree, or a circle of them. */
   const targetId = pane.worktreeId;
   const circle = targetId ? circleMembers(targetId) : null;
@@ -119,46 +136,69 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
     [circle?.join(","), targetId],
   );
 
-  const active = useSylva((s) => s.activePaneId) === pane.id;
   const spriteState = useSylva((s) => (targetId ? spriteStateFor(s, targetId) : "idle"));
-  const statuses = useSylva((s) => s.statuses);
   const session = useSylva((s) => (targetId ? s.sessions[targetId] : undefined));
-  const terminals = useSylva((s) => s.terminals);
-  const index = useSylva((s) => s.worktreeIndex);
 
+  /*
+   * Everything below is read as the one number or word it is drawn as, rather
+   * than by taking the whole map it comes out of.
+   *
+   * A pane subscribed to `statuses` re-renders — and re-renders every panel
+   * under it — each time any worktree anywhere reports a change, which during
+   * a build is several times a second in a worktree you aren't even looking at.
+   * A selector that returns a count only wakes the pane when the count moves.
+   */
   // The header still describes a single worktree when there is one.
-  const status = circle ? undefined : statuses[members[0] ?? ""];
-  const mine = Object.values(terminals).filter((t) => members.includes(t.worktreeId));
-  const anyLive = mine.some((t) => t.status === "running");
-  const terminalCount = mine.length;
+  const status = useSylva((s) => (circle ? undefined : s.statuses[members[0] ?? ""]));
+
+  const terminalCount = useSylva(
+    (s) => Object.values(s.terminals).filter((t) => members.includes(t.worktreeId)).length,
+  );
+  const anyLive = useSylva((s) =>
+    Object.values(s.terminals).some(
+      (t) => members.includes(t.worktreeId) && t.status === "running",
+    ),
+  );
 
   /**
    * Uncommitted files across everything this pane holds. The same number the
    * Files and Git tabs are about, so both wear it — you should be able to tell
    * there is work waiting without opening the tab that holds it.
    */
-  const dirty = members.reduce((n, id) => {
-    const st = statuses[id];
-    if (!st) return n;
-    return n + st.staged.length + st.unstaged.length + st.untracked.length;
-  }, 0);
+  const dirty = useSylva((s) =>
+    members.reduce((n, id) => {
+      const st = s.statuses[id];
+      if (!st) return n;
+      return n + st.staged.length + st.unstaged.length + st.untracked.length;
+    }, 0),
+  );
 
   /**
    * Permissions waiting on an answer here. Keyed by whatever holds the session
    * — a worktree id, or a circle's — so both are asked about, and the set stops
    * an ordinary worktree (which is both) from counting twice.
    */
-  const permissions = useSylva((s) => s.pendingPermissions);
-  const blocked = [...new Set([targetId, ...members].filter((id): id is string => !!id))].reduce(
-    (n, id) => n + (permissions[id]?.length ?? 0),
-    0,
+  const blocked = useSylva((s) =>
+    [...new Set([targetId, ...members].filter((id): id is string => !!id))].reduce(
+      (n, id) => n + (s.pendingPermissions[id]?.length ?? 0),
+      0,
+    ),
+  );
+
+  /** What a circle tends, as the line the header prints. */
+  const circleBranches = useSylva((s) =>
+    circle
+      ? circle
+          .map((id) => s.statuses[id]?.branch ?? s.worktreeIndex[id]?.branch ?? id.slice(0, 7))
+          .join("  +  ")
+      : "",
   );
 
   /** What the Agent tab's own indicator says, without opening it. */
   const agentState: AgentTabState =
     blocked > 0
       ? "blocked"
-      : session?.status === "running"
+      : sessionBusy(session)
         ? "working"
         : session?.status === "errored"
           ? "errored"
@@ -184,7 +224,10 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
   const memberKey = members.join(",");
   useEffect(() => {
     for (const id of memberKey ? memberKey.split(",") : []) {
-      void api.status(id).then((st) => useSylva.getState().setStatus(st)).catch(() => {});
+      void api
+        .status(id)
+        .then((st) => useSylva.getState().setStatus(st))
+        .catch(() => {});
       // The watcher only reports changes from the moment it starts, so without
       // this the Files tab is blank until something happens to move.
       void api
@@ -194,59 +237,55 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
     }
   }, [memberKey]);
 
+  /**
+   * Whether the conversation has been looked at in this pane yet.
+   *
+   * It is kept alive once opened, but not built before then: a pane parked on
+   * Git or Files shouldn't pay to render a chat nobody has asked to see. Once
+   * true it stays true — that is the whole point.
+   */
+  const [agentSeen, setAgentSeen] = useState(pane.tab === "agent");
+  useEffect(() => {
+    if (pane.tab === "agent") setAgentSeen(true);
+  }, [pane.tab]);
+
   const store = useSylva.getState();
-  const focusPane = () => {
-    if (!active) store.setActivePane(pane.id);
-  };
 
   if (!targetId || members.length === 0) {
     return (
-      <section
-        className={`pane ${split && active ? "pane-active" : ""}`}
-        onMouseDown={focusPane}
-      >
+      <section className="pane">
         <div className="pane-empty">
           <p>This pane is empty.</p>
-          <p className="pane-empty-hint">
-            Pick a worktree in the sidebar to open it here.
-          </p>
-          {split && (
-            <button
-              className="btn-quiet"
-              onClick={() => store.closePane(pane.id)}
-              data-tip="Close this pane and give the space back"
-            >
-              Close pane
-            </button>
-          )}
+          <p className="pane-empty-hint">Pick a worktree in the sidebar to open it here.</p>
         </div>
       </section>
     );
   }
 
   return (
-    <section className={`pane ${split && active ? "pane-active" : ""}`} onMouseDown={focusPane}>
+    <section className="pane">
       <div className="wt-header">
         <Sprite state={spriteState} scale={2} />
         <div className="wt-header-text">
-          <div className="wt-header-branch" data-tip="Branch checked out in this worktree">
+          <div
+            className="wt-header-branch"
+            data-tip={`Branch checked out here: ${status?.branch ?? "unknown"}`}
+          >
             {circle ? (
-              <span className="wt-circle-title" data-tip="One dryad tends all of these">
+              <span className="wt-circle-title" data-tip={`One ${words.agent} tends all of these`}>
                 <PanelsTopLeft size={14} />
-                {circle.length} worktrees, one dryad
+                {circle.length} worktrees, one {words.agent}
               </span>
             ) : (
-              (status?.branch ?? "…")
+              worktreeLabel(status?.branch, "…")
             )}
           </div>
           <div className="wt-header-sub">
             {circle && (
-              /* What the dryad tends, stated rather than chosen between. The
+              /* What the session tends, stated rather than chosen between. The
                  panels below show all of it at once. */
-              <span className="wt-members" data-tip="Every worktree this dryad tends">
-                {circle
-                  .map((id) => statuses[id]?.branch ?? index[id]?.branch ?? id.slice(0, 7))
-                  .join("  +  ")}
+              <span className="wt-members" data-tip={`Every worktree this ${words.agent} tends`}>
+                {circleBranches}
               </span>
             )}
             {status?.base ? (
@@ -272,17 +311,19 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
               data-tip={
                 session?.status === "running"
                   ? "An agent is running here right now"
-                  : session?.status === "errored"
-                    ? "The last turn ended in an error"
-                    : spriteState === "success"
-                      ? "The last turn finished cleanly"
-                      : "No agent is running in this worktree"
+                  : (session?.backgroundTasks.length ?? 0) > 0
+                    ? backgroundTip(session?.backgroundTasks ?? [])
+                    : session?.status === "errored"
+                      ? "The last turn ended in an error"
+                      : spriteState === "success"
+                        ? "The last turn finished cleanly"
+                        : "No agent is running in this worktree"
               }
             >
-              {session?.status === "running"
-                ? "dryad is working"
+              {sessionBusy(session)
+                ? `${words.agent} is working`
                 : session?.status === "errored"
-                  ? "dryad hit trouble"
+                  ? `${words.agent} hit trouble`
                   : spriteState === "success"
                     ? "task complete"
                     : "resting"}
@@ -290,33 +331,12 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
           </div>
         </div>
         <OpenExternallyButtons members={members} />
-        <div className="pane-controls">
-          {split ? (
-            <button
-              className="ghost"
-              onClick={() => store.closePane(pane.id)}
-              data-tip="Close this pane"
-              aria-label="Close pane"
-            >
-              <X size={14} />
-            </button>
-          ) : (
-            <button
-              className="ghost"
-              onClick={() => store.splitPane()}
-              data-tip="Show two worktrees side by side"
-              aria-label="Split the workspace"
-            >
-              <Columns2 size={14} />
-            </button>
-          )}
-        </div>
         <nav className="tabs">
           {TABS.map((t) => (
             <button
               key={t}
               className={`tab ${pane.tab === t ? "tab-on" : ""}`}
-              onClick={() => store.setPaneTab(pane.id, t)}
+              onClick={() => store.setPaneTab(t)}
               data-tip={`${TAB_TIP[t]} · ${chord} steps through the tabs`}
             >
               {TAB_LABEL[t]}
@@ -326,28 +346,53 @@ export function WorktreePane({ pane, split }: { pane: Pane; split: boolean }) {
                 terminalCount={terminalCount}
                 anyLive={anyLive}
                 agentState={agentState}
+                words={words}
               />
             </button>
           ))}
         </nav>
       </div>
 
-      {pane.tab === "agent" && <AgentPanel worktreeId={targetId} />}
-      {pane.tab === "files" && (
-        <FilesPanel
-          pane={pane}
-          members={members}
-          onOpenDiff={(selection) => store.setPaneDiff(pane.id, selection, "git")}
-        />
-      )}
-      {pane.tab === "git" && (
-        <GitPanel
-          members={members}
-          selection={pane.diff}
-          onSelect={(selection) => store.setPaneDiff(pane.id, selection)}
-        />
-      )}
-      {pane.tab === "terminal" && <TerminalPanel members={members} />}
+      {/*
+        The conversation is kept alive behind the other tabs rather than torn
+        down and rebuilt.
+
+        Unmounting it threw away every parsed markdown message and your place in
+        the scroll, and going back to Agent paid for all of it again — on a long
+        conversation that is a visible stall for a tab you were looking at a
+        moment ago. Hidden it costs a layout it was going to need anyway.
+
+        The other three genuinely are better off unmounted: they hold queries
+        that would keep refetching for a tab nobody is looking at, and the
+        terminal's emulator already lives outside React precisely so that
+        leaving the tab costs it nothing.
+      */}
+      <div className="pane-stage">
+        {agentSeen && (
+          <div
+            className={`pane-layer ${pane.tab === "agent" ? "" : "pane-layer-off"}`}
+            aria-hidden={pane.tab !== "agent"}
+          >
+            <AgentPanel worktreeId={targetId} />
+          </div>
+        )}
+
+        {pane.tab === "files" && (
+          <FilesPanel
+            pane={pane}
+            members={members}
+            onOpenDiff={(selection) => store.setPaneDiff(selection, "git")}
+          />
+        )}
+        {pane.tab === "git" && (
+          <GitPanel
+            members={members}
+            selection={pane.diff}
+            onSelect={(selection) => store.setPaneDiff(selection)}
+          />
+        )}
+        {pane.tab === "terminal" && <TerminalPanel members={members} />}
+      </div>
     </section>
   );
 }

@@ -17,19 +17,17 @@ import {
  * evict, and what happens to text you typed and haven't saved.
  */
 
-const PANE = () => useSylva.getState().panes[0]!;
+const PANE = () => useSylva.getState().pane;
 
 function reset() {
   useSylva.setState({ fileDrafts: {} });
-  const pane = PANE();
   useSylva.setState({
-    panes: [{ ...pane, worktreeId: "wt-a", files: [], activeFile: null, tab: "files" }],
-    activePaneId: pane.id,
+    pane: { ...PANE(), worktreeId: "wt-a", files: [], activeFile: null, tab: "files" },
   });
 }
 
 function open(path: string, worktreeId = "wt-a") {
-  useSylva.getState().openFile(PANE().id, { worktreeId, path });
+  useSylva.getState().openFile({ worktreeId, path });
 }
 
 function paths(): string[] {
@@ -55,7 +53,7 @@ describe("opening files", () => {
   });
 
   it("takes you to the Files tab, wherever you were", () => {
-    useSylva.setState({ panes: [{ ...PANE(), tab: "agent" }] });
+    useSylva.setState({ pane: { ...PANE(), tab: "agent" } });
     open("a.ts");
     expect(PANE().tab).toBe("files");
   });
@@ -69,15 +67,15 @@ describe("opening files", () => {
   it("moves the view when an open file is asked for at a line", () => {
     open("a.ts");
     open("b.ts");
-    useSylva.getState().openFile(PANE().id, { worktreeId: "wt-a", path: "a.ts", line: 42 });
+    useSylva.getState().openFile({ worktreeId: "wt-a", path: "a.ts", line: 42 });
     expect(paths()).toEqual(["a.ts", "b.ts"]);
     expect(PANE().files[0]?.line).toBe(42);
   });
 
   it("forgets that line once you come back to the tab yourself", () => {
-    useSylva.getState().openFile(PANE().id, { worktreeId: "wt-a", path: "a.ts", line: 42 });
+    useSylva.getState().openFile({ worktreeId: "wt-a", path: "a.ts", line: 42 });
     open("b.ts");
-    useSylva.getState().setActiveFile(PANE().id, fileKey({ worktreeId: "wt-a", path: "a.ts" }));
+    useSylva.getState().setActiveFile(fileKey({ worktreeId: "wt-a", path: "a.ts" }));
     expect(PANE().files[0]?.line).toBeUndefined();
   });
 });
@@ -89,21 +87,21 @@ describe("closing files", () => {
     open("a.ts");
     open("b.ts");
     open("c.ts");
-    useSylva.getState().setActiveFile(PANE().id, fileKey({ worktreeId: "wt-a", path: "b.ts" }));
-    useSylva.getState().closeFile(PANE().id, fileKey({ worktreeId: "wt-a", path: "b.ts" }));
+    useSylva.getState().setActiveFile(fileKey({ worktreeId: "wt-a", path: "b.ts" }));
+    useSylva.getState().closeFile(fileKey({ worktreeId: "wt-a", path: "b.ts" }));
     expect(PANE().activeFile).toBe(fileKey({ worktreeId: "wt-a", path: "c.ts" }));
   });
 
   it("falls back to the last tab when the one closed was last", () => {
     open("a.ts");
     open("b.ts");
-    useSylva.getState().closeFile(PANE().id, fileKey({ worktreeId: "wt-a", path: "b.ts" }));
+    useSylva.getState().closeFile(fileKey({ worktreeId: "wt-a", path: "b.ts" }));
     expect(PANE().activeFile).toBe(fileKey({ worktreeId: "wt-a", path: "a.ts" }));
   });
 
   it("leaves nothing selected once the last file goes", () => {
     open("a.ts");
-    useSylva.getState().closeFile(PANE().id, fileKey({ worktreeId: "wt-a", path: "a.ts" }));
+    useSylva.getState().closeFile(fileKey({ worktreeId: "wt-a", path: "a.ts" }));
     expect(PANE().files).toEqual([]);
     expect(PANE().activeFile).toBeNull();
   });
@@ -111,7 +109,7 @@ describe("closing files", () => {
   it("closing a file you weren't reading doesn't move you", () => {
     open("a.ts");
     open("b.ts");
-    useSylva.getState().closeFile(PANE().id, fileKey({ worktreeId: "wt-a", path: "a.ts" }));
+    useSylva.getState().closeFile(fileKey({ worktreeId: "wt-a", path: "a.ts" }));
     expect(PANE().activeFile).toBe(fileKey({ worktreeId: "wt-a", path: "b.ts" }));
   });
 
@@ -119,7 +117,7 @@ describe("closing files", () => {
     open("a.ts");
     const key = fileKey({ worktreeId: "wt-a", path: "a.ts" });
     useSylva.getState().setFileDraft(key, "half a thought");
-    useSylva.getState().closeFile(PANE().id, key);
+    useSylva.getState().closeFile(key);
     expect(useSylva.getState().fileDrafts[key]).toBeUndefined();
   });
 });
@@ -138,7 +136,7 @@ describe("closing several at once", () => {
     open("a.ts");
     open("b.ts");
     open("c.ts");
-    useSylva.getState().closeFiles(PANE().id, [key("a.ts"), key("c.ts")]);
+    useSylva.getState().closeFiles([key("a.ts"), key("c.ts")]);
     expect(paths()).toEqual(["b.ts"]);
   });
 
@@ -146,7 +144,7 @@ describe("closing several at once", () => {
     open("a.ts");
     open("b.ts");
     useSylva.getState().setFileDraft(key("a.ts"), "typed");
-    useSylva.getState().closeFiles(PANE().id, [key("a.ts"), key("b.ts")]);
+    useSylva.getState().closeFiles([key("a.ts"), key("b.ts")]);
     expect(paths()).toEqual([]);
     expect(useSylva.getState().fileDrafts[key("a.ts")]).toBeUndefined();
   });
@@ -156,9 +154,9 @@ describe("closing several at once", () => {
     open("b.ts");
     open("c.ts");
     open("d.ts");
-    useSylva.getState().setActiveFile(PANE().id, key("b.ts"));
+    useSylva.getState().setActiveFile(key("b.ts"));
     // Closing the one you're on and its right-hand neighbour.
-    useSylva.getState().closeFiles(PANE().id, [key("b.ts"), key("c.ts")]);
+    useSylva.getState().closeFiles([key("b.ts"), key("c.ts")]);
     expect(PANE().activeFile).toBe(key("d.ts"));
   });
 
@@ -166,8 +164,8 @@ describe("closing several at once", () => {
     open("a.ts");
     open("b.ts");
     open("c.ts");
-    useSylva.getState().setActiveFile(PANE().id, key("c.ts"));
-    useSylva.getState().closeFiles(PANE().id, [key("c.ts")]);
+    useSylva.getState().setActiveFile(key("c.ts"));
+    useSylva.getState().closeFiles([key("c.ts")]);
     expect(PANE().activeFile).toBe(key("b.ts"));
   });
 
@@ -175,27 +173,27 @@ describe("closing several at once", () => {
     open("a.ts");
     open("b.ts");
     open("c.ts");
-    useSylva.getState().setActiveFile(PANE().id, key("c.ts"));
-    useSylva.getState().closeFiles(PANE().id, [key("a.ts")]);
+    useSylva.getState().setActiveFile(key("c.ts"));
+    useSylva.getState().closeFiles([key("a.ts")]);
     expect(PANE().activeFile).toBe(key("c.ts"));
   });
 
   it("clears the selection when everything goes", () => {
     open("a.ts");
     open("b.ts");
-    useSylva.getState().closeFiles(PANE().id, [key("a.ts"), key("b.ts")]);
+    useSylva.getState().closeFiles([key("a.ts"), key("b.ts")]);
     expect(PANE().activeFile).toBeNull();
   });
 
   it("does nothing when handed an empty list", () => {
     open("a.ts");
-    useSylva.getState().closeFiles(PANE().id, []);
+    useSylva.getState().closeFiles([]);
     expect(paths()).toEqual(["a.ts"]);
   });
 
   it("ignores keys for files that aren't open", () => {
     open("a.ts");
-    useSylva.getState().closeFiles(PANE().id, [key("nowhere.ts")]);
+    useSylva.getState().closeFiles([key("nowhere.ts")]);
     expect(paths()).toEqual(["a.ts"]);
   });
 });
@@ -224,9 +222,9 @@ describe("stepping and reordering", () => {
   it("cycles forward and wraps", () => {
     open("a.ts");
     open("b.ts");
-    useSylva.getState().cycleFile(PANE().id, 1);
+    useSylva.getState().cycleFile(1);
     expect(PANE().activeFile).toBe(fileKey({ worktreeId: "wt-a", path: "a.ts" }));
-    useSylva.getState().cycleFile(PANE().id, 1);
+    useSylva.getState().cycleFile(1);
     expect(PANE().activeFile).toBe(fileKey({ worktreeId: "wt-a", path: "b.ts" }));
   });
 
@@ -234,7 +232,7 @@ describe("stepping and reordering", () => {
     open("a.ts");
     open("b.ts");
     open("c.ts");
-    useSylva.getState().cycleFile(PANE().id, -1);
+    useSylva.getState().cycleFile(-1);
     expect(PANE().activeFile).toBe(fileKey({ worktreeId: "wt-a", path: "b.ts" }));
   });
 
@@ -242,14 +240,14 @@ describe("stepping and reordering", () => {
     open("a.ts");
     open("b.ts");
     open("c.ts");
-    useSylva.getState().moveFile(PANE().id, 0, 2);
+    useSylva.getState().moveFile(0, 2);
     expect(paths()).toEqual(["b.ts", "c.ts", "a.ts"]);
   });
 
   it("ignores a drop outside the strip", () => {
     open("a.ts");
     open("b.ts");
-    useSylva.getState().moveFile(PANE().id, 0, 9);
+    useSylva.getState().moveFile(0, 9);
     expect(paths()).toEqual(["a.ts", "b.ts"]);
   });
 });
@@ -259,14 +257,14 @@ describe("changing what a pane holds", () => {
 
   it("clears the tab bar, because those paths were somewhere else", () => {
     open("a.ts");
-    useSylva.getState().setPaneWorktree(PANE().id, "wt-b");
+    useSylva.getState().setPaneWorktree("wt-b");
     expect(PANE().files).toEqual([]);
     expect(PANE().activeFile).toBeNull();
   });
 
   it("leaves it alone when the pane is re-opened on the same worktree", () => {
     open("a.ts");
-    useSylva.getState().setPaneWorktree(PANE().id, "wt-a");
+    useSylva.getState().setPaneWorktree("wt-a");
     expect(paths()).toEqual(["a.ts"]);
   });
 });
@@ -330,7 +328,7 @@ describe("what is waiting on you", () => {
       celebrating: {},
       view: "workspace",
     });
-    useSylva.setState({ panes: [{ ...PANE(), worktreeId: null }] });
+    useSylva.setState({ pane: { ...PANE(), worktreeId: null } });
   });
 
   it("puts a blocked dryad ahead of one that merely finished", () => {
@@ -358,7 +356,7 @@ describe("what is waiting on you", () => {
 
   it("leaves out whatever is already on screen", () => {
     useSylva.setState({ celebrating: { "wt-a": true } });
-    useSylva.setState({ panes: [{ ...PANE(), worktreeId: "wt-a" }] });
+    useSylva.setState({ pane: { ...PANE(), worktreeId: "wt-a" } });
     expect(attentionQueue(useSylva.getState())).toEqual([]);
   });
 
@@ -371,11 +369,12 @@ describe("what is waiting on you", () => {
           worktreeId: "wt-x",
           branch: "b",
           status: "errored",
-          settings: { bypassPermissions: false, model: null, effort: null },
+          settings: { permissionMode: "acceptEdits", model: null, effort: null },
           sdkSessionId: null,
           totalCostUsd: 0,
           totalTokens: 0,
           queuedPrompts: [],
+          backgroundTasks: [],
           createdAt: "",
         },
       },

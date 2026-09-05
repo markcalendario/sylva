@@ -1,13 +1,18 @@
 import { useMemo } from "react";
 import { GitCompare } from "lucide-react";
 import type { FileChangeKind } from "sylva-shared";
+import { useWords } from "../lib/theme";
 import { fileKey, NO_EVENTS, useSylva, type DiffSelection, type Pane } from "../state/store";
 import { FileEditor } from "./FileEditor";
 import { FileTree } from "./FileTree";
 
 const CHANGE_GLYPH: Record<FileChangeKind, { glyph: string; cls: string; tip: string }> = {
   added: { glyph: "+", cls: "chg-add", tip: "New file, staged for commit" },
-  untracked: { glyph: "+", cls: "chg-add", tip: "New file git isn't tracking yet" },
+  untracked: {
+    glyph: "+",
+    cls: "chg-add",
+    tip: "New file git isn't tracking yet",
+  },
   modified: { glyph: "~", cls: "chg-mod", tip: "This file was edited" },
   renamed: { glyph: "→", cls: "chg-mod", tip: "This file was renamed" },
   deleted: { glyph: "−", cls: "chg-del", tip: "This file was deleted" },
@@ -27,7 +32,7 @@ interface ChangeRow {
 
 /**
  * What is changing, what is here, and whatever you are reading — across every
- * worktree the dryad tends.
+ * worktree the agent tends.
  *
  * The rail on the left answers two questions the other can't: git says what
  * changed, a tree says what exists. Both of them only ever *open* something;
@@ -50,12 +55,10 @@ export function FilesPanel({
   members: string[];
   onOpenDiff: (selection: DiffSelection) => void;
 }) {
+  const words = useWords();
   const statuses = useSylva((s) => s.statuses);
   const feeds = useSylva((s) => s.fileFeed);
   const index = useSylva((s) => s.worktreeIndex);
-  // Only the pane you are working in gets the caret; in a split, the other one
-  // opening its Files tab must not pull it away mid-sentence.
-  const activePane = useSylva((s) => s.activePaneId) === pane.id;
   const store = useSylva.getState();
   const mode = pane.filesMode;
   const shared = members.length > 1;
@@ -113,16 +116,18 @@ export function FilesPanel({
     <div className="seg files-seg" role="group" aria-label="Files view">
       <button
         className={mode === "browse" ? "seg-on" : ""}
-        onClick={() => store.setFilesMode(pane.id, "browse")}
+        onClick={() => store.setFilesMode("browse")}
         data-tip={
-          shared ? "Browse every worktree this dryad tends" : "Browse everything in this worktree"
+          shared
+            ? `Browse every worktree this ${words.agent} tends`
+            : "Browse everything in this worktree"
         }
       >
         Browse
       </button>
       <button
         className={mode === "changes" ? "seg-on" : ""}
-        onClick={() => store.setFilesMode(pane.id, "changes")}
+        onClick={() => store.setFilesMode("changes")}
         data-tip="Files git reports as changed, newest first"
       >
         Changes
@@ -140,8 +145,8 @@ export function FilesPanel({
             members={members}
             activePath={active?.path ?? null}
             activeWorktreeId={active?.worktreeId ?? null}
-            autoFocus={activePane}
-            onOpen={(request) => store.openFile(pane.id, request)}
+            autoFocus
+            onOpen={(request) => store.openFile(request)}
           />
         ) : (
           <ChangeList
@@ -149,9 +154,7 @@ export function FilesPanel({
             shared={shared}
             index={index}
             activeKey={pane.activeFile}
-            onOpenFile={(row) =>
-              store.openFile(pane.id, { worktreeId: row.worktreeId, path: row.path })
-            }
+            onOpenFile={(row) => store.openFile({ worktreeId: row.worktreeId, path: row.path })}
             onOpenDiff={onOpenDiff}
           />
         )}
@@ -184,11 +187,12 @@ function ChangeList({
   onOpenFile: (row: ChangeRow) => void;
   onOpenDiff: (selection: DiffSelection) => void;
 }) {
+  const words = useWords();
   if (rows.length === 0) {
     return (
       <div className="files-empty">
-        Nothing has changed here yet. Edits git would report — by dryad, editor, or terminal —
-        appear in this list, newest first.
+        Nothing has changed here yet. Edits git would report — by {words.agent}, editor, or terminal
+        — appear in this list, newest first.
       </div>
     );
   }
@@ -240,7 +244,11 @@ function ChangeList({
             <button
               className="ghost file-row-diff"
               onClick={() =>
-                onOpenDiff({ worktreeId: row.worktreeId, path: row.path, staged: row.staged })
+                onOpenDiff({
+                  worktreeId: row.worktreeId,
+                  path: row.path,
+                  staged: row.staged,
+                })
               }
               aria-label={`Show the diff for ${row.path}`}
               data-tip="Show this file's diff in the Git tab"

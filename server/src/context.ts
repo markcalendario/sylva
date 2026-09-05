@@ -1,3 +1,4 @@
+import { CommandsService } from "./services/commands.js";
 import { CommitMessageService } from "./services/commitMessage.js";
 import { GitService } from "./services/git.js";
 import { GitOps } from "./services/gitOps.js";
@@ -19,6 +20,7 @@ export interface AppContext {
   watchers: WatcherManager;
   sessions: SessionManager;
   commitMessages: CommitMessageService;
+  commands: CommandsService;
   terminals: TerminalService;
   usage: UsageService;
 }
@@ -55,6 +57,13 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
   const usage = new UsageService();
   usage.borrowQuery = () => sessions.anyLiveQuery();
 
+  // What `/` offers is a property of the directory, so this asks the session
+  // that runs there — borrowing its process when a turn already has one up.
+  const commands = new CommandsService(
+    (targetId) => sessions.cwdFor(targetId),
+    (targetId) => sessions.liveQueryFor(targetId),
+  );
+
   return {
     store,
     git,
@@ -64,6 +73,7 @@ export async function createContext(baseDir?: string): Promise<AppContext> {
     watchers,
     sessions,
     commitMessages,
+    commands,
     terminals,
     usage,
   };

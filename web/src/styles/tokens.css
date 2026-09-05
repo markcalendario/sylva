@@ -1,4 +1,14 @@
-/* Sylva design tokens — a forest at night, lit by fireflies. */
+/*
+ * Sylva design tokens.
+ *
+ * Two themes live here, and every rule in the app is written against the names
+ * below rather than against a colour — which is what lets a theme be a block of
+ * variables rather than a second stylesheet. `:root` is the forest; the
+ * professional theme overrides the same names under [data-theme="professional"]
+ * (styles/professional.css), so anything added here needs a value there too.
+ */
+
+/* The forest at night, lit by fireflies. */
 :root {
   /* surfaces */
   --pine-0: #0c1110; /* canvas */
@@ -18,7 +28,28 @@
   --sapling-dim: #3d6b35;
   --ember: #ff6b5b; /* danger, deleted lines */
   --ember-dim: #7a3830;
+
+  /* Waiting on you.
+     Named rather than reusing --ember, because "it wants a decision" and "it
+     broke" are different news and were being told in the same colour — which
+     taught you to read the loudest state in the app as noise. Orange is the
+     colour of a thing held, rather than a thing failed. */
+  --waiting: #ffa53d;
+  --waiting-dim: #7d4f18;
   --stream: #7fb7c9; /* branches, links */
+
+  /* Ink for text sitting *on* --firefly — a primary button's label. It has to
+     be named rather than written at the call site, because the accent is white
+     in one theme and amber in the other, and black-on-amber is not the same
+     mistake as bark-on-white. */
+  --on-accent: #241a08;
+
+  /* The focus ring.
+     Not the accent: the accent is "this is the action", and painting a hard
+     bright edge round whatever the keyboard happens to be on says that about
+     every control you pass through. A hairline the colour of dimmed light is
+     enough to find, and quiet enough to leave on. */
+  --focus: #a37b3c;
 
   /* Selected text.
      Deliberately *not* one of the colours above: the highlight used to be
@@ -74,10 +105,8 @@
 
   --shadow-raise: 0 4px 24px rgb(0 0 0 / 0.45);
 
-  /* The composer at its shortest: two rows of prompt text, its padding and its
-     border. Everything that sits beside the box — the paperclip, the saved
-     prompts, Send — is this tall, so a growing textarea leaves them alone. */
-  --prompt-min-h: calc(var(--text-sm) * var(--leading-normal) * 2 + var(--pad-2) * 2 + 2px);
+  /* What a dialog or the command palette lays over the page behind it. */
+  --scrim: rgb(6 10 8 / 0.7);
 
   /* Terminal colours for the Run tab. Tuned warmer and less saturated than raw
      ANSI so a dev server's output sits in the forest rather than shouting over

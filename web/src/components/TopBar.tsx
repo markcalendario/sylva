@@ -1,6 +1,18 @@
-import { CircleHelp, Flower2, Layers, Settings, Trees, Wrench } from "lucide-react";
+import {
+  Bot,
+  CircleHelp,
+  Flower2,
+  Layers,
+  LayoutGrid,
+  Settings,
+  Trees,
+  Wrench,
+} from "lucide-react";
 import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
+import { worktreeLabel } from "../lib/branch";
+import { useHasForest, useWords } from "../lib/theme";
+import type { Words } from "../lib/words";
 import { useSylva, type View } from "../state/store";
 import { AudioControls } from "./AudioControls";
 import { BrandMark } from "./BrandMark";
@@ -12,30 +24,50 @@ interface Destination {
   tip: string;
 }
 
-const DESTINATIONS: Destination[] = [
-  { key: "workspace", label: "Forest", icon: Trees, tip: "Every worktree across every repository" },
-  {
-    key: "fleet",
-    label: "Fleet",
-    icon: Layers,
-    tip: "Every worktree's uncommitted changes, on one screen",
-  },
-  {
-    key: "grove",
-    label: "Grove",
-    icon: Flower2,
-    tip: "A dryad that belongs to no worktree, and can read every repository",
-  },
-  {
-    key: "tools",
-    label: "Tools",
-    icon: Wrench,
-    tip: "Odd jobs that aren't about a worktree — freeing a port, reading a timestamp",
-  },
-  { key: "settings", label: "Settings", icon: Settings, tip: "Appearance, sound, the run command and agent defaults" },
-  { key: "help", label: "Help", icon: CircleHelp, tip: "How Sylva works" },
-];
-
+/*
+ * The header's destinations.
+ *
+ * Built per theme rather than declared once, because the first two are the two
+ * places the metaphor actually lives: a conifer labelled "Forest" and a flower
+ * labelled "Grove" are a promise about what the page will look like, and in a
+ * theme with no wood in it that promise is broken before the click lands.
+ * Everything after them is the same in both.
+ */
+function destinations(words: Words, hasForest: boolean): Destination[] {
+  return [
+    {
+      key: "workspace",
+      label: words.workspace,
+      icon: hasForest ? Trees : LayoutGrid,
+      tip: "Every worktree across every repository",
+    },
+    {
+      key: "fleet",
+      label: "Fleet",
+      icon: Layers,
+      tip: "Every worktree's uncommitted changes, on one screen",
+    },
+    {
+      key: "grove",
+      label: words.grove,
+      icon: hasForest ? Flower2 : Bot,
+      tip: `A ${words.agent} that belongs to no worktree, and can read every repository`,
+    },
+    {
+      key: "tools",
+      label: "Tools",
+      icon: Wrench,
+      tip: "Odd jobs that aren't about a worktree — freeing a port, reading a timestamp",
+    },
+    {
+      key: "settings",
+      label: "Settings",
+      icon: Settings,
+      tip: "Appearance, sound, the run command and agent defaults",
+    },
+    { key: "help", label: "Help", icon: CircleHelp, tip: "How Sylva works" },
+  ];
+}
 /**
  * The header.
  *
@@ -46,10 +78,11 @@ const DESTINATIONS: Destination[] = [
  * and the connection is a dot you only look at when something is wrong.
  */
 export function TopBar({ onHelp }: { onHelp: () => void }) {
+  const words = useWords();
+  const hasForest = useHasForest();
   const connection = useSylva((s) => s.connection);
   const view = useSylva((s) => s.view);
-  const panes = useSylva((s) => s.panes);
-  const activePaneId = useSylva((s) => s.activePaneId);
+  const paneWorktreeId = useSylva((s) => s.pane.worktreeId);
   // Select the map itself, never a derived array: a fresh array each call
   // changes the snapshot identity on every render and spins the loop.
   const pendingPermissions = useSylva((s) => s.pendingPermissions);
@@ -58,9 +91,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
     .filter(([, reqs]) => reqs.length > 0)
     .map(([worktreeId]) => worktreeId);
 
-  const activeWorktreeId =
-    panes.find((p) => p.id === activePaneId)?.worktreeId ?? panes[0]?.worktreeId ?? null;
-  const where = useWhere(view === "workspace" ? activeWorktreeId : null);
+  const where = useWhere(view === "workspace" ? paneWorktreeId : null);
   const store = useSylva.getState();
 
   const connTip =
@@ -75,15 +106,15 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
     else store.openWorktree(worktreeId);
   };
 
-  const goForest = () => {
+  const goHome = () => {
     store.setView("workspace");
     void api.setFocus(null);
-    for (const pane of store.panes) store.setPaneWorktree(pane.id, null);
+    store.setPaneWorktree(null);
   };
 
   const go = (key: Destination["key"]) => {
     if (key === "help") onHelp();
-    else if (key === "workspace") goForest();
+    else if (key === "workspace") goHome();
     else store.setView(key);
   };
 
@@ -104,7 +135,11 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
     <header className="topbar">
       {/* The wordmark goes home. Credits live at the bottom of the window,
           where a signature belongs. */}
-      <button className="brand" onClick={goForest} data-tip="Back to the forest">
+      <button
+        className="brand"
+        onClick={goHome}
+        data-tip={`Back to the ${words.workspace.toLowerCase()}`}
+      >
         <BrandMark size={19} />
         <span className="brand-word">sylva</span>
       </button>
@@ -117,8 +152,8 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
           <span className="crumb-sep" aria-hidden>
             /
           </span>
-          <span className="crumb-branch" data-tip="Branch in the active pane">
-            {where.branch}
+          <span className="crumb-branch" data-tip={`Branch in the active pane: ${where.branch}`}>
+            {worktreeLabel(where.branch, where.branch)}
           </span>
         </nav>
       )}
@@ -126,7 +161,7 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
       <div className="topbar-gap" />
 
       <nav className="dests" aria-label="Go to">
-        {DESTINATIONS.map(({ key, label, icon: Icon, tip }) => (
+        {destinations(words, hasForest).map(({ key, label, icon: Icon, tip }) => (
           <button
             key={key}
             className={`dest ${currentKey === key ? "dest-on" : ""}`}
@@ -148,8 +183,8 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
           onClick={() => blocked[0] && goBlocked(blocked[0])}
           data-tip={
             blocked.length === 1
-              ? "A dryad is waiting for a permission decision — click to answer"
-              : `${blocked.length} dryads are waiting for permission decisions — click to answer the first`
+              ? `A ${words.agent} is waiting for a permission decision — click to answer`
+              : `${blocked.length} ${words.agents} are waiting for permission decisions — click to answer the first`
           }
         >
           <span className="blocked-dot" />
@@ -185,9 +220,7 @@ function useWhere(worktreeId: string | null): { repo: string; branch: string } |
 
   const members = circleMembers(worktreeId);
   if (members) {
-    const names = members.map(
-      (id) => statuses[id]?.branch ?? index[id]?.branch ?? id.slice(0, 7),
-    );
+    const names = members.map((id) => statuses[id]?.branch ?? index[id]?.branch ?? id.slice(0, 7));
     return { repo: "shared", branch: names.join(" + ") };
   }
 

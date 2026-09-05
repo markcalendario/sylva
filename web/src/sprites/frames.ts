@@ -5,7 +5,15 @@
 // in. That keeps the silhouette identical across states, so a worktree's
 // character reads as the same creature whether it's resting or panicking.
 
-export type SpriteState = "idle" | "working" | "success" | "error";
+/**
+ * Five, because "waiting for you" and "it broke" are not the same news.
+ *
+ * They used to share the error state, and so shared its red — which said
+ * something had gone wrong every time an agent politely asked whether it could
+ * run a command. The forest map has always known the difference: that dryad
+ * stands at the notice board, and the board is where you go to *ask*.
+ */
+export type SpriteState = "idle" | "working" | "success" | "blocked" | "error";
 
 export const GRID = 24;
 
@@ -159,6 +167,12 @@ export const SPRITE_FRAMES: Record<SpriteState, string[][]> = {
       ],
     }),
   ],
+  // Waiting on you: attentive rather than flustered, and the mark is the
+  // firefly's amber — the colour this app uses for "something wants you".
+  blocked: [
+    buildFrame({ eyes: "open", mouth: "small", extras: [[6, 20, "a"]] }),
+    buildFrame({ eyes: "open", mouth: "small", bob: true, extras: [[5, 21, "a"]] }),
+  ],
   // Trouble: wide eyes and a fluster mark.
   error: [
     buildFrame({ eyes: "wide", mouth: "open", extras: [[6, 20, "r"]] }),
@@ -171,5 +185,7 @@ export const SPRITE_SPEED: Record<SpriteState, number> = {
   idle: 700,
   working: 180,
   success: 260,
+  // Slower than a fluster: it is waiting, not panicking.
+  blocked: 420,
   error: 220,
 };

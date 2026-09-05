@@ -1,4 +1,4 @@
-import type { ClientEvent, ServerEvent } from "sylva-shared";
+import type { ClientEvent, FileEvent, ServerEvent } from "sylva-shared";
 import { useSylva } from "../state/store";
 import { playCue } from "./audio";
 import { notifyAgentEvent } from "./notify";
@@ -28,11 +28,33 @@ let socket: WebSocket | null = null;
 let backoff = 500;
 let started = false;
 
-/** Connect the single app WebSocket; reconnects with backoff forever. */
-export function startWs(onResync: () => void): void {
+/**
+ * What the socket needs from the application, beyond the store.
+ *
+ * Both are things only the caller can do: the store knows how to hold an event,
+ * but not which fetched answers an event has made untrue.
+ */
+export interface WsHandlers {
+  /** Connected or reconnected — anything we hold may have moved on. */
+  onResync: () => void;
+  /** Files changed on disk, so whatever was read from them is out of date. */
+  onFiles: (worktreeId: string, events: FileEvent[]) => void;
+}
+
+let active: WsHandlers = { onResync: () => {}, onFiles: () => {} };
+
+/**
+ * Connect the single app WebSocket; reconnects with backoff forever.
+ *
+ * Calling it again only replaces the handlers — the socket is the app's, not a
+ * component's, and reconnecting because React re-ran an effect would drop
+ * whatever was in flight.
+ */
+export function startWs(handlers: WsHandlers): void {
+  active = handlers;
   if (started) return;
   started = true;
-  connect(onResync);
+  connect();
 }
 
 /**
@@ -46,7 +68,7 @@ export function sendWs(event: ClientEvent): boolean {
   return true;
 }
 
-function connect(onResync: () => void): void {
+function connect(): void {
   const store = useSylva.getState();
   store.setConnection("connecting");
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -55,7 +77,7 @@ function connect(onResync: () => void): void {
   socket.onopen = () => {
     backoff = 500;
     useSylva.getState().setConnection("connected");
-    onResync();
+    active.onResync();
   };
 
   socket.onmessage = (msg) => {
@@ -71,6 +93,9 @@ function connect(onResync: () => void): void {
       // scrollback should go with it.
       if (event.type === "terminal.closed") disposeTerminal(event.terminalId);
       useSylva.getState().applyServerEvent(event);
+      // Files that changed have made some of what was fetched untrue; the
+      // store holds the feed, but only the caller knows what was read.
+      if (event.type === "file.batch") active.onFiles(event.worktreeId, event.events);
       notifyAgentEvent(event);
       soundForEvent(event);
     } catch {
@@ -80,7 +105,7 @@ function connect(onResync: () => void): void {
 
   socket.onclose = () => {
     useSylva.getState().setConnection("disconnected");
-    setTimeout(() => connect(onResync), backoff);
+    setTimeout(() => connect(), backoff);
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
   };
 

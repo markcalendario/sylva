@@ -23,3 +23,160 @@
     animation: none;
   }
 }
+
+/* ── The dryad's stand-in ────────────────────────────────────────────────────
+   What <Sprite> draws in a theme with no forest: a presence dot, the mark
+   beside a name in every chat app there is.
+
+   The four states share a silhouette and differ in how they move, which is the
+   opposite of the usual advice — and right here, because the thing being read
+   at sixteen pixels in the corner of an eye is movement, not outline. A shape
+   you have to focus on to identify is a shape you will stop looking at. */
+.statusglyph {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: var(--moss);
+}
+
+.statusglyph-ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.statusglyph-halo {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  opacity: 0;
+  transform-origin: 50% 50%;
+}
+
+.statusglyph-core {
+  fill: currentColor;
+  stroke: none;
+  transform-origin: 50% 50%;
+}
+
+/* Resting: an outline, faint, and perfectly still. */
+.statusglyph-idle {
+  color: var(--moss-dim);
+}
+
+/* Working: a heartbeat, with rings leaving it. */
+.statusglyph-working {
+  color: var(--firefly);
+}
+
+.statusglyph-working .statusglyph-halo {
+  animation: statusglyph-halo 1.6s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+
+.statusglyph-working .statusglyph-halo-2 {
+  animation-delay: 0.8s;
+}
+
+.statusglyph-working .statusglyph-core {
+  animation: statusglyph-beat 1.6s ease-in-out infinite;
+}
+
+@keyframes statusglyph-halo {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.55);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.85);
+  }
+}
+
+@keyframes statusglyph-beat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.14);
+  }
+}
+
+/* Landed: one ring leaves, the dot arrives, and both stop. */
+.statusglyph-success {
+  color: var(--sapling);
+}
+
+.statusglyph-success .statusglyph-halo {
+  animation: statusglyph-halo 700ms cubic-bezier(0.2, 0.6, 0.3, 1) both;
+}
+
+.statusglyph-success .statusglyph-core {
+  animation: statusglyph-land 500ms cubic-bezier(0.2, 1.3, 0.35, 1) both;
+}
+
+@keyframes statusglyph-land {
+  0% {
+    transform: scale(0.4);
+  }
+  100% {
+    transform: scale(1.28);
+  }
+}
+
+/* Waiting on you: two knocks, then a pause, on a loop. The one state that has
+   to still be findable ten minutes after it happened, so it is the one state
+   that never stops moving.
+
+   Orange, not red. It is a question, not a failure — and when the same colour
+   said both, the colour stopped meaning either. */
+.statusglyph-blocked {
+  color: var(--waiting);
+}
+
+/* Failed. Red, and still: the turn is over, and a mark that kept moving would
+   be asking for something when there is nothing left to do. */
+.statusglyph-error {
+  color: var(--ember);
+}
+
+.statusglyph-blocked .statusglyph-halo,
+.statusglyph-error .statusglyph-halo {
+  opacity: 0.32;
+  transform: scale(1.55);
+}
+
+.statusglyph-blocked .statusglyph-core {
+  animation: statusglyph-knock 1.4s ease-in-out infinite;
+}
+
+@keyframes statusglyph-knock {
+  0%,
+  62%,
+  100% {
+    transform: scale(1);
+  }
+  22% {
+    transform: scale(1.3);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statusglyph-halo,
+  .statusglyph-core {
+    animation: none;
+  }
+
+  /* Without motion the four states have to be told apart by the mark itself,
+     so the halo stops being a transient and becomes a permanent outer ring. */
+  .statusglyph-working .statusglyph-halo,
+  .statusglyph-success .statusglyph-halo,
+  .statusglyph-blocked .statusglyph-halo,
+  .statusglyph-error .statusglyph-halo {
+    opacity: 0.4;
+    transform: scale(1.4);
+  }
+}

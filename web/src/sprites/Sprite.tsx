@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useHasForest } from "../lib/theme";
 import { GRID, PALETTE, SPRITE_FRAMES, SPRITE_SPEED, type SpriteState } from "./frames";
 import "./sprite.css";
 
@@ -30,12 +31,27 @@ function buildSheet(state: SpriteState): string {
   return uri;
 }
 
-/** What each animation is telling you, for the tooltip. */
+/**
+ * What the drawing is telling you, for the tooltip.
+ *
+ * Two sets, because the two drawings say it differently: a dryad *celebrates*
+ * and *panics*, and a check and a triangle do neither. The forest's words are
+ * about a character; the other set is about a worktree.
+ */
 const STATE_TIP: Record<SpriteState, string> = {
   idle: "Resting — no agent is running here",
   working: "Working — the agent is running right now",
   success: "Celebrating — the last turn finished cleanly",
+  blocked: "Waiting — it needs a permission decision from you",
   error: "Panicking — the last turn ended in an error",
+};
+
+const GLYPH_TIP: Record<SpriteState, string> = {
+  idle: "Resting — no agent is running here",
+  working: "Working — the agent is running right now",
+  success: "Done — the last turn finished cleanly",
+  blocked: "Waiting — it needs a permission decision from you",
+  error: "Failed — the last turn ended in an error",
 };
 
 interface SpriteProps {
@@ -46,11 +62,19 @@ interface SpriteProps {
 }
 
 /**
- * A dryad. The sheet is a horizontal strip; an inner element as wide as all
- * frames slides left with steps(n), showing one frame at a time.
+ * A dryad, or — in a theme that has no forest — the same four states said
+ * plainly.
+ *
+ * Both shapes occupy exactly GRID × scale, because every caller has already
+ * laid out around a square of that size: a worktree header, a fleet row, the
+ * About dialog. Swapping the drawing must not move anything beside it.
  */
 export function Sprite({ state, scale = 2, title }: SpriteProps) {
-  const sheet = useMemo(() => buildSheet(state), [state]);
+  const hasForest = useHasForest();
+  const sheet = useMemo(() => (hasForest ? buildSheet(state) : ""), [state, hasForest]);
+
+  if (!hasForest) return <StatusGlyph state={state} scale={scale} {...(title ? { title } : {})} />;
+
   const frames = SPRITE_FRAMES[state].length;
   const size = GRID * scale;
   return (
@@ -72,6 +96,58 @@ export function Sprite({ state, scale = 2, title }: SpriteProps) {
           animationTimingFunction: `steps(${frames})`,
         }}
       />
+    </div>
+  );
+}
+
+/**
+ * What a dryad was saying, without the dryad.
+ *
+ * A presence dot — the mark beside a name in every chat and issue tracker
+ * built in the last ten years. Borrowed rather than invented on purpose: an
+ * invented shape has to be learned before it can be read, and this one is read
+ * a hundred times a day at sixteen pixels, out of the corner of an eye.
+ *
+ * The silhouette barely changes across the four states, so the *motion* is
+ * what distinguishes them: resting is a hollow ring and perfectly still;
+ * working beats and throws rings off itself; done lands once and stays; needs
+ * you knocks twice, waits, and knocks again for as long as it takes.
+ */
+function StatusGlyph({
+  state,
+  scale,
+  title,
+}: {
+  state: SpriteState;
+  scale: number;
+  title?: string;
+}) {
+  const size = GRID * scale;
+  const tip = title ? `${title} · ${GLYPH_TIP[state]}` : GLYPH_TIP[state];
+  return (
+    <div
+      className={`statusglyph statusglyph-${state}`}
+      role="img"
+      aria-label={title ? `${title}: ${state}` : `status: ${state}`}
+      data-tip={tip}
+      style={{ width: size, height: size }}
+    >
+      <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden focusable="false">
+        {state === "idle" ? (
+          /* Nothing is happening, so the mark is an outline and holds still. */
+          <circle className="statusglyph-ring" cx="12" cy="12" r="4.4" />
+        ) : (
+          <>
+            {/* Rings leaving the dot. The second is the first again, half a
+                beat later — which is what turns a pulse into a rhythm. */}
+            <circle className="statusglyph-halo" cx="12" cy="12" r="6.4" />
+            {state === "working" && (
+              <circle className="statusglyph-halo statusglyph-halo-2" cx="12" cy="12" r="6.4" />
+            )}
+            <circle className="statusglyph-core" cx="12" cy="12" r="3.6" />
+          </>
+        )}
+      </svg>
     </div>
   );
 }

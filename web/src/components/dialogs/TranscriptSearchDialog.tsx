@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileCode2, MessageSquare, Wrench } from "lucide-react";
-import { circleMembers, GROVE_ID, type TranscriptHit, type TranscriptSearchMode } from "sylva-shared";
+import {
+  circleMembers,
+  GROVE_ID,
+  type TranscriptHit,
+  type TranscriptSearchMode,
+} from "sylva-shared";
 import { api } from "../../lib/api";
+import { useWords } from "../../lib/theme";
 import { useSylva } from "../../state/store";
 import { Dialog } from "../Dialog";
 
@@ -28,6 +34,7 @@ export function TranscriptSearchDialog({
   initialQuery?: string;
   onClose: () => void;
 }) {
+  const words = useWords();
   const [query, setQuery] = useState(initialQuery ?? "");
   const [mode, setMode] = useState<TranscriptSearchMode>("file");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -47,7 +54,7 @@ export function TranscriptSearchDialog({
   const search = useTranscriptSearch(open ? query : "", mode);
 
   return (
-    <Dialog title="Search the dryads' memory" open={open} onClose={onClose}>
+    <Dialog title={`Search the ${words.agentsPossessive} memory`} open={open} onClose={onClose}>
       <div className="seg tsearch-mode" role="group" aria-label="Search by">
         <button
           className={mode === "file" ? "seg-on" : ""}
@@ -155,6 +162,7 @@ function Results({
   mode: TranscriptSearchMode;
   onJump: () => void;
 }) {
+  const words = useWords();
   const index = useSylva((s) => s.worktreeIndex);
   const statuses = useSylva((s) => s.statuses);
 
@@ -171,7 +179,7 @@ function Results({
     return (
       <p className="dialog-hint">
         {mode === "file"
-          ? "Type a path, or any part of one — every dryad's conversation is searched, not just the ones you have open."
+          ? `Type a path, or any part of one — every ${words.agent}'s conversation is searched, not just the ones you have open.`
           : "Type a couple of words. Prompts, answers and steps are all searched."}
       </p>
     );
@@ -198,7 +206,9 @@ function Results({
     if (worktreeId === GROVE_ID) return "the grove";
     const members = circleMembers(worktreeId);
     if (members) {
-      return members.map((m) => statuses[m]?.branch ?? index[m]?.branch ?? m.slice(0, 7)).join(" + ");
+      return members
+        .map((m) => statuses[m]?.branch ?? index[m]?.branch ?? m.slice(0, 7))
+        .join(" + ");
     }
     return statuses[worktreeId]?.branch ?? index[worktreeId]?.branch ?? worktreeId.slice(0, 7);
   };
@@ -217,8 +227,8 @@ function Results({
   return (
     <>
       <p className="dialog-hint tsearch-count">
-        {state.hits.length} match{state.hits.length === 1 ? "" : "es"} across{" "}
-        {groups.length} dryad{groups.length === 1 ? "" : "s"}
+        {state.hits.length} match{state.hits.length === 1 ? "" : "es"} across {groups.length}{" "}
+        {groups.length === 1 ? words.agent : words.agents}
         {state.truncated && " · showing the most recent"}
       </p>
 
@@ -237,7 +247,7 @@ function Results({
                   <button
                     className="btn-quiet tsearch-open"
                     onClick={() => hits[0] && go(hits[0])}
-                    data-tip="Open this dryad and read the conversation"
+                    data-tip={`Open this ${words.agent} and read the conversation`}
                   >
                     Open
                   </button>
@@ -252,20 +262,20 @@ function Results({
                   {...(reachable ? {} : { disabled: true })}
                   data-tip={
                     reachable
-                      ? "Open the dryad this happened in"
+                      ? `Open the ${words.agent} this happened in`
                       : "This conversation's worktree is gone — there's nowhere to open"
                   }
                 >
-                <span className="tsearch-icon">
-                  {hit.kind === "tool-use" ? (
-                    <Wrench size={11} />
-                  ) : hit.kind === "user-prompt" ? (
-                    <MessageSquare size={11} />
-                  ) : (
-                    <FileCode2 size={11} />
-                  )}
-                </span>
-                {hit.tool && <span className="tsearch-tool">{hit.tool}</span>}
+                  <span className="tsearch-icon">
+                    {hit.kind === "tool-use" ? (
+                      <Wrench size={11} />
+                    ) : hit.kind === "user-prompt" ? (
+                      <MessageSquare size={11} />
+                    ) : (
+                      <FileCode2 size={11} />
+                    )}
+                  </span>
+                  {hit.tool && <span className="tsearch-tool">{hit.tool}</span>}
                   <span className="tsearch-summary">{hit.summary}</span>
                   <span className="tsearch-when">{when(hit.at)}</span>
                 </button>

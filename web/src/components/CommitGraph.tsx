@@ -1,17 +1,10 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { CommitFile, GraphCommit } from "sylva-shared";
+import type { GraphCommit } from "sylva-shared";
 import { useCommitDetail, useGraph } from "../lib/queries";
 import type { DiffSelection } from "../state/store";
+import { FileGlyph, splitPath } from "./FileGlyph";
 import { HoverCard } from "./HoverCard";
-
-const KIND_GLYPH: Record<CommitFile["kind"], string> = {
-  added: "+",
-  untracked: "+",
-  deleted: "−",
-  renamed: "→",
-  modified: "~",
-};
 
 /**
  * This branch drawn against its base. The header already reports "↑3 ↓1"; this
@@ -243,26 +236,37 @@ function CommitFiles({
           selection?.commit === sha &&
           selection.worktreeId === worktreeId &&
           selection.path === file.path;
+        const { lead, tail } = splitPath(file.path);
         return (
           <li key={file.path} className={`commit-file ${on ? "commit-file-on" : ""}`}>
             <button
               className="commit-file-name"
               onClick={() => onSelect({ worktreeId, path: file.path, staged: false, commit: sha })}
-              data-tip="Show this file as the commit left it"
+              data-tip={`${file.path} — show this file as the commit left it`}
             >
-              <span className={`chg chg-${file.kind}`} data-tip={`This file was ${file.kind}`}>
-                {KIND_GLYPH[file.kind]}
+              <span
+                className={`chg chg-${file.kind} git-file-glyph`}
+                data-tip={`This file was ${file.kind}`}
+              >
+                <FileGlyph path={file.path} size={12} />
               </span>
               <span className="commit-file-path">
-                {file.renamedFrom ? `${file.renamedFrom} → ${file.path}` : file.path}
+                <span className="path-lead">
+                  {file.renamedFrom ? `${file.renamedFrom} → ${lead}` : lead}
+                </span>
+                <span className="path-tail">{tail}</span>
               </span>
               <span className="commit-file-count">
                 {file.insertions === null || file.deletions === null ? (
                   <span className="commit-file-binary">binary</span>
                 ) : (
                   <>
-                    {file.insertions > 0 && <span className="commit-card-add">+{file.insertions}</span>}
-                    {file.deletions > 0 && <span className="commit-card-del">−{file.deletions}</span>}
+                    {file.insertions > 0 && (
+                      <span className="commit-card-add">+{file.insertions}</span>
+                    )}
+                    {file.deletions > 0 && (
+                      <span className="commit-card-del">−{file.deletions}</span>
+                    )}
                   </>
                 )}
               </span>

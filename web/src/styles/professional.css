@@ -1,0 +1,107 @@
+/*
+ * The professional theme.
+ *
+ * Black and white, and almost nothing else. Sylva's own theme spends colour
+ * freely — amber for anything working, green for anything grown — which reads
+ * as a workshop, and a workshop is not always what you want on a screen someone
+ * else is looking at. Here the whole palette is grey, and hierarchy is carried
+ * by weight and by the hairline between surfaces instead.
+ *
+ * Three colours survive, and only where colour is carrying information no shade
+ * of grey can: red for something that failed, green for a line added, red again
+ * for a line deleted. A diff drained to grey is a diff you have to read twice.
+ *
+ * Everything below is a re-statement of a name from tokens.css. There are no
+ * new names and no new rules for components — anything that needed a rule here
+ * would be a component that had hard-coded a colour, which is worth fixing at
+ * the component instead.
+ */
+:root[data-theme="professional"] {
+  /* surfaces — black canvas, each step up a shade lighter */
+  --pine-0: #000000; /* canvas */
+  --pine-1: #0d0d0d; /* cards, sidebar */
+  --pine-2: #1a1a1a; /* raised: hover, inputs */
+  --pine-3: #2e2e2e; /* hairline borders */
+
+  /* text */
+  --moon: #f4f4f4; /* primary */
+  --moss: #a3a3a3; /* muted */
+  --moss-dim: #6e6e6e; /* faint */
+
+  /* The accent. White, so "this is the action" is said with brightness rather
+     than with hue, and the ink on top of it goes black. */
+  --firefly: #f4f4f4;
+  --firefly-dim: #494949;
+  --on-accent: #000000;
+
+  /* The two exceptions, held to the quietest version of themselves that still
+     reads as green and red against black. */
+  --sapling: #5fb87a; /* success, added lines */
+  --sapling-dim: #29452f;
+  --ember: #e5544b; /* error, deleted lines */
+  --ember-dim: #4d211d;
+
+  /* The third exception, and for the same reason as the other two: a worktree
+     waiting on you is the one state you must not miss, and there is no shade
+     of grey that says "waiting" rather than "off". Held well under the red so
+     the two are never mistaken for each other at a glance. */
+  --waiting: #d98b3a;
+  --waiting-dim: #4a2f12;
+
+  /* Links and branch names. Grey, and underlined by the app's own rules — the
+     forest could spend a blue here because everything around it was green. */
+  --stream: #cfcfcf;
+
+  /* Bright enough to find on black, thin enough not to draw a box round the
+     whole interface as you tab through it. */
+  --focus: #9a9a9a;
+
+  --select-bg: #3d3d3d;
+  --select-fg: #ffffff;
+
+  /* type — Inter for the interface, JetBrains Mono for anything monospaced.
+     --font-pixel is not a pixel font here: the label role it names survives,
+     so small caps with wide tracking do the work Silkscreen was doing. */
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-pixel: "Inter", system-ui, sans-serif;
+  --track-pixel: 0.1em;
+
+  /* Squarer corners. Rounder ones read as friendly, which is the register this
+     theme is stepping out of. */
+  --radius: 4px;
+  --radius-lg: 6px;
+
+  --shadow-raise: 0 4px 24px rgb(0 0 0 / 0.6);
+  --scrim: rgb(0 0 0 / 0.72);
+
+  /* Terminal colours. Output that arrives already coloured — a test runner's
+     pass and fail, a compiler's error — keeps red and green for exactly that
+     reason; the rest of the ANSI palette collapses onto the greys, so a
+     progress bar or a syntax-highlighted stack trace stops being a rainbow. */
+  --ansi-black: #1a1a1a;
+  --ansi-red: #e5544b;
+  --ansi-green: #5fb87a;
+  --ansi-yellow: #c8c8c8;
+  --ansi-blue: #9a9a9a;
+  --ansi-magenta: #b4b4b4;
+  --ansi-cyan: #a8a8a8;
+  --ansi-white: #d6d6d6;
+  --ansi-bright-black: #6e6e6e;
+  --ansi-bright-red: #ff7d75;
+  --ansi-bright-green: #86d19b;
+  --ansi-bright-yellow: #e8e8e8;
+  --ansi-bright-blue: #c4c4c4;
+  --ansi-bright-magenta: #dcdcdc;
+  --ansi-bright-cyan: #d0d0d0;
+  --ansi-bright-white: #ffffff;
+}
+
+/*
+ * Inter's default figures are proportional and its default `1` has no foot,
+ * which at 10px in a column of counts is a `1` you have to look twice at.
+ * `cv01` gives it one; the tabular rule in base.css does the rest.
+ */
+:root[data-theme="professional"] body {
+  font-feature-settings: "cv01" 1;
+}

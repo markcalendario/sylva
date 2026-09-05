@@ -1,21 +1,15 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileCode2, Sparkles } from "lucide-react";
 import type { StatusEntry, WorktreeStatus } from "sylva-shared";
+import { FileGlyph, splitPath } from "./FileGlyph";
 import { api, ApiFailure } from "../lib/api";
 import { playCue } from "../lib/audio";
 import { confirm } from "../lib/confirm";
 import { useInvalidate, useStatusQuery } from "../lib/queries";
+import { useWords } from "../lib/theme";
 import { useSylva, type DiffSelection } from "../state/store";
 import { CreatePrButton } from "./CreatePrButton";
 import { PullRequestCard } from "./PullRequestCard";
-
-const KIND_GLYPH: Record<StatusEntry["kind"], string> = {
-  added: "+",
-  untracked: "+",
-  deleted: "−",
-  renamed: "→",
-  modified: "~",
-};
 
 function FileList({
   title,
@@ -70,25 +64,34 @@ function FileList({
           selection?.worktreeId === worktreeId &&
           selection.path === entry.path &&
           selection.staged === staged;
+        // The directories are what the row can afford to lose; the name is not.
+        const { lead, tail } = splitPath(entry.path);
         return (
           <div key={`${title}-${entry.path}`} className={`git-file ${on ? "git-file-on" : ""}`}>
             <button
               className="git-file-name"
               onClick={() => onSelect({ worktreeId, path: entry.path, staged })}
-              data-tip="Show this file's diff"
+              // The path itself, because the row may have had to cut it.
+              data-tip={`${entry.path} — show this file's diff`}
             >
-              <span className={`chg chg-${entry.kind}`} data-tip={`This file was ${entry.kind}`}>
-                {KIND_GLYPH[entry.kind]}
+              <span
+                className={`chg chg-${entry.kind} git-file-glyph`}
+                data-tip={`This file was ${entry.kind}`}
+              >
+                <FileGlyph path={entry.path} />
               </span>
               <span className="git-file-path">
-                {entry.renamedFrom ? `${entry.renamedFrom} → ${entry.path}` : entry.path}
+                <span className="path-lead">
+                  {entry.renamedFrom ? `${entry.renamedFrom} → ${lead}` : lead}
+                </span>
+                <span className="path-tail">{tail}</span>
               </span>
             </button>
             {/* The diff answers "what changed"; often the next question is
                 "and what does the rest of the file look like now". */}
             <button
               className="ghost git-file-open"
-              onClick={() => useSylva.getState().openFileHere({ worktreeId, path: entry.path })}
+              onClick={() => useSylva.getState().openFile({ worktreeId, path: entry.path })}
               aria-label={`Open ${entry.path} in the Files tab`}
               data-tip="Open this file in the Files tab"
             >
@@ -128,6 +131,7 @@ export function GitSection({
   shared: boolean;
   onFeedback: (message: string | null) => void;
 }) {
+  const words = useWords();
   const wsStatus = useSylva((s) => s.statuses[worktreeId]);
   const statusQuery = useStatusQuery(wsStatus ? null : worktreeId);
   const status: WorktreeStatus | undefined = wsStatus ?? statusQuery.data;
@@ -146,6 +150,11 @@ export function GitSection({
       await fn();
       if (done) onFeedback(done);
       invalidate.diffs();
+      // Staging, committing, pulling and pushing all move the status, and the
+      // counts that read it are all over the app — the sidebar row, the Files
+      // and Git tab badges, the workspace card. Ask for it rather than waiting
+      // to be told.
+      invalidate.statusNow(worktreeId);
     } catch (e) {
       if (e instanceof ApiFailure && e.message === "no-upstream") {
         const ok = await confirm({
@@ -311,7 +320,11 @@ export function GitSection({
             >
               <textarea
                 rows={3}
-                placeholder={shared ? `Commit message for ${status.branch ?? "this worktree"}` : "Commit message"}
+                placeholder={
+                  shared
+                    ? `Commit message for ${status.branch ?? "this worktree"}`
+                    : "Commit message"
+                }
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 data-tip="Describe what this commit changes"
@@ -322,9 +335,15 @@ export function GitSection({
                   type="button"
                   disabled={busy || drafting}
                   onClick={() => void draftMessage()}
-                  data-tip="Have a dryad read the staged diff and write the message"
+                  data-tip={`Have ${words.agent === "dryad" ? "a dryad" : "an agent"} read the staged diff and write the message`}
                 >
-                  {drafting ? "Reading the diff…" : <><Sparkles size={13} /> Draft message</>}
+                  {drafting ? (
+                    "Reading the diff…"
+                  ) : (
+                    <>
+                      <Sparkles size={13} /> Draft message
+                    </>
+                  )}
                 </button>
                 <button
                   className="btn-primary"

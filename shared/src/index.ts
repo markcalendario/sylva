@@ -22,6 +22,22 @@ export interface Worktree {
 }
 
 /**
+ * What fetching before a worktree was created actually changed.
+ *
+ * Reported rather than assumed: "pull first" can mean nothing happened (no
+ * remote), or that the new branch quietly started from `origin/main` instead
+ * of the stale `main` you named — and the second is worth being told.
+ */
+export interface WorktreePull {
+  /** True when there was a remote and the fetch ran. */
+  fetched: boolean;
+  /** The ref the worktree actually started from, when it wasn't the one asked for. */
+  basedOn: string | null;
+  /** The local branch fast-forwarded onto its upstream, when one was. */
+  fastForwarded: string | null;
+}
+
+/**
  * A worktree that has just been grown, and what was carried into it that git
  * would not have brought itself. Reported rather than done silently: copying a
  * file nobody asked about into a new directory should be visible.
@@ -30,6 +46,8 @@ export interface CreatedWorktree {
   worktree: Worktree;
   /** Paths, relative to the worktree root, of the env files copied across. */
   copiedEnvFiles: string[];
+  /** What the pre-creation fetch did, or null when it wasn't asked for. */
+  pull: WorktreePull | null;
 }
 
 // ---------- Git ----------
@@ -409,13 +427,47 @@ export const MODEL_CHOICES: ModelChoice[] = [
   { id: "claude-haiku-4-5", label: "Haiku 4.5", note: "Fastest, for simple tasks" },
 ];
 
+/**
+ * How much the agent has to ask before it acts.
+ *
+ * Three, and each one is a thing the Agent SDK actually does rather than a
+ * label over the same behaviour:
+ *
+ * - `supervised` stops before every command *and* every file change.
+ * - `acceptEdits` writes files freely and stops before running anything. This
+ *   is the useful middle: an edit is visible in the diff and revertible, and a
+ *   command is neither.
+ * - `full` asks nothing, including before deletes, history rewrites and
+ *   pushes, and the shell it runs in can reach the whole machine.
+ */
+export type PermissionMode = "supervised" | "acceptEdits" | "full";
+
+export const PERMISSION_MODES: PermissionMode[] = ["supervised", "acceptEdits", "full"];
+
+export function isPermissionMode(value: unknown): value is PermissionMode {
+  return (PERMISSION_MODES as string[]).includes(value as string);
+}
+
+/**
+ * Read a mode from settings that may predate it.
+ *
+ * Settings were a boolean — `bypassPermissions` — saved to disk in every
+ * installation that existed before this. `true` was "ask nothing", and `false`
+ * was the SDK's acceptEdits, so that is what each becomes. Anything else is a
+ * file written by hand, and the safest reading of a file we don't understand
+ * is the mode that asks the most.
+ */
+export function toPermissionMode(value: unknown): PermissionMode {
+  if (isPermissionMode(value)) return value;
+  if (value === true) return "full";
+  if (value === false) return "acceptEdits";
+  return "supervised";
+}
+
 /** A complete, resolved set of agent settings. */
 export interface AgentSettings {
-  /**
-   * Run the agent with every permission check bypassed. Dangerous: the agent
-   * can run any command without asking.
-   */
-  bypassPermissions: boolean;
+  /** How much the agent has to ask before it acts. */
+  permissionMode: PermissionMode;
   /** Model id, or null for the Claude Code default. */
   model: string | null;
   /** Reasoning effort, or null for the Claude Code default. */
@@ -430,16 +482,26 @@ export interface AgentSettings {
 export type WorktreeOverrides = Partial<AgentSettings>;
 
 export const GLOBAL_DEFAULTS: AgentSettings = {
-  bypassPermissions: false,
+  // The behaviour Sylva has always had, now that it has a name.
+  permissionMode: "acceptEdits",
   model: null,
   effort: null,
 };
 
 /**
- * What an Open button hands the worktree to. Only the editor: a shell is no
- * longer somewhere else to go, because the Terminal tab is one.
+ * What an Open button hands the worktree to.
+ *
+ * The editor, a real terminal window, or the desktop's own file browser. The
+ * first two are configurable because everyone has a favourite; the last is
+ * not — there is exactly one file browser per platform, and asking someone to
+ * name it would be a setting with a single right answer.
+ *
+ * The Terminal tab is still the shell you want nearly always, already in the
+ * right directory and beside the diff. "terminal" here is for the times it
+ * isn't: a full-screen TUI, a long build you want to keep watching after
+ * closing Sylva, tmux, anything your own terminal does that a tab can't.
  */
-export type OpenKind = "editor";
+export type OpenKind = "editor" | "reveal" | "terminal";
 
 export type OpenTarget = "vscode" | "cursor" | "zed" | "custom" | "none";
 
@@ -456,6 +518,52 @@ export const EDITOR_TARGETS: OpenChoice[] = [
   { id: "custom", label: "Custom command", note: "{path} is replaced by the worktree" },
   { id: "none", label: "Off", note: "hide the editor button" },
 ];
+
+/**
+ * Which terminal application a worktree is opened in.
+ *
+ * "system" is whatever this desktop ships with — Terminal on a Mac, Windows
+ * Terminal on Windows, the one X says is the default elsewhere — and is the
+ * choice that needs no explanation. The named ones are the terminals people
+ * actually go out and install instead.
+ */
+export type TerminalTarget = "system" | "iterm" | "warp" | "ghostty" | "kitty" | "custom" | "none";
+
+export interface TerminalChoice {
+  id: TerminalTarget;
+  label: string;
+  note: string;
+  /** Platforms this one exists on. Absent means everywhere. */
+  macOnly?: boolean;
+}
+
+export const TERMINAL_TARGETS: TerminalChoice[] = [
+  { id: "system", label: "System terminal", note: "whatever this desktop opens by default" },
+  { id: "iterm", label: "iTerm2", note: "macOS only", macOnly: true },
+  { id: "warp", label: "Warp", note: "needs Warp installed" },
+  { id: "ghostty", label: "Ghostty", note: "needs Ghostty installed" },
+  { id: "kitty", label: "kitty", note: "needs kitty installed" },
+  { id: "custom", label: "Custom command", note: "{path} is replaced by the worktree" },
+  { id: "none", label: "Off", note: "hide the terminal action" },
+];
+
+/**
+ * A slash command the agent understands — a built-in like `/clear`, a skill, a
+ * project command from `.claude/commands`, whatever this directory offers.
+ *
+ * Read from Claude Code rather than listed here, because the answer is
+ * different in every worktree: a repository's own commands and skills are part
+ * of it, and a list Sylva kept would be a list that is wrong for most people.
+ */
+export interface AgentCommand {
+  /** Name without the leading slash. */
+  name: string;
+  description: string;
+  /** What the command expects after it, e.g. "<file>". Empty when nothing. */
+  argumentHint: string;
+  /** Other names that reach the same command. */
+  aliases?: string[];
+}
 
 // ---------- Terminals ----------
 
@@ -541,13 +649,6 @@ export function isSharedTarget(id: string): boolean {
   return id === GROVE_ID || circleMembers(id) !== null;
 }
 
-/** A reusable prompt snippet, appended to whatever is already typed. */
-export interface SavedPrompt {
-  id: string;
-  label: string;
-  text: string;
-}
-
 /**
  * App-level preferences. Separate from AgentSettings because these describe
  * Sylva itself rather than how an agent runs, and nothing overrides them
@@ -560,6 +661,18 @@ export interface AppPreferences {
   editorCommand: string;
   /** Shell the Terminal tab spawns. Empty means whatever $SHELL says. */
   terminalShell: string;
+  /** Terminal application "Open in terminal" launches on the worktree. */
+  terminalApp: TerminalTarget;
+  /** Command template used when terminalApp is "custom"; {path} is substituted. */
+  terminalAppCommand: string;
+  /**
+   * How many lines of output a terminal keeps behind the top of the screen.
+   *
+   * Scrollback is held in the browser, one cell object per character, so this
+   * is the number that decides whether four terminals running a build are free
+   * or are the reason the window has started to stutter.
+   */
+  terminalScrollback: number;
   /**
    * Carry `.env` files from the main worktree into every new one.
    *
@@ -568,31 +681,45 @@ export interface AppPreferences {
    * by default because a worktree that can't run is the wrong default.
    */
   copyEnvFiles: boolean;
-  savedPrompts: SavedPrompt[];
+  /**
+   * Fetch from the remote before growing a worktree.
+   *
+   * A worktree is only as current as the ref it was cut from, and the ref you
+   * name is nearly always a local branch someone last updated on Tuesday. On by
+   * default because starting a week of work on a stale base is the expensive
+   * mistake, and a fetch is the cheap one.
+   */
+  pullBeforeWorktree: boolean;
+}
+
+/**
+ * What a terminal's scrollback may be set to.
+ *
+ * The floor is a screenful and a bit — below it "scroll back" stops meaning
+ * anything. The ceiling is where a single terminal starts costing hundreds of
+ * megabytes, which is not a limit worth letting someone opt into by typing a
+ * number into a box.
+ */
+export const TERMINAL_SCROLLBACK_MIN = 100;
+export const TERMINAL_SCROLLBACK_MAX = 50_000;
+
+/** Clamp a scrollback to the range a terminal will actually accept. */
+export function clampScrollback(lines: number): number {
+  if (!Number.isFinite(lines)) return PREFERENCE_DEFAULTS.terminalScrollback;
+  return Math.min(TERMINAL_SCROLLBACK_MAX, Math.max(TERMINAL_SCROLLBACK_MIN, Math.round(lines)));
 }
 
 export const PREFERENCE_DEFAULTS: AppPreferences = {
   editorTarget: "vscode",
   editorCommand: "",
   terminalShell: "",
+  terminalApp: "system",
+  terminalAppCommand: "",
+  // A thousand lines is a long build's worth of tail and costs almost nothing.
+  // It used to be ten thousand, which nobody asked for and everybody paid for.
+  terminalScrollback: 1_000,
   copyEnvFiles: true,
-  savedPrompts: [
-    {
-      id: "review",
-      label: "Review my changes",
-      text: "Review the staged and unstaged changes in this worktree. Flag anything that looks wrong before I commit.",
-    },
-    {
-      id: "tests",
-      label: "Run the tests",
-      text: "Run the test suite and fix whatever fails. Show me the failures before you change anything.",
-    },
-    {
-      id: "explain",
-      label: "Explain this code",
-      text: "Explain how this part of the codebase works, and point out anything surprising.",
-    },
-  ],
+  pullBeforeWorktree: true,
 };
 
 export interface WorktreeSettings {
@@ -646,7 +773,37 @@ export interface SessionInfo {
   totalCostUsd: number;
   totalTokens: number;
   queuedPrompts: QueuedPrompt[];
+  /**
+   * Work the dryad left running beside its own turn — a backgrounded subagent,
+   * a task that will wake it when it reports back.
+   *
+   * Deliberately not folded into `status`. That word answers "is it this
+   * dryad's turn", which is what decides whether your next prompt is sent or
+   * queued, and background work isn't its turn: you can talk to it while a
+   * subagent grinds away. But the dryad is plainly not resting either, which is
+   * what everything that draws one needs to know.
+   */
+  backgroundTasks: BackgroundTask[];
   createdAt: string;
+}
+
+/** One piece of background work, named the way the agent named it. */
+export interface BackgroundTask {
+  id: string;
+  description: string;
+}
+
+/**
+ * Is anything happening here at all?
+ *
+ * The one answer everything that draws a dryad reads, so the forest, the fleet
+ * and the worktree header can't disagree about whether one is resting. Its own
+ * turn or work it left running both count; only `status` distinguishes them,
+ * and only the composer cares which.
+ */
+export function sessionBusy(session: SessionInfo | undefined | null): boolean {
+  if (!session) return false;
+  return session.status === "running" || session.backgroundTasks.length > 0;
 }
 
 export interface QueuedPrompt {
@@ -702,9 +859,7 @@ export interface PermissionRequest {
 
 export type PermissionAnswer = "allow" | "allow-always" | "deny";
 
-export type AgentAvailability =
-  | { available: true }
-  | { available: false; reason: string };
+export type AgentAvailability = { available: true } | { available: false; reason: string };
 
 // ---------- File activity ----------
 

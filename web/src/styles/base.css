@@ -38,7 +38,7 @@ body {
 .run-line,
 .statusstrip,
 .divergence,
-.turn-cost,
+.turn-seal-cost,
 .textsize-value,
 .git-count,
 .dl-num {
@@ -84,8 +84,12 @@ textarea::placeholder {
 }
 
 :focus-visible {
-  outline: 2px solid var(--firefly);
-  outline-offset: 1px;
+  /* A hairline held off the element rather than a heavy ring drawn on it. Two
+     pixels of accent at one pixel's offset read as a border the control
+     suddenly grew — which is exactly what it looked like. */
+  outline: 1px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: inherit;
 }
 
 ::selection {

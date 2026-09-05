@@ -15,15 +15,27 @@ export function RemoveWorktreeDialog({
   onClose: () => void;
 }) {
   const [needsForce, setNeedsForce] = useState(false);
+  /**
+   * Whether the branch goes too.
+   *
+   * Off by default, and deliberately: removing a worktree is about the folder,
+   * and the branch is where the work actually is. Saying so out loud is the
+   * point of the checkbox — this used to be the one thing removal quietly left
+   * behind, with nothing on screen to say it had.
+   */
+  const [alsoBranch, setAlsoBranch] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const invalidate = useInvalidate();
+
+  // A detached worktree has no branch to delete, so there is nothing to offer.
+  const branch = worktree.branch;
 
   const remove = async (force: boolean) => {
     setBusy(true);
     setError(null);
     try {
-      await api.removeWorktree(worktree.id, force);
+      await api.removeWorktree(worktree.id, force, alsoBranch && branch !== null);
       invalidate.worktrees(worktree.repoId);
       invalidate.branches();
       onClose();
@@ -39,12 +51,35 @@ export function RemoveWorktreeDialog({
   return (
     <Dialog title="Remove worktree" open onClose={onClose}>
       <p className="dialog-hint">
-        Removes the worktree directory from disk. The branch{" "}
-        <code>{worktree.branch ?? "(detached)"}</code> and its commits stay in the repository.
+        Removes the worktree directory from disk, and the registration git keeps for it. The branch{" "}
+        <code>{branch ?? "(detached)"}</code> and its commits stay in the repository unless you say
+        otherwise below.
       </p>
       <pre className="permission-summary" data-tip="Folder that will be deleted from disk">
         {worktree.path}
       </pre>
+
+      {branch && (
+        <label className="dialog-check" data-tip="Delete the branch as well, not just the folder">
+          <input
+            type="checkbox"
+            checked={alsoBranch}
+            onChange={(e) => setAlsoBranch(e.target.checked)}
+            disabled={busy}
+          />
+          <span>
+            Also delete the branch <code>{branch}</code> from git
+          </span>
+        </label>
+      )}
+
+      {alsoBranch && branch && (
+        <p className="field-hint">
+          {needsForce
+            ? "Forcing the removal deletes the branch outright, merged or not."
+            : "Git refuses this if the branch has commits that aren't merged anywhere, and says so — nothing is lost by trying."}
+        </p>
+      )}
 
       {error && <div className="form-error">{error}</div>}
 
@@ -86,9 +121,13 @@ export function RemoveWorktreeDialog({
             className="btn-danger"
             disabled={busy}
             onClick={() => void remove(false)}
-            data-tip="Delete the folder; the branch and its commits stay"
+            data-tip={
+              alsoBranch
+                ? "Delete the folder and the branch"
+                : "Delete the folder; the branch and its commits stay"
+            }
           >
-            {busy ? "Removing…" : "Remove worktree"}
+            {busy ? "Removing…" : alsoBranch ? "Remove worktree and branch" : "Remove worktree"}
           </button>
         )}
       </div>

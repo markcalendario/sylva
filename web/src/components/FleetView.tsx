@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { GitCompare, RefreshCw } from "lucide-react";
-import type { FleetEntry, StatusEntry } from "sylva-shared";
+import { sessionBusy, type FleetEntry, type StatusEntry } from "sylva-shared";
+import { worktreeLabel } from "../lib/branch";
 import { useFleet } from "../lib/queries";
+import { useWords } from "../lib/theme";
 import { spriteStateFor, useSylva } from "../state/store";
 import { Sprite } from "../sprites/Sprite";
 
@@ -26,8 +28,8 @@ const KIND_GLYPH: Record<StatusEntry["kind"], string> = {
  *
  * The forest map answers "what is each dryad doing"; this answers the question
  * that comes after, which is "what have they actually done to my code". With
- * four agents running, reviewing that meant opening four panes and clicking
- * through four Git tabs — and the first thing you did in each was read the same
+ * four agents running, reviewing that meant opening each of them in turn and
+ * clicking through four Git tabs — and the first thing you did was read the same
  * short list of filenames. So here is every list, at once, with a way into any
  * of them.
  */
@@ -45,9 +47,7 @@ export function FleetView() {
 
     for (const entry of entries) {
       const count = entry.status
-        ? entry.status.staged.length +
-          entry.status.unstaged.length +
-          entry.status.untracked.length
+        ? entry.status.staged.length + entry.status.unstaged.length + entry.status.untracked.length
         : 0;
       files += count;
       if (count > 0 || entry.error) dirty.push(entry);
@@ -114,6 +114,7 @@ export function FleetView() {
 }
 
 function FleetCard({ entry }: { entry: FleetEntry }) {
+  const words = useWords();
   const store = useSylva.getState();
   const spriteState = useSylva((s) => spriteStateFor(s, entry.worktreeId));
   const session = useSylva((s) => s.sessions[entry.worktreeId]);
@@ -143,10 +144,14 @@ function FleetCard({ entry }: { entry: FleetEntry }) {
   return (
     <section className="fleet-card">
       <header className="fleet-card-head">
-        <Sprite state={spriteState} scale={1} title={entry.branch ?? ""} />
-        <button className="fleet-card-name" onClick={open} data-tip="Open this worktree">
+        <Sprite state={spriteState} scale={1} title={worktreeLabel(entry.branch, "detached")} />
+        <button
+          className="fleet-card-name"
+          onClick={open}
+          data-tip={`${entry.branch ?? "detached"} · open this worktree`}
+        >
           <span className="fleet-repo">{entry.repoName}</span>
-          <code className="fleet-branch">{entry.branch ?? "detached"}</code>
+          <code className="fleet-branch">{worktreeLabel(entry.branch, "detached")}</code>
         </button>
 
         {entry.status?.base && (
@@ -163,8 +168,15 @@ function FleetCard({ entry }: { entry: FleetEntry }) {
           </span>
         )}
 
-        {session?.status === "running" && (
-          <span className="fleet-working" data-tip="A dryad is working here right now">
+        {sessionBusy(session) && (
+          <span
+            className="fleet-working"
+            data-tip={
+              session?.status === "running"
+                ? `A ${words.agent} is working here right now`
+                : "Background work is still running here"
+            }
+          >
             working
           </span>
         )}
@@ -180,9 +192,7 @@ function FleetCard({ entry }: { entry: FleetEntry }) {
             <li key={`${row.staged ? "s" : "u"}:${row.path}`} className="fleet-file">
               <button
                 className="fleet-file-open"
-                onClick={() =>
-                  store.openFileHere({ worktreeId: entry.worktreeId, path: row.path })
-                }
+                onClick={() => store.openFile({ worktreeId: entry.worktreeId, path: row.path })}
                 data-tip="Open this file in the Files tab"
               >
                 <span className={`chg chg-${row.kind}`} data-tip={`This file was ${row.kind}`}>
@@ -203,9 +213,7 @@ function FleetCard({ entry }: { entry: FleetEntry }) {
                   // Open the worktree first: the diff belongs to a pane, and
                   // the pane has to be pointed at this tree to show it.
                   store.openWorktree(entry.worktreeId);
-                  const paneId = useSylva.getState().activePaneId;
                   store.setPaneDiff(
-                    paneId,
                     { worktreeId: entry.worktreeId, path: row.path, staged: row.staged },
                     "git",
                   );

@@ -126,6 +126,8 @@ const STATE_STATION: Record<SpriteState, StationKey> = {
   idle: "camp",
   working: "workshop",
   success: "grove",
+  // Both wanting you, and the board is where you are asked for.
+  blocked: "board",
   error: "board",
 };
 
@@ -133,7 +135,8 @@ const STATE_WORD: Record<SpriteState, string> = {
   idle: "asleep at the camp",
   working: "at the workshop",
   success: "celebrating in the grove",
-  error: "waiting at the notice board",
+  blocked: "waiting at the notice board",
+  error: "stuck at the notice board",
 };
 
 /**
@@ -145,7 +148,8 @@ const THOUGHTS: Record<SpriteState, string[]> = {
   idle: ["zzz", "…", "*yawn*", "hm?"],
   working: ["hmm", "aha", "*tap tap*", "nearly", "…"],
   success: ["done!", "✓", "♪", "at last"],
-  error: ["?", "psst", "hey!", "waiting…"],
+  blocked: ["?", "psst", "hey!", "waiting…"],
+  error: ["!", "uh oh", "hm.", "stuck"],
 };
 
 /** Sounds the world makes on its own, and the animals living in it. */
@@ -194,10 +198,13 @@ function useBubbles(sources: React.RefObject<BubbleSource[]>): Bubble[] {
     // arrives on a countable beat stops being ambience.
     let tick = 0;
     const schedule = (): void => {
-      tick = window.setTimeout(() => {
-        emit();
-        schedule();
-      }, 10_000 + Math.random() * 7000);
+      tick = window.setTimeout(
+        () => {
+          emit();
+          schedule();
+        },
+        10_000 + Math.random() * 7000,
+      );
     };
 
     const emit = (): void => {
@@ -392,9 +399,7 @@ function Plane({
       : [];
 
     const fromCircles = circles.map((circle) => {
-      const names = circle.members.map(
-        (m) => m.worktree.branch ?? m.worktree.head.slice(0, 7),
-      );
+      const names = circle.members.map((m) => m.worktree.branch ?? m.worktree.head.slice(0, 7));
       return {
         id: circle.id,
         state: circle.state,
@@ -608,7 +613,12 @@ function Plane({
         <span
           key={`meteor${i}`}
           className="ow-meteor"
-          style={{ left: `${m.left}%`, top: m.top, animationDelay: `${m.delay}s`, animationDuration: `${m.dur}s` }}
+          style={{
+            left: `${m.left}%`,
+            top: m.top,
+            animationDelay: `${m.delay}s`,
+            animationDuration: `${m.dur}s`,
+          }}
         />
       ))}
       {/* Fog banked at the foot of the treeline. Soft rather than pixelated on
@@ -674,10 +684,7 @@ function Plane({
         </div>
       ))}
 
-      <div
-        className="ow-prop"
-        style={at(layout.campfire.x, layout.campfire.y, FIRE_W, FIRE_H)}
-      >
+      <div className="ow-prop" style={at(layout.campfire.x, layout.campfire.y, FIRE_W, FIRE_H)}>
         <PixelArt
           cacheKey="campfire"
           frames={FIRE_FRAMES}
@@ -770,10 +777,7 @@ function Plane({
         />
       </div>
 
-      <div
-        className="ow-prop"
-        style={at(layout.boardProp.x, layout.boardProp.y, BOARD_W, BOARD_H)}
-      >
+      <div className="ow-prop" style={at(layout.boardProp.x, layout.boardProp.y, BOARD_W, BOARD_H)}>
         <PixelArt
           cacheKey="board"
           frames={BOARD_FRAMES}
@@ -1050,7 +1054,7 @@ function Actor({
             <span className="ow-spark ow-spark-b" />
           </>
         )}
-        {state === "error" && <span className="ow-alert">!</span>}
+        {(state === "error" || state === "blocked") && <span className="ow-alert">!</span>}
       </span>
     </button>
   );

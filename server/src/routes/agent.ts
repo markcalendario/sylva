@@ -2,7 +2,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { circleMembers, GROVE_ID, type Attachment } from "sylva-shared";
+import {
+  circleMembers,
+  GROVE_ID,
+  TERMINAL_SCROLLBACK_MAX,
+  TERMINAL_SCROLLBACK_MIN,
+  type Attachment,
+} from "sylva-shared";
 import type { AppContext } from "../context.js";
 import { badRequest } from "../lib/errors.js";
 import { openExternal } from "../services/open.js";
@@ -13,7 +19,7 @@ const transcriptSearchSchema = z.object({
   q: z.string().min(1).max(200),
   mode: z.enum(["file", "text"]).default("file"),
 });
-const openSchema = z.object({ kind: z.enum(["editor"]) });
+const openSchema = z.object({ kind: z.enum(["editor", "reveal", "terminal"]) });
 const answerSchema = z.object({
   requestId: z.string().min(1),
   answer: z.enum(["allow", "allow-always", "deny"]),
@@ -21,32 +27,38 @@ const answerSchema = z.object({
 const effortSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
 
 const openTargetSchema = z.enum(["vscode", "cursor", "zed", "custom", "none"]);
+const terminalTargetSchema = z.enum([
+  "system",
+  "iterm",
+  "warp",
+  "ghostty",
+  "kitty",
+  "custom",
+  "none",
+]);
 
 const preferencesSchema = z.object({
   editorTarget: openTargetSchema,
   editorCommand: z.string().max(500),
   terminalShell: z.string().max(500),
+  terminalApp: terminalTargetSchema,
+  terminalAppCommand: z.string().max(500),
+  terminalScrollback: z.number().int().min(TERMINAL_SCROLLBACK_MIN).max(TERMINAL_SCROLLBACK_MAX),
   copyEnvFiles: z.boolean(),
-  savedPrompts: z
-    .array(
-      z.object({
-        id: z.string().min(1).max(64),
-        label: z.string().min(1).max(80),
-        text: z.string().min(1).max(4000),
-      }),
-    )
-    .max(50),
+  pullBeforeWorktree: z.boolean(),
 });
 
+const permissionModeSchema = z.enum(["supervised", "acceptEdits", "full"]);
+
 const globalSettingsSchema = z.object({
-  bypassPermissions: z.boolean(),
+  permissionMode: permissionModeSchema,
   model: z.string().min(1).nullable(),
   effort: effortSchema.nullable(),
 });
 
 /** Absent keys inherit global; present keys (including null) override it. */
 const overridesSchema = z.object({
-  bypassPermissions: z.boolean().optional(),
+  permissionMode: permissionModeSchema.optional(),
   model: z.string().min(1).nullable().optional(),
   effort: effortSchema.nullable().optional(),
 });
@@ -151,12 +163,23 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     return ctx.store.preferences;
   });
 
-  /** Hand the worktree directory to the configured editor. */
+  /** Hand the worktree directory to the configured editor, terminal or file browser. */
   app.post("/api/worktrees/:worktreeId/open", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     const { kind } = openSchema.parse(req.body ?? {});
     const { worktree } = await workspace.resolveWorktree(worktreeId);
     return openExternal(worktree.path, ctx.store.preferences, kind);
+  });
+
+  /**
+   * The slash commands this dryad answers to — built-ins, skills, and whatever
+   * the repository adds. Cached server-side, so the prompt box can ask for it
+   * the moment someone types `/`.
+   */
+  app.get("/api/worktrees/:worktreeId/commands", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    await requireTarget(worktreeId);
+    return ctx.commands.list(worktreeId);
   });
 
   app.put("/api/settings", async (req) => {

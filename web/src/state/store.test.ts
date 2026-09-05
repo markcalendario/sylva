@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { GROVE_ID } from "sylva-shared";
-import { spriteStateFor, useSylva } from "./store";
+import { GROVE_ID, type SessionInfo } from "sylva-shared";
+import { orderWorktrees, spriteStateFor, useSylva } from "./store";
 
 /**
  * A dryad walks to the grove when a turn lands without you, and back to the
@@ -21,11 +21,9 @@ function stateOf(worktreeId: string) {
   return spriteStateFor(useSylva.getState(), worktreeId);
 }
 
-/** Put one pane on a worktree without going through the server. */
+/** Put the pane on a worktree without going through the server. */
 function showPane(worktreeId: string | null) {
-  const { panes, setPaneWorktree } = useSylva.getState();
-  const pane = panes[0];
-  if (pane) setPaneWorktree(pane.id, worktreeId);
+  useSylva.getState().setPaneWorktree(worktreeId);
 }
 
 describe("celebrating a finished turn", () => {
@@ -129,7 +127,76 @@ describe("celebrating a finished turn", () => {
     });
     showPane("wt-a");
     useSylva.getState().acknowledgeVisible();
-    // Looking at it is not answering it.
+    // Looking at it is not answering it. And it is *blocked*, not errored —
+    // asking whether it may run a command is not a failure, and the two used
+    // to share a state and therefore a colour.
+    expect(stateOf("wt-a")).toBe("blocked");
+  });
+});
+
+/**
+ * A turn ending is not the work ending.
+ *
+ * A subagent left running in the background keeps talking long after the result
+ * that ended the dryad's turn, and the session is genuinely idle in between —
+ * you can prompt it, and the prompt goes straight through. The sprite used to
+ * read that idleness as rest and sit the dryad down mid-sentence.
+ */
+describe("a dryad with work still running behind it", () => {
+  const session = (over: Partial<SessionInfo> = {}): SessionInfo => ({
+    id: "s1",
+    worktreeId: "wt-a",
+    branch: "main",
+    status: "idle",
+    settings: { permissionMode: "acceptEdits", model: null, effort: null },
+    sdkSessionId: null,
+    totalCostUsd: 0,
+    totalTokens: 0,
+    queuedPrompts: [],
+    backgroundTasks: [],
+    createdAt: new Date().toISOString(),
+    ...over,
+  });
+
+  beforeEach(() => {
+    useSylva.setState({
+      celebrating: {},
+      unseenActivity: {},
+      sessions: {},
+      pendingPermissions: {},
+      view: "workspace",
+      focusedWorktreeId: null,
+    });
+    showPane(null);
+  });
+
+  it("keeps working while a background task is still running", () => {
+    useSylva
+      .getState()
+      .setSession(
+        "wt-a",
+        session({ backgroundTasks: [{ id: "t1", description: "Review the diff" }] }),
+      );
+    expect(stateOf("wt-a")).toBe("working");
+  });
+
+  it("rests once the last one reports back", () => {
+    useSylva.getState().setSession("wt-a", session({ backgroundTasks: [] }));
+    expect(stateOf("wt-a")).toBe("idle");
+  });
+
+  /**
+   * Background work is not the dryad's turn, so it must not outrank the two
+   * things that actually want you — a decision, or an error.
+   */
+  it("still yields to anything that needs you", () => {
+    useSylva.getState().setSession(
+      "wt-a",
+      session({
+        status: "errored",
+        backgroundTasks: [{ id: "t1", description: "Run the tests" }],
+      }),
+    );
     expect(stateOf("wt-a")).toBe("error");
   });
 });
@@ -193,15 +260,14 @@ describe("clearing a dryad", () => {
  * Option+Tab walks the tab strip. The wrap is the part worth pinning down: the
  * ask was that Terminal steps round to Agent rather than stopping at the end.
  */
-describe("cycling the active pane's tabs", () => {
+describe("cycling the pane's tabs", () => {
   beforeEach(() => {
     useSylva.setState({ view: "workspace" });
     showPane("wt-a");
-    const { panes, setPaneTab } = useSylva.getState();
-    if (panes[0]) setPaneTab(panes[0].id, "agent");
+    useSylva.getState().setPaneTab("agent");
   });
 
-  const tab = () => useSylva.getState().panes[0]?.tab;
+  const tab = () => useSylva.getState().pane.tab;
 
   it("steps forward through the strip", () => {
     const { cycleActiveTab } = useSylva.getState();
@@ -214,8 +280,8 @@ describe("cycling the active pane's tabs", () => {
   });
 
   it("wraps from Terminal back to Agent", () => {
-    const { cycleActiveTab, setPaneTab, panes } = useSylva.getState();
-    if (panes[0]) setPaneTab(panes[0].id, "terminal");
+    const { cycleActiveTab, setPaneTab } = useSylva.getState();
+    setPaneTab("terminal");
     cycleActiveTab(1);
     expect(tab()).toBe("agent");
   });
@@ -223,16 +289,6 @@ describe("cycling the active pane's tabs", () => {
   it("walks backwards, wrapping the other way", () => {
     useSylva.getState().cycleActiveTab(-1);
     expect(tab()).toBe("terminal");
-  });
-
-  it("only moves the pane you are working in", () => {
-    useSylva.getState().splitPane();
-    const [first, second] = useSylva.getState().panes;
-    if (!first || !second) throw new Error("expected two panes");
-    useSylva.getState().cycleActiveTab(1);
-    expect(useSylva.getState().panes[1]?.tab).toBe("files");
-    expect(useSylva.getState().panes[0]?.tab).toBe("agent");
-    useSylva.getState().closePane(second.id);
   });
 
   it("does nothing while the settings page covers the tabs", () => {
@@ -259,28 +315,22 @@ describe("remembering the tab per worktree", () => {
     showPane(null);
   });
 
-  function paneId(): string {
-    const id = useSylva.getState().panes[0]?.id;
-    if (!id) throw new Error("expected a pane");
-    return id;
-  }
-
   it("restores the tab a worktree was left on", () => {
     showPane("wt-a");
-    useSylva.getState().setPaneTab(paneId(), "terminal");
+    useSylva.getState().setPaneTab("terminal");
 
     showPane("wt-b");
-    expect(useSylva.getState().panes[0]?.tab).toBe("agent");
+    expect(useSylva.getState().pane.tab).toBe("agent");
 
     showPane("wt-a");
-    expect(useSylva.getState().panes[0]?.tab).toBe("terminal");
+    expect(useSylva.getState().pane.tab).toBe("terminal");
   });
 
   it("does not drag one worktree's tab onto another", () => {
     showPane("wt-a");
-    useSylva.getState().setPaneTab(paneId(), "git");
+    useSylva.getState().setPaneTab("git");
     showPane("wt-b");
-    expect(useSylva.getState().panes[0]?.tab).toBe("agent");
+    expect(useSylva.getState().pane.tab).toBe("agent");
     expect(useSylva.getState().tabByWorktree["wt-b"]).toBeUndefined();
   });
 
@@ -292,14 +342,97 @@ describe("remembering the tab per worktree", () => {
 
   it("remembers the tab an opened diff switched to", () => {
     showPane("wt-a");
-    useSylva
-      .getState()
-      .setPaneDiff(paneId(), { worktreeId: "wt-a", path: "a.ts", staged: false }, "git");
+    useSylva.getState().setPaneDiff({ worktreeId: "wt-a", path: "a.ts", staged: false }, "git");
     expect(useSylva.getState().tabByWorktree["wt-a"]).toBe("git");
   });
 
   it("starts a worktree it has never seen on the agent", () => {
     showPane("wt-new");
-    expect(useSylva.getState().panes[0]?.tab).toBe("agent");
+    expect(useSylva.getState().pane.tab).toBe("agent");
+  });
+});
+
+describe("the sidebar's own order", () => {
+  const trees = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("leaves git's order alone when nothing has been arranged", () => {
+    expect(orderWorktrees(trees, []).map((t) => t.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("follows the arrangement", () => {
+    expect(orderWorktrees(trees, ["c", "a", "b"]).map((t) => t.id)).toEqual(["c", "a", "b"]);
+  });
+
+  it("puts a worktree created since at the end, in git's order", () => {
+    // "d" and "e" were made after the list was last arranged.
+    const later = [...trees, { id: "d" }, { id: "e" }];
+    expect(orderWorktrees(later, ["c", "a"]).map((t) => t.id)).toEqual(["c", "a", "b", "d", "e"]);
+  });
+
+  it("ignores an id whose worktree is gone", () => {
+    expect(orderWorktrees(trees, ["z", "c", "a", "b"]).map((t) => t.id)).toEqual(["c", "a", "b"]);
+  });
+});
+
+describe("waiting and failing are different news", () => {
+  const session = (over: Partial<SessionInfo> = {}): SessionInfo => ({
+    id: "s1",
+    worktreeId: "wt-a",
+    branch: "main",
+    status: "idle",
+    settings: { permissionMode: "acceptEdits", model: null, effort: null },
+    sdkSessionId: null,
+    totalCostUsd: 0,
+    totalTokens: 0,
+    queuedPrompts: [],
+    backgroundTasks: [],
+    createdAt: new Date().toISOString(),
+    ...over,
+  });
+
+  it("calls a pending permission blocked, not an error", () => {
+    useSylva.setState({
+      pendingPermissions: {
+        "wt-a": [
+          {
+            id: "p1",
+            sessionId: "s1",
+            worktreeId: "wt-a",
+            tool: "Bash",
+            summary: "git push",
+            input: {},
+            requestedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(stateOf("wt-a")).toBe("blocked");
+  });
+
+  it("still calls an errored session an error", () => {
+    useSylva.getState().setSession("wt-a", session({ status: "errored" }));
+    expect(stateOf("wt-a")).toBe("error");
+  });
+
+  it("lets a real failure outrank a question", () => {
+    // A session that errored *and* has a request outstanding is broken, and
+    // the louder, redder reading is the honest one.
+    useSylva.getState().setSession("wt-a", session({ status: "errored" }));
+    useSylva.setState({
+      pendingPermissions: {
+        "wt-a": [
+          {
+            id: "p2",
+            sessionId: "s1",
+            worktreeId: "wt-a",
+            tool: "Bash",
+            summary: "ls",
+            input: {},
+            requestedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(stateOf("wt-a")).toBe("error");
   });
 });

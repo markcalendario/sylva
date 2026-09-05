@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { FileCode2, X } from "lucide-react";
 import { api, ApiFailure } from "../lib/api";
 import { confirm } from "../lib/confirm";
-import { chunkClass, highlightLines, languageFor } from "../lib/highlight";
+import { chunkClass, highlightLines, languageFor, type Chunk } from "../lib/highlight";
 import { useChangedLines, useFileContent, useInvalidate, useLineBlame } from "../lib/queries";
+import { useWords } from "../lib/theme";
 import type { LineBlame } from "sylva-shared";
 import { fileKey, useSylva, type OpenFile, type Pane } from "../state/store";
 import { bytes } from "./FileTree";
@@ -17,6 +18,76 @@ import { bytes } from "./FileTree";
  */
 const EDIT_HIGHLIGHT_LIMIT = 60_000;
 
+/** How long the caret must sit still before its line is worth a `git blame`. */
+const BLAME_SETTLE_MS = 250;
+
+/** Two tokenisations of a line that would draw identically. */
+function sameChunks(a: Chunk[], b: Chunk[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return a.every((chunk, i) => {
+    const there = b[i];
+    return !!there && chunk.text === there.text && chunk.type === there.type;
+  });
+}
+
+/**
+ * One line of the file, drawn only when that line changes.
+ *
+ * Typing re-tokenises the whole draft — a block comment opened on line four
+ * colours line four hundred, so there is no honest way to tokenise less — which
+ * hands React a brand-new chunk array for every line on every keystroke. Left
+ * alone it then rebuilds a span per token for the entire file to show one
+ * character being typed, and a two-thousand-line file types like treacle.
+ * Comparing the chunks is far cheaper than re-rendering them.
+ */
+const CodeLine = memo(
+  function CodeLine({
+    chunks,
+    className,
+    lineRef,
+  }: {
+    chunks: Chunk[];
+    className: string;
+    /** Set on the one line a jump is aiming at, so it can be scrolled to. */
+    lineRef?: React.RefObject<HTMLSpanElement | null>;
+  }) {
+    return (
+      <span className={className} ref={lineRef}>
+        {chunks.length === 0
+          ? " "
+          : chunks.map((chunk, c) => (
+              <span key={c} className={chunkClass(chunk.type)}>
+                {chunk.text}
+              </span>
+            ))}
+        {"\n"}
+      </span>
+    );
+  },
+  // The ref rides on the class: a line that gains or loses the jump target
+  // gains or loses `tree-file-line-hit` with it, so comparing the class is
+  // enough to be sure the ref lands where it now belongs.
+  (prev, next) => prev.className === next.className && sameChunks(prev.chunks, next.chunks),
+);
+
+/**
+ * A value once it has stopped changing.
+ *
+ * For questions whose answers cost a process. Every intermediate value is
+ * skipped rather than queued, so a caret dragged down two hundred lines asks
+ * one question rather than two hundred.
+ */
+function useSettled<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    if (value === settled) return;
+    const timer = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, settled, ms]);
+  return settled;
+}
+
 /**
  * The Files tab's editor: a bar of open files, and whichever one is being read.
  *
@@ -27,6 +98,7 @@ const EDIT_HIGHLIGHT_LIMIT = 60_000;
  * Tabs are what an editor has for exactly that reason, so the tab has them.
  */
 export function FileEditor({ pane }: { pane: Pane }) {
+  const words = useWords();
   const drafts = useSylva((s) => s.fileDrafts);
   const store = useSylva.getState();
   const active = pane.files.find((f) => fileKey(f) === pane.activeFile) ?? null;
@@ -38,7 +110,7 @@ export function FileEditor({ pane }: { pane: Pane }) {
           <FileCode2 size={22} strokeWidth={1.5} />
           <p>No file open.</p>
           <p className="editor-empty-hint">
-            Pick one from the tree, a changed file, or anything the dryad touched in its
+            Pick one from the tree, a changed file, or anything the {words.agent} touched in its
             transcript — they all open here, and stay open as tabs.
           </p>
         </div>
@@ -54,7 +126,7 @@ export function FileEditor({ pane }: { pane: Pane }) {
           key={fileKey(active)}
           file={active}
           dirtyKey={fileKey(active)}
-          onClose={() => store.closeFile(pane.id, fileKey(active))}
+          onClose={() => store.closeFile(fileKey(active))}
         />
       ) : (
         <div className="editor-empty">
@@ -129,7 +201,7 @@ function EditorTabs({ pane, drafts }: { pane: Pane; drafts: Record<string, strin
             onDragLeave={() => setDragOver((at) => (at === i ? null : at))}
             onDrop={(e) => {
               e.preventDefault();
-              if (dragging !== null) store.moveFile(pane.id, dragging, i);
+              if (dragging !== null) store.moveFile(dragging, i);
               setDragging(null);
               setDragOver(null);
             }}
@@ -141,7 +213,7 @@ function EditorTabs({ pane, drafts }: { pane: Pane; drafts: Record<string, strin
             onAuxClick={(e) => {
               if (e.button !== 1) return;
               e.preventDefault();
-              store.closeFile(pane.id, key);
+              store.closeFile(key);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -152,7 +224,7 @@ function EditorTabs({ pane, drafts }: { pane: Pane; drafts: Record<string, strin
               role="tab"
               aria-selected={on}
               className="etab-name"
-              onClick={() => store.setActiveFile(pane.id, key)}
+              onClick={() => store.setActiveFile(key)}
               data-tip={`${file.path}${
                 dirty ? " · unsaved changes" : ""
               }\n${index[file.worktreeId]?.repoName ?? ""}`}
@@ -163,7 +235,7 @@ function EditorTabs({ pane, drafts }: { pane: Pane; drafts: Record<string, strin
             </button>
             <button
               className={`ghost etab-close ${dirty ? "etab-close-dirty" : ""}`}
-              onClick={() => store.closeFile(pane.id, key)}
+              onClick={() => store.closeFile(key)}
               aria-label={`Close ${name}`}
               data-tip={dirty ? "Unsaved changes — closing discards them" : "Close this file"}
             >
@@ -178,16 +250,14 @@ function EditorTabs({ pane, drafts }: { pane: Pane; drafts: Record<string, strin
       {pane.files.length > 1 && (
         <button
           className="ghost etabs-closeall"
-          onClick={() => void closeSet(pane, pane.files.map(fileKey), drafts)}
+          onClick={() => void closeSet(pane.files.map(fileKey), drafts)}
           data-tip="Close every open file · right-click a tab for more"
         >
           Close all
         </button>
       )}
 
-      {menu && (
-        <TabMenu at={menu} pane={pane} drafts={drafts} onClose={() => setMenu(null)} />
-      )}
+      {menu && <TabMenu at={menu} pane={pane} drafts={drafts} onClose={() => setMenu(null)} />}
     </div>
   );
 }
@@ -199,18 +269,16 @@ function EditorTabs({ pane, drafts }: { pane: Pane; drafts: Record<string, strin
  * all" said with three unsaved files open means something different from "close
  * all" with none, and only the caller knows which one you meant.
  */
-async function closeSet(
-  pane: Pane,
-  keys: string[],
-  drafts: Record<string, string>,
-): Promise<void> {
+async function closeSet(keys: string[], drafts: Record<string, string>): Promise<void> {
   if (keys.length === 0) return;
   const unsaved = keys.filter((key) => drafts[key] !== undefined);
 
   if (unsaved.length > 0) {
     const ok = await confirm({
       title:
-        unsaved.length === 1 ? "Close a file with unsaved changes?" : `Close ${unsaved.length} files with unsaved changes?`,
+        unsaved.length === 1
+          ? "Close a file with unsaved changes?"
+          : `Close ${unsaved.length} files with unsaved changes?`,
       body:
         unsaved.length === 1
           ? "The edits you haven't saved are discarded. The file on disk is untouched."
@@ -220,7 +288,7 @@ async function closeSet(
     });
     if (!ok) return;
   }
-  useSylva.getState().closeFiles(pane.id, keys);
+  useSylva.getState().closeFiles(keys);
 }
 
 /**
@@ -297,28 +365,28 @@ function TabMenu({
       style={{ left: at.x, top: at.y }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <button role="menuitem" onClick={run(() => store.closeFile(pane.id, at.key))}>
+      <button role="menuitem" onClick={run(() => store.closeFile(at.key))}>
         Close
         <span className="tabmenu-key">⌘W</span>
       </button>
       <button
         role="menuitem"
         disabled={others.length === 0}
-        onClick={run(() => closeSet(pane, others, drafts))}
+        onClick={run(() => closeSet(others, drafts))}
       >
         Close others
       </button>
       <button
         role="menuitem"
         disabled={left.length === 0}
-        onClick={run(() => closeSet(pane, left, drafts))}
+        onClick={run(() => closeSet(left, drafts))}
       >
         Close all to the left
       </button>
       <button
         role="menuitem"
         disabled={right.length === 0}
-        onClick={run(() => closeSet(pane, right, drafts))}
+        onClick={run(() => closeSet(right, drafts))}
       >
         Close all to the right
       </button>
@@ -329,7 +397,7 @@ function TabMenu({
       <button
         role="menuitem"
         disabled={saved.length === 0}
-        onClick={run(() => store.closeFiles(pane.id, saved))}
+        onClick={run(() => store.closeFiles(saved))}
       >
         Close saved
         {saved.length > 0 && <span className="tabmenu-key">{saved.length}</span>}
@@ -337,7 +405,7 @@ function TabMenu({
       <button
         role="menuitem"
         disabled={keys.length === 0}
-        onClick={run(() => closeSet(pane, keys, drafts))}
+        onClick={run(() => closeSet(keys, drafts))}
       >
         Close all
       </button>
@@ -357,8 +425,8 @@ function TabMenu({
         onClick={run(() => {
           // Show it where it lives — the tree, not the change list, since the
           // file may not have changed at all.
-          store.setFilesMode(pane.id, "browse");
-          store.setActiveFile(pane.id, at.key);
+          store.setFilesMode("browse");
+          store.setActiveFile(at.key);
         })}
       >
         Reveal in tree
@@ -368,7 +436,6 @@ function TabMenu({
         onClick={run(() => {
           if (file) {
             store.setPaneDiff(
-              pane.id,
               { worktreeId: file.worktreeId, path: file.path, staged: false },
               "git",
             );
@@ -379,10 +446,7 @@ function TabMenu({
       </button>
       {/* The question you ask after a surprising diff: which of the six dryads
           did this, and when. */}
-      <button
-        role="menuitem"
-        onClick={run(() => file && store.openTranscriptSearch(file.path))}
-      >
+      <button role="menuitem" onClick={run(() => file && store.openTranscriptSearch(file.path))}>
         Who touched this?
         <span className="tabmenu-key">⌘⇧F</span>
       </button>
@@ -451,7 +515,13 @@ function FileBody({
   /** The line the caret is on, which the blame bar follows. */
   const [caretLine, setCaretLine] = useState<number | null>(null);
   const changed = useChangedLines(worktreeId, path);
-  const blame = useLineBlame(worktreeId, path, caretLine);
+  /**
+   * Blame is a `git blame` process per line, so it is asked about the line you
+   * came to rest on rather than every line you passed through. Holding an arrow
+   * key down a file used to spawn one per row, which the machine felt.
+   */
+  const blameLine = useSettled(caretLine, BLAME_SETTLE_MS);
+  const blame = useLineBlame(worktreeId, path, blameLine);
 
   /**
    * Lines that differ from the last commit, as two sets the gutter can ask.
@@ -681,9 +751,10 @@ function FileBody({
                     ? "mod"
                     : "";
               return (
-                <span
+                <CodeLine
                   key={number}
-                  {...(hit ? { ref: lineRef } : {})}
+                  {...(hit ? { lineRef } : {})}
+                  chunks={chunks}
                   className={[
                     "tree-file-line",
                     hit ? "tree-file-line-hit" : "",
@@ -692,16 +763,7 @@ function FileBody({
                   ]
                     .filter(Boolean)
                     .join(" ")}
-                >
-                  {chunks.length === 0
-                    ? " "
-                    : chunks.map((chunk, c) => (
-                        <span key={c} className={chunkClass(chunk.type)}>
-                          {chunk.text}
-                        </span>
-                      ))}
-                  {"\n"}
-                </span>
+                />
               );
             })}
           </pre>
@@ -716,9 +778,7 @@ function FileBody({
               onChange={(e) => setDraft(e.target.value)}
               // Every way a caret can move: typing, clicking, arrowing, and
               // the browser's own selection changes.
-              onSelect={(e) =>
-                setCaretLine(lineOfOffset(draft, e.currentTarget.selectionStart))
-              }
+              onSelect={(e) => setCaretLine(lineOfOffset(draft, e.currentTarget.selectionStart))}
               onKeyDown={(e) => {
                 // The one shortcut worth having here; everything else is a
                 // normal textarea, including Tab, which still moves focus out.
@@ -742,7 +802,10 @@ function FileBody({
       <BlameBar
         line={caretLine}
         blame={blame.data ?? null}
-        loading={blame.isLoading}
+        // Still moving counts as still reading: the answer on screen is about
+        // the line you were on a moment ago, and showing it under the new
+        // number would be a quiet lie.
+        loading={blame.isLoading || blameLine !== caretLine}
         failed={blame.isError}
       />
     </div>

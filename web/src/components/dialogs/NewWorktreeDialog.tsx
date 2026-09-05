@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { RefreshCw, X } from "lucide-react";
 import type { BranchInfo, Repo } from "sylva-shared";
 import { api, ApiFailure } from "../../lib/api";
+import { branchFor, KIND_TIP, WORKTREE_KINDS, type WorktreeKind } from "../../lib/branch";
+import { useQueryClient } from "@tanstack/react-query";
 import { useBranches, useInvalidate, usePreferences, useRepos } from "../../lib/queries";
+import { useHasForest, useWords } from "../../lib/theme";
 import { useSylva } from "../../state/store";
 import { Dialog } from "../Dialog";
 
@@ -50,17 +53,42 @@ export function NewWorktreeDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const words = useWords();
+  const hasForest = useHasForest();
   const repos = useRepos();
   const prefs = usePreferences();
   const invalidate = useInvalidate();
+  const qc = useQueryClient();
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [repoId, setRepoId] = useState("");
+  /**
+   * What kind of work this is, and what you're calling it. Held apart, because
+   * the branch is made of both and the sidebar only ever shows the second.
+   */
+  const [kind, setKind] = useState<WorktreeKind>("feature");
+  const [name, setName] = useState("");
   const [branch, setBranch] = useState("");
   const [baseRef, setBaseRef] = useState("");
   /** What's typed in the existing-branch search box, which is not the choice. */
   const [branchQuery, setBranchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * Fetch before cutting the tree.
+   *
+   * A setting rather than a one-off choice: whether you start from the remote
+   * or from what is already on disk is a habit, not a decision you want to make
+   * again every time. It opens on the saved preference and writes back to it,
+   * so the box you ticked last week is the box you find ticked today.
+   */
+  const [pull, setPull] = useState<boolean | null>(null);
+  const pulling = pull ?? prefs.data?.pullBeforeWorktree ?? true;
+
+  // The preference arrives after the first render, and again after a save
+  // elsewhere; an untouched checkbox should follow it.
+  useEffect(() => {
+    if (open) setPull(null);
+  }, [open]);
 
   const available = repos.data?.filter((r) => r.available) ?? [];
   const effectiveRepoId = repo?.id ?? repoId ?? "";
@@ -69,18 +97,33 @@ export function NewWorktreeDialog({
   const allBranches = useMemo(() => branches.data ?? [], [branches.data]);
   const freeBranches = useMemo(() => allBranches.filter((b) => !b.worktreeId), [allBranches]);
   const matches = useMemo(() => search(freeBranches, branchQuery), [freeBranches, branchQuery]);
+  /** The branch the two fields add up to. Shown under them, so there is no
+      moment where you find out what you named it after the fact. */
+  const newBranch = branchFor(kind, name);
+  const taken = allBranches.some((b) => b.name === newBranch);
+  const ready = mode === "new" ? Boolean(newBranch) && !taken : Boolean(branch.trim());
 
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
       const created = await api.createWorktree(targetRepoId, {
-        branch: branch.trim(),
+        branch: mode === "new" ? newBranch : branch.trim(),
         ...(mode === "new" ? { baseRef: baseRef.trim() || "HEAD" } : {}),
+        pull: pulling,
       });
+      // Remember the habit, but never let saving it get in the way of the
+      // worktree that has already been made.
+      if (prefs.data && prefs.data.pullBeforeWorktree !== pulling) {
+        void api
+          .setPreferences({ ...prefs.data, pullBeforeWorktree: pulling })
+          .then(() => qc.invalidateQueries({ queryKey: ["preferences"] }))
+          .catch(() => {});
+      }
       invalidate.worktrees(targetRepoId);
       invalidate.branches();
       useSylva.getState().openWorktree(created.worktree.id);
+      setName("");
       setBranch("");
       setBaseRef("");
       setBranchQuery("");
@@ -95,11 +138,14 @@ export function NewWorktreeDialog({
   return (
     <Dialog title="New worktree" open={open} onClose={onClose}>
       <p className="dialog-hint">
-        Grows a new tree in the forest and takes you to it. Prompt the dryad once you're there.
+        {hasForest
+          ? "Grows a new tree in the forest and takes you to it."
+          : "Creates a worktree and takes you to it."}{" "}
+        Prompt the {words.agent} once you're there.
         {prefs.data?.copyEnvFiles && (
           <>
             {" "}
-            Any <code>.env</code> files go with it, so the tree can run as soon as it exists.
+            Any <code>.env</code> files go with it, so it can run as soon as it exists.
           </>
         )}
       </p>
@@ -158,16 +204,51 @@ export function NewWorktreeDialog({
 
         {mode === "new" ? (
           <>
+            <div className="field">
+              Kind
+              {/* Three, and no "other". A prefix is only worth having if it is
+                  the same three words every time — a free-text prefix box
+                  produces `feat/`, `feature/` and `features/` inside a month,
+                  and then the list sorts into three piles of the same thing. */}
+              <div className="seg">
+                {WORKTREE_KINDS.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={kind === k ? "seg-on" : ""}
+                    onClick={() => setKind(k)}
+                    data-tip={KIND_TIP[k]}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label className="field">
-              Branch name
+              Name
               <input
                 autoFocus
                 className="mono-input"
-                placeholder="feature/night-mode"
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                data-tip="Name for the branch this worktree will create"
+                placeholder="night mode"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                data-tip="What you'll call this worktree. The branch takes the kind as its prefix."
               />
+              {/* The preview is the point of splitting the field in two: you
+                  type English and watch the ref it becomes. */}
+              {name.trim() && (
+                <span className={`branch-preview ${taken ? "branch-preview-taken" : ""}`}>
+                  {newBranch ? (
+                    <>
+                      branch <code>{newBranch}</code>
+                      {taken && " already exists"}
+                    </>
+                  ) : (
+                    "That name has nothing in it git can use."
+                  )}
+                </span>
+              )}
             </label>
             <label className="field">
               Base ref <span className="field-hint">(default: HEAD)</span>
@@ -203,7 +284,6 @@ export function NewWorktreeDialog({
               aria-label="Search branches"
               data-tip="Type any part of a branch name to narrow the list"
             />
-
             {branch && (
               <div className="branch-chosen">
                 <span className="branch-chosen-label">checking out</span>
@@ -219,7 +299,6 @@ export function NewWorktreeDialog({
                 </button>
               </div>
             )}
-
             {branches.isLoading ? (
               <span className="field-hint">Reading the branches…</span>
             ) : freeBranches.length === 0 ? (
@@ -255,6 +334,27 @@ export function NewWorktreeDialog({
           </div>
         )}
 
+        <label
+          className="dialog-check"
+          data-tip="Fetch from the remote before the worktree is cut, so it starts from the latest"
+        >
+          <input
+            type="checkbox"
+            checked={pulling}
+            onChange={(e) => setPull(e.target.checked)}
+            disabled={busy}
+          />
+          <span>
+            <RefreshCw size={11} className="check-glyph" aria-hidden /> Pull first
+            <span className="field-hint">
+              {mode === "new"
+                ? "Fetches, then starts the branch from the remote's copy of the base ref rather than from whatever this machine last had."
+                : "Fetches, then catches the branch up to its upstream — only where that's a fast-forward, so commits of your own are never lost."}{" "}
+              A repository with no remote skips it.
+            </span>
+          </span>
+        </label>
+
         {error && (
           <div className="form-error" data-tip="Git wouldn't create the worktree">
             {error}
@@ -273,12 +373,16 @@ export function NewWorktreeDialog({
           <button
             type="submit"
             className="btn-primary"
-            disabled={busy || !branch.trim() || !targetRepoId}
+            disabled={busy || !ready || !targetRepoId}
             data-tip={
-              branch.trim() ? "Create the worktree and open it" : "Name a branch first"
+              ready
+                ? "Create the worktree and open it"
+                : mode === "new"
+                  ? "Name the worktree first"
+                  : "Pick a branch first"
             }
           >
-            {busy ? "Growing…" : "Create worktree"}
+            {busy ? (pulling ? "Fetching, then growing…" : "Growing…") : "Create worktree"}
           </button>
         </div>
       </form>

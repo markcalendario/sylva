@@ -1,6 +1,7 @@
-import { isValidElement, type ReactNode } from "react";
+import { Fragment, isValidElement, useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { chunkClass, highlightLines, languageForFence } from "../lib/highlight";
 import { CopyButton } from "./CopyButton";
 
 /**
@@ -20,10 +21,51 @@ function textOf(node: ReactNode): string {
 }
 
 /**
+ * A fenced block, coloured by the same tokeniser the file editor uses.
+ *
+ * An answer is mostly code, and until now the code in it was one flat grey —
+ * the one place in the app where a string and a keyword looked alike. Reading
+ * a patch in a chat should not be harder than reading the same patch in the
+ * editor two tabs away.
+ *
+ * A fence with no language, or one whose language Prism doesn't have, renders
+ * exactly as before: guessing a grammar colours it confidently wrong, which is
+ * worse than not colouring it at all.
+ */
+function Code({ className, children }: { className?: string; children?: ReactNode }) {
+  const language = languageForFence(/language-([\w-]+)/.exec(className ?? "")?.[1] ?? "");
+  const source = language ? textOf(children) : "";
+  // Re-tokenising on every streamed chunk is the one thing that could make a
+  // long answer crawl, so the work is keyed to the text itself.
+  const lines = useMemo(
+    () => (language ? highlightLines(source.replace(/\n$/, ""), language) : null),
+    [source, language],
+  );
+
+  if (!lines) return <code className={className}>{children}</code>;
+
+  return (
+    <code className={className}>
+      {lines.map((chunks, i) => (
+        <Fragment key={i}>
+          {i > 0 && "\n"}
+          {chunks.map((chunk, j) => (
+            <span key={j} className={chunkClass(chunk.type)}>
+              {chunk.text}
+            </span>
+          ))}
+        </Fragment>
+      ))}
+    </code>
+  );
+}
+
+/**
  * Defined once rather than inline: a fresh object every render would make
  * react-markdown rebuild the whole document for each streamed chunk.
  */
 const COMPONENTS: Components = {
+  code: Code,
   /**
    * A code block is the thing in an answer most likely to be wanted verbatim —
    * a command, a patch, a config — and selecting one by hand in a scrolling

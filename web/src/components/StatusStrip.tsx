@@ -1,20 +1,14 @@
 import { GitBranch } from "lucide-react";
 import { compactTokens } from "../lib/format";
+import { useWords } from "../lib/theme";
 import { useSylva } from "../state/store";
 import { UsageMeter } from "./UsageMeter";
 
 export function StatusStrip({ onAbout }: { onAbout: () => void }) {
-  // Follows the active pane, which is what "the worktree you're looking at"
-  // means once there can be two of them.
-  const worktreeId = useSylva(
-    (s) => s.panes.find((p) => p.id === s.activePaneId)?.worktreeId ?? null
-  );
-  const status = useSylva((s) =>
-    worktreeId ? s.statuses[worktreeId] : undefined
-  );
-  const session = useSylva((s) =>
-    worktreeId ? s.sessions[worktreeId] : undefined
-  );
+  const words = useWords();
+  const worktreeId = useSylva((s) => s.pane.worktreeId);
+  const status = useSylva((s) => (worktreeId ? s.statuses[worktreeId] : undefined));
+  const session = useSylva((s) => (worktreeId ? s.sessions[worktreeId] : undefined));
 
   const dirty = status
     ? status.staged.length + status.unstaged.length + status.untracked.length
@@ -29,39 +23,34 @@ export function StatusStrip({ onAbout }: { onAbout: () => void }) {
       <UsageMeter />
 
       {!worktreeId || !status ? (
-        <span
-          className="strip-item"
-          data-tip="Open a worktree to see its git status here">
+        <span className="strip-item" data-tip="Open a worktree to see its git status here">
           no worktree open
         </span>
       ) : (
         <>
-          <span
-            className="strip-branch"
-            data-tip="Branch checked out in this worktree">
+          <span className="strip-branch" data-tip="Branch checked out in this worktree">
             <GitBranch size={12} />
             {status.branch ?? "detached"}
           </span>
           {status.upstream && (
             <span
               className="strip-item"
-              data-tip={`Commits ahead ↑ and behind ↓ ${status.upstream}`}>
+              data-tip={`Commits ahead ↑ and behind ↓ ${status.upstream}`}
+            >
               ↑{status.ahead} ↓{status.behind}
             </span>
           )}
           <span
             className="strip-item"
-            data-tip={
-              dirty === 0
-                ? "Nothing uncommitted here"
-                : "Files changed but not committed"
-            }>
+            data-tip={dirty === 0 ? "Nothing uncommitted here" : "Files changed but not committed"}
+          >
             {dirty === 0 ? "clean" : `${dirty} dirty`}
           </span>
           {session && (
             <span
               className="strip-item strip-usage"
-              data-tip={`${session.totalTokens.toLocaleString()} tokens read and written by this worktree's dryad`}>
+              data-tip={`${session.totalTokens.toLocaleString()} tokens read and written by this worktree's ${words.agent}`}
+            >
               {compactTokens(session.totalTokens)}
             </span>
           )}
@@ -70,10 +59,7 @@ export function StatusStrip({ onAbout }: { onAbout: () => void }) {
 
       {/* A signature belongs at the bottom of the window, not on the wordmark —
           which people expect to take them home, and now does. */}
-      <button
-        className="strip-credit"
-        onClick={onAbout}
-        data-tip="What Sylva is, and who built it">
+      <button className="strip-credit" onClick={onAbout} data-tip="What Sylva is, and who built it">
         jello
       </button>
     </footer>

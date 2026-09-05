@@ -110,9 +110,9 @@ export function useShortcuts(): void {
       if (commandHeld(e) && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         e.stopPropagation();
-        const pane = store.panes.find((p) => p.id === store.activePaneId) ?? store.panes[0];
-        const file = pane?.files.find((f) => fileKey(f) === pane.activeFile);
-        store.openTranscriptSearch(pane?.tab === "files" && file ? file.path : "");
+        const { pane } = store;
+        const file = pane.files.find((f) => fileKey(f) === pane.activeFile);
+        store.openTranscriptSearch(pane.tab === "files" && file ? file.path : "");
         return;
       }
 
@@ -133,25 +133,23 @@ export function useShortcuts(): void {
       // ⌘1–4 jump straight to a tab. Cycling is fine for stepping through;
       // going *there* is what you actually want most of the time.
       if (commandHeld(e) && !e.shiftKey && !e.altKey && /^[1-4]$/.test(e.key)) {
-        const pane = store.panes.find((p) => p.id === store.activePaneId) ?? store.panes[0];
         const tab = TABS[Number(e.key) - 1];
-        if (!pane?.worktreeId || !tab) return;
+        if (!store.pane.worktreeId || !tab) return;
         e.preventDefault();
         e.stopPropagation();
         if (store.view !== "workspace") store.setView("workspace");
-        store.setPaneTab(pane.id, tab);
+        store.setPaneTab(tab);
         return;
       }
 
       // ⌘⌥← / → step through the Files tab's open files, which is where the
       // browser's own tab shortcuts would go if the browser weren't using them.
       if (commandHeld(e) && e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-        const pane = store.panes.find((p) => p.id === store.activePaneId) ?? store.panes[0];
-        if (!pane || pane.files.length < 2) return;
+        if (store.pane.files.length < 2) return;
         e.preventDefault();
         e.stopPropagation();
-        store.setPaneTab(pane.id, "files");
-        store.cycleFile(pane.id, e.key === "ArrowRight" ? 1 : -1);
+        store.setPaneTab("files");
+        store.cycleFile(e.key === "ArrowRight" ? 1 : -1);
         return;
       }
 
@@ -159,11 +157,11 @@ export function useShortcuts(): void {
       // when there is a file. Anywhere else it stays the browser's, because
       // stealing "close the tab" everywhere would be worse than not having it.
       if (commandHeld(e) && !e.shiftKey && e.key.toLowerCase() === "w") {
-        const pane = store.panes.find((p) => p.id === store.activePaneId) ?? store.panes[0];
-        if (!pane || pane.tab !== "files" || !pane.activeFile) return;
+        const { pane } = store;
+        if (pane.tab !== "files" || !pane.activeFile) return;
         e.preventDefault();
         e.stopPropagation();
-        store.closeFile(pane.id, pane.activeFile);
+        store.closeFile(pane.activeFile);
         return;
       }
 

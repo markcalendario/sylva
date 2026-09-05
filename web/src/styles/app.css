@@ -71,22 +71,22 @@
   font-size: var(--text-xs);
   padding: 3px var(--pad-3);
   border-radius: var(--radius);
-  color: var(--ember);
-  border: 1px solid var(--ember-dim);
-  background: rgb(255 107 91 / 0.08);
+  color: var(--waiting);
+  border: 1px solid var(--waiting-dim);
+  background: color-mix(in srgb, var(--waiting) 8%, transparent);
 }
 
 .topbar-blocked:hover {
-  background: rgb(255 107 91 / 0.16);
-  border-color: var(--ember);
+  background: color-mix(in srgb, var(--waiting) 16%, transparent);
+  border-color: var(--waiting);
 }
 
 .blocked-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--ember);
-  box-shadow: 0 0 6px var(--ember);
+  background: var(--waiting);
+  box-shadow: 0 0 6px var(--waiting);
   animation: blocked-pulse 1.6s ease-in-out infinite;
 }
 
@@ -567,22 +567,6 @@
 }
 
 /* ---------- settings sections ---------- */
-
-/* Separation comes from the parent's gap; the rule is only a divider. Carrying
-   its own margin as well is what made two adjacent sections sit further apart
-   than a section and the thing above it. */
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pad-3);
-  padding-bottom: var(--pad-4);
-  border-bottom: 1px solid var(--pine-3);
-}
-
-.settings-section:last-of-type {
-  border-bottom: none;
-  padding-bottom: 0;
-}
 
 .settings-heading {
   font-family: var(--font-pixel);
@@ -1117,8 +1101,20 @@ body:has(.sidebar-resizer-on) {
   color: var(--moss);
 }
 
-.wt-name {
+/* Two lines, because a worktree now has two names: what you call it, and what
+   git calls it. The first is the one you are looking for, so it gets the
+   weight and the width; the second sits under it at the smallest size the app
+   has, for the moment you need to know which `login` this is. */
+.wt-text {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.wt-name {
   min-width: 0;
   color: var(--moon);
   overflow: hidden;
@@ -1128,10 +1124,46 @@ body:has(.sidebar-resizer-on) {
   font-size: var(--text-xs);
 }
 
+.wt-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--moss-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  line-height: var(--leading-tight);
+}
+
+/* ---- dragging one into place ---- */
+
+/* The row being carried stays where it was, faded, so the list doesn't
+   reflow under the pointer while you are aiming. */
+.wt-row-lift {
+  opacity: 0.4;
+}
+
+/* Where it would land. A line rather than a fill: the fill is what "this row
+   is open" means, and a drop target that borrowed it would say the wrong
+   thing for as long as you hovered. */
+.wt-row-drop::after {
+  content: "";
+  position: absolute;
+  left: var(--pad-2);
+  right: var(--pad-2);
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--firefly);
+}
+
 /* Beside the branch rather than under it: a second line per row costs more
    vertical space than the fact is worth, and only one row per repo has it. */
 .wt-main-tag {
   margin-left: 5px;
+  padding: 0 4px;
+  border: 1px solid var(--pine-3);
+  border-radius: 3px;
   font-family: var(--font-ui);
   font-size: var(--text-xxs);
   color: var(--moss-dim);
@@ -1194,7 +1226,7 @@ body:has(.sidebar-resizer-on) {
 
 .btn-primary {
   background: var(--firefly);
-  color: #241a08;
+  color: var(--on-accent);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -1375,10 +1407,32 @@ button:disabled {
   background: var(--ember);
 }
 
+/* What this conversation is about. Monospace, because it is a git ref and
+   reads as one, and truncating rather than wrapping — the header is a strip,
+   and a circle of five worktrees must not be allowed to turn it into a
+   paragraph. */
+.chat-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--moss);
+  font-family: var(--font-mono);
+}
+
+.chat-branch svg {
+  flex-shrink: 0;
+  color: var(--moss-dim);
+}
+
 .chat-header-facts {
   display: inline-flex;
   align-items: center;
   gap: var(--pad-2);
+  flex-shrink: 0;
   font-family: var(--font-mono);
 }
 
@@ -1392,6 +1446,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: var(--pad-2);
+  flex-shrink: 0;
 }
 
 .agent-body {
@@ -1543,6 +1598,32 @@ button:disabled {
   flex-shrink: 0;
 }
 
+/* A prompt whose turn ended badly.
+   The rail is the one place the whole conversation is visible at once, which
+   makes it the right place to say so — the result itself is announced at the
+   far end of a turn, several screens below the prompt that caused it.
+
+   The number carries the colour and the text stays as it was: the words are
+   still yours and still perfectly good, and a red line of text reads as though
+   the prompt were the mistake. */
+.prompt-nav-failed .prompt-nav-num {
+  color: var(--ember);
+}
+
+.prompt-nav-failed .prompt-nav-text {
+  color: var(--moss);
+}
+
+/* Enough of a tint to find while scanning the rail, not enough to shout from
+   a column of forty. */
+.prompt-nav-failed {
+  background: color-mix(in srgb, var(--ember) 8%, transparent);
+}
+
+.prompt-nav-failed:hover {
+  background: color-mix(in srgb, var(--ember) 14%, transparent);
+}
+
 .prompt-nav-on .prompt-nav-num {
   color: var(--firefly);
 }
@@ -1619,6 +1700,7 @@ button:disabled {
   color: var(--moon);
   border-bottom-right-radius: 2px;
 }
+
 
 .msg-assistant {
   background: var(--pine-1);
@@ -1772,7 +1854,9 @@ button:disabled {
   border: 1px solid var(--pine-3);
   border-radius: 4px;
   padding: 0 4px;
-  font-size: 0.9em;
+  /* Mono faces run large against a proportional face at the same nominal size;
+     0.85 is where a `word` in code stops out-sizing the words around it. */
+  font-size: 0.85em;
   overflow-wrap: anywhere;
 }
 
@@ -1822,7 +1906,12 @@ button:disabled {
   background: none;
   border: none;
   padding: 0;
-  font-size: var(--text-sm);
+  /* A step down from the prose around it. A fence is reference material — you
+     scan it, and go back to the sentence that sent you there — so it earns
+     less of the column than the sentence does. It still scales with the text
+     size control, like everything else. */
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
 }
 
 .md blockquote {
@@ -1880,10 +1969,17 @@ button:disabled {
 
 /* The summary and the "open this file" control share a line; the expanded
    input and any error wrap underneath, full width. */
+/* A step the agent took, at the smallest size the app has.
+   These are the bulk of a long turn — thirty rows of them between two
+   sentences — and they are scanned rather than read: you are looking for the
+   one command that did the thing, not reading each one. Set at the same size
+   as the prose they sit between, they drown it. */
 .tool-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
 }
 
 .tool-row > .tool-detail,
@@ -1987,30 +2083,6 @@ button:disabled {
   border-left: 2px solid var(--ember-dim);
 }
 
-.turn-result {
-  align-self: center;
-  font-family: var(--font-pixel);
-  font-size: var(--text-xs);
-  letter-spacing: var(--track-label);
-  color: var(--moss-dim);
-  padding: var(--pad-1) 0;
-  display: flex;
-  gap: var(--pad-2);
-}
-
-.turn-success {
-  color: var(--sapling);
-}
-
-.turn-error,
-.turn-interrupted {
-  color: var(--ember);
-}
-
-.turn-cost {
-  color: var(--moss-dim);
-}
-
 .thinking {
   align-self: flex-start;
   color: var(--firefly);
@@ -2031,7 +2103,7 @@ button:disabled {
   border: 1px solid var(--firefly-dim);
   border-radius: var(--radius-lg);
   padding: var(--pad-3);
-  box-shadow: 0 0 24px rgb(255 180 84 / 0.08);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--firefly) 8%, transparent);
 }
 
 .permission-title {
@@ -2062,7 +2134,7 @@ button:disabled {
   border: 1px solid var(--ember-dim);
   border-radius: var(--radius);
   padding: var(--pad-2) var(--pad-3);
-  background: rgb(255 107 91 / 0.06);
+  background: color-mix(in srgb, var(--ember) 6%, transparent);
 }
 
 .force-warning .pixel-label {
@@ -2131,54 +2203,180 @@ button:disabled {
    type. Stretching used to be free — a two-row textarea is barely taller than
    a button — but a composer that follows a twenty-line prompt would drag a
    twenty-line paperclip up with it. */
-.prompt-row {
+/* ── The composer's own controls ────────────────────────────────────────────
+   Model, effort and permissions, sitting on the box you are typing into.
+
+   They read as part of the composer rather than as a toolbar above it: no
+   borders, no fills, just labelled selects at the smallest size, so the row
+   disappears until you look for it. The permission one is the exception —
+   full access earns a colour, because it is the one setting here that can do
+   something you can't undo. */
+.composer-settings {
   display: flex;
-  gap: var(--pad-2);
-  align-items: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pad-3);
+  min-width: 0;
+  color: var(--moss-dim);
 }
 
-.prompt-bar textarea {
-  flex: 1;
-  resize: none;
+.composer-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.composer-pick svg {
+  flex-shrink: 0;
+}
+
+.composer-pick select {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--moss);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  /* The native arrow is drawn at a size that belongs to a form, not to a
+     strip of hints. The label beside it is the affordance. */
+  appearance: none;
+  max-width: 15ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-pick:hover,
+.composer-pick:hover select {
+  color: var(--moon);
+}
+
+.composer-pick-danger,
+.composer-pick-danger select {
+  color: var(--ember);
+}
+
+/* ── The composer ───────────────────────────────────────────────────────────
+   One box, with everything that acts on what you have written standing on its
+   floor.
+
+   It used to be a row: a paperclip, a text field and a Send button, three
+   siblings of equal weight with the settings floating above them. That reads
+   as a toolbar with a text field in it, and it made the writing surface — the
+   only part you actually touch — the same rank as a button you press once.
+
+   Now the box *is* the composer. The field has no edges of its own; the box's
+   border is the field's border, and the controls sit inside it, below the
+   text, in the two groups the questions divide into: what it will be sent with
+   on the left, what sends it on the right. */
+.composer-box {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius-lg);
   background: var(--pine-0);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+/* The whole box lights when the caret is in it, rather than the textarea
+   drawing a second ring inside the first. */
+.composer-box:focus-within {
+  border-color: var(--moss-dim);
+}
+
+.composer-field {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.composer-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: none;
+  background: none;
+  padding: var(--pad-3) var(--pad-3) var(--pad-2);
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
   /* Height is set from the content as you type; this is the floor it starts
      at, and what it returns to when the box is emptied. The ceiling is the
      script's alone — a second one here could hold the box shorter than the
      height that decided not to turn scrolling on. */
-  min-height: var(--prompt-min-h);
+  min-height: calc(var(--text-sm) * var(--leading-normal) * 2 + var(--pad-3) + var(--pad-2));
 }
 
-/* Square, the size of one row of the composer at its shortest. */
-.attach-btn {
-  align-self: flex-end;
-  flex-shrink: 0;
+/* The field is inside the box's focus ring already; a second one around the
+   textarea would draw a rectangle inside a rounded rectangle. */
+.composer-input:focus-visible {
+  outline: none;
+}
+
+.composer-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-3);
+  padding: 0 var(--pad-2) var(--pad-2) var(--pad-3);
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-1);
+  margin-left: auto;
+}
+
+/* A quiet round control: the paperclip, and Stop while a turn runs. */
+.composer-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--prompt-min-h);
-  height: var(--prompt-min-h);
-  padding: 0;
-  border: 1px dashed var(--pine-3);
-  border-radius: var(--radius);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   color: var(--moss-dim);
-  font-size: var(--text-lg);
-  line-height: 1;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
 }
 
-.prompt-row > .btn-primary,
-.prompt-row > .btn-quiet,
-.prompt-row > .btn-danger {
-  align-self: flex-end;
-  flex-shrink: 0;
-  min-height: var(--prompt-min-h);
-}
-
-.attach-btn:hover {
-  color: var(--firefly);
-  border-color: var(--firefly-dim);
+.composer-icon:hover {
+  color: var(--moon);
   background: var(--pine-2);
+}
+
+.composer-stop:hover {
+  color: var(--ember);
+}
+
+/* Send. The one filled thing in the composer, and round, because it is the
+   only control here that is a single irreversible act rather than a setting. */
+.composer-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--firefly);
+  color: var(--on-accent);
+  transition:
+    opacity 120ms ease,
+    filter 120ms ease;
+}
+
+.composer-send:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Nothing to send. Kept in place rather than hidden — a button that vanishes
+   when the box empties makes the row jump every time you clear it. */
+.composer-send:disabled {
+  opacity: 0.32;
+  cursor: default;
 }
 
 .attach-list {
@@ -2247,6 +2445,12 @@ button:disabled {
   border-color: var(--ember-dim);
 }
 
+/* A permission mode that isn't the default, said quietly. "Supervised" is a
+   choice, not a warning — only full access gets the danger colour. */
+.agent-settings-mode {
+  color: var(--moss);
+}
+
 .agent-settings-warn {
   color: var(--ember);
 }
@@ -2298,7 +2502,7 @@ button:disabled {
 .permtoggle-on {
   color: var(--ember);
   border-color: var(--ember-dim);
-  background: rgb(255 107 91 / 0.08);
+  background: color-mix(in srgb, var(--ember) 8%, transparent);
 }
 
 .permtoggle-on .permtoggle-track {
@@ -2344,14 +2548,6 @@ button:disabled {
 
 .wt-header-state {
   color: var(--moss);
-}
-
-.prompt-actions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pad-1);
-  align-self: flex-end;
-  flex-shrink: 0;
 }
 
 .agent-unavailable {
@@ -2578,10 +2774,47 @@ button:disabled {
   color: var(--firefly);
 }
 
-.git-file-path {
+/* ── A path that has to fit ──────────────────────────────────────────────────
+   The name identifies a file; the directories only place it. So the
+   directories are what shrinks and takes the ellipsis, and the name — its
+   extension included — is pinned and stays readable however narrow the panel
+   is dragged. Shared by the change list and by a commit's files, because a
+   path is cut the same way wherever it is drawn. */
+.git-file-path,
+.commit-file-path {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.path-lead {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--moss-dim);
+}
+
+.path-tail {
+  flex-shrink: 0;
+  /* A name wider than the whole row is still a name: it takes the row rather
+     than pushing past it, and gives up its own end only when there is nothing
+     else left to give. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The change mark is an icon rather than a character here, so it is centred as
+   a box. Everywhere else `.chg` still draws a glyph and still centres as text. */
+.git-file-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.git-file-glyph svg {
+  flex-shrink: 0;
 }
 
 .commit-form {
@@ -2770,7 +3003,7 @@ button:disabled {
 }
 
 .dl-add {
-  background: rgb(127 208 104 / 0.09);
+  background: color-mix(in srgb, var(--sapling) 9%, transparent);
 }
 
 .dl-add .dl-sign {
@@ -2778,7 +3011,7 @@ button:disabled {
 }
 
 .dl-del {
-  background: rgb(255 107 91 / 0.09);
+  background: color-mix(in srgb, var(--ember) 9%, transparent);
 }
 
 .dl-del .dl-sign {
@@ -2823,7 +3056,7 @@ button:disabled {
 }
 
 .dialog::backdrop {
-  background: rgb(6 10 8 / 0.7);
+  background: var(--scrim);
 }
 
 /* One flow gap for every dialog, rather than each element bringing its own
@@ -2873,6 +3106,38 @@ button:disabled {
   color: var(--moss-dim);
 }
 
+/* A checkbox and its sentence, on one line and clickable as one thing —
+   the whole row is a label, so the words work as well as the box. */
+.dialog-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pad-2);
+  font-size: var(--text-sm);
+  color: var(--moss);
+  cursor: pointer;
+}
+
+.dialog-check input {
+  margin: 2px 0 0;
+  accent-color: var(--ember);
+  flex: none;
+}
+
+/* A checkbox whose label needs a sentence under it: the label names the thing,
+   the hint says what it will actually do. */
+.dialog-check .field-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+}
+
+.check-glyph {
+  vertical-align: -1px;
+  margin-right: 3px;
+  color: var(--moss-dim);
+}
+
 /* ---------- branch picker ---------- */
 
 /* Capped rather than unbounded: a repository with hundreds of branches would
@@ -2907,7 +3172,19 @@ button:disabled {
 
 .branch-option-on {
   background: var(--pine-2);
-  box-shadow: inset 2px 0 0 var(--firefly);
+  position: relative;
+}
+
+.branch-option-on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  translate: 0 -50%;
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--firefly);
 }
 
 .branch-option-name {
@@ -3103,13 +3380,13 @@ button:disabled {
 
 .permchoice-on {
   border-color: var(--firefly);
-  background: rgb(255 180 84 / 0.08);
+  background: color-mix(in srgb, var(--firefly) 8%, transparent);
   color: var(--moon);
 }
 
 .permchoice-danger.permchoice-on {
   border-color: var(--ember);
-  background: rgb(255 107 91 / 0.1);
+  background: color-mix(in srgb, var(--ember) 10%, transparent);
   color: var(--ember);
 }
 
@@ -3129,9 +3406,11 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+/* Bigger than it was. This is the one control in the header that leaves the
+   app entirely, and it used to be the smallest thing on the row. */
 .wt-launch {
-  font-size: var(--text-xs);
-  padding: 3px var(--pad-3);
+  font-size: var(--text-sm);
+  padding: var(--pad-2) var(--pad-3);
   white-space: nowrap;
 }
 
@@ -3693,7 +3972,7 @@ button:disabled {
 }
 
 .tree-file-editor::selection {
-  background: rgb(255 180 84 / 0.24);
+  background: color-mix(in srgb, var(--firefly) 24%, transparent);
 }
 
 .tree-file-actions {
@@ -3783,113 +4062,6 @@ button:disabled {
   font-style: italic;
 }
 
-/* ── Saved prompts ─────────────────────────────────────────────────────── */
-
-.saved-wrap {
-  position: relative;
-  display: flex;
-}
-
-.saved-menu {
-  position: absolute;
-  bottom: calc(100% + var(--pad-2));
-  left: 0;
-  z-index: 60;
-  min-width: 300px;
-  max-width: 400px;
-  max-height: 340px;
-  overflow-y: auto;
-  list-style: none;
-  margin: 0;
-  padding: var(--pad-1);
-  background: var(--pine-1);
-  border: 1px solid var(--pine-3);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-raise);
-}
-
-.saved-menu-head,
-.saved-menu-foot {
-  font-family: var(--font-pixel);
-  font-size: var(--text-xxs);
-  letter-spacing: var(--track-label);
-  color: var(--moss-dim);
-  padding: var(--pad-1) var(--pad-2);
-}
-
-.saved-item {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 100%;
-  text-align: left;
-  padding: var(--pad-2);
-  border-radius: var(--radius);
-}
-
-.saved-item:hover {
-  background: var(--pine-2);
-}
-
-.saved-label {
-  font-size: var(--text-sm);
-  color: var(--moon);
-}
-
-.saved-preview {
-  font-size: var(--text-xs);
-  color: var(--moss-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.saved-editor {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--pad-1);
-}
-
-.saved-editor-row {
-  display: grid;
-  grid-template-columns: minmax(6ch, 14ch) 1fr auto;
-  align-items: baseline;
-  gap: var(--pad-2);
-  font-size: var(--text-xs);
-  padding: 2px var(--pad-2);
-  border-radius: var(--radius);
-  background: var(--pine-0);
-}
-
-.saved-editor-label {
-  color: var(--moon);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.saved-editor-text {
-  color: var(--moss-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.saved-editor-new {
-  display: grid;
-  grid-template-columns: minmax(8ch, 16ch) 1fr auto;
-  gap: var(--pad-2);
-  align-items: start;
-  margin-top: var(--pad-2);
-}
-
-.saved-editor-new textarea {
-  resize: vertical;
-}
-
 /* ── Pull request dialog ───────────────────────────────────────────────── */
 
 .dialog a {
@@ -3974,10 +4146,6 @@ button:disabled {
 
 /* ---------- panes ---------- */
 
-.main-split {
-  flex-direction: row;
-}
-
 .pane {
   flex: 1;
   display: flex;
@@ -3986,14 +4154,32 @@ button:disabled {
   min-height: 0;
 }
 
-.main-split .pane + .pane {
-  border-left: 1px solid var(--pine-3);
+/* Where a pane's panels are drawn. Positioned, so a panel kept alive behind
+   another can be lifted out of the flow without leaving the pane. */
+.pane-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-/* Only marked when there are two: with one pane there is nothing to
-   distinguish it from, and a permanent highlight is just noise. */
-.pane-active .wt-header {
-  box-shadow: inset 2px 0 0 var(--firefly-dim);
+.pane-layer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Out of the way, but still laid out at exactly the size it will have when it
+   comes back — which is what keeps the scroll position meaningful. `visibility`
+   rather than `display`, for the same reason: `display: none` gives the chat a
+   height of zero, and "stay at the bottom" would then scroll it to nowhere. */
+.pane-layer-off {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .pane-empty {
@@ -4013,12 +4199,6 @@ button:disabled {
 .pane-empty-hint {
   color: var(--moss-dim);
   font-size: var(--text-sm);
-}
-
-.pane-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--pad-1);
 }
 
 .tab-dot {
@@ -4086,8 +4266,8 @@ button:disabled {
 /* Blocked is the loudest thing in the strip, and the only one that moves fast
    enough to catch an eye that isn't looking for it. */
 .tab-state-blocked {
-  background: var(--ember);
-  box-shadow: 0 0 0 0 var(--ember);
+  background: var(--waiting);
+  box-shadow: 0 0 0 0 var(--waiting);
   animation: tab-knock 1.1s ease-out infinite;
 }
 
@@ -4384,9 +4564,9 @@ button:disabled {
 
 .settings-page {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-columns: 210px minmax(0, 1fr);
   gap: var(--pad-5);
-  max-width: 1100px;
+  max-width: 1080px;
   margin: 0 auto;
   width: 100%;
   padding: var(--pad-5);
@@ -4401,10 +4581,26 @@ button:disabled {
 .settings-rail {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-2);
+  gap: var(--pad-3);
   align-self: start;
   position: sticky;
   top: var(--pad-5);
+}
+
+/* The way out, at the top of the rail rather than buried under the sections:
+   it is the thing you reach for most, and it was the last item on the list. */
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  align-self: flex-start;
+  padding: var(--pad-1) var(--pad-2) var(--pad-1) 0;
+  color: var(--moss);
+  font-size: var(--text-sm);
+}
+
+.settings-back:hover {
+  color: var(--moon);
 }
 
 .settings-rail nav {
@@ -4413,13 +4609,31 @@ button:disabled {
   gap: 1px;
 }
 
+/* ── The active-row marker ──────────────────────────────────────────────────
+   A solid edge down the left of a *rounded* row is what produced the crescent:
+   the border follows the corner radius, so its ends taper to a point and the
+   whole thing reads as a moon stuck to the side of the item. The fix isn't a
+   thinner edge, it's a mark that was never a border — a short pill, held off
+   the corners entirely, centred on the row's own height.
+
+   Rows with square corners (a diff line, a table row) keep their inset edge:
+   there is no radius there to bend it, and a full-height rule is the right
+   mark for something that stacks. */
 .settings-rail-item {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
   text-align: left;
   padding: var(--pad-2) var(--pad-3);
   border-radius: var(--radius);
   color: var(--moss);
   font-size: var(--text-sm);
-  border-left: 2px solid transparent;
+  position: relative;
+}
+
+.settings-rail-item svg {
+  flex: none;
+  color: var(--moss-dim);
 }
 
 .settings-rail-item:hover {
@@ -4430,36 +4644,156 @@ button:disabled {
 .settings-rail-on {
   color: var(--moon);
   background: var(--pine-1);
-  border-left-color: var(--firefly);
+}
+
+.settings-rail-on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  translate: 0 -50%;
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--firefly);
+}
+
+.settings-rail-on svg {
+  color: var(--firefly);
+}
+
+.settings-rail-foot {
+  margin: 0;
+  padding: 0 var(--pad-3);
+  color: var(--moss-dim);
+  font-size: var(--text-xxs);
+  line-height: var(--leading-snug);
 }
 
 .settings-body {
   display: flex;
   flex-direction: column;
-  gap: var(--pad-5);
+  gap: var(--pad-4);
   padding-bottom: var(--pad-5);
 }
 
+/* Says what the page is once, at the top, so no section has to say it again. */
+.settings-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-1);
+  padding-bottom: var(--pad-2);
+}
+
+.settings-title h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+  color: var(--moon);
+  font-weight: 500;
+}
+
+.settings-title p {
+  margin: 0;
+  color: var(--moss);
+  font-size: var(--text-sm);
+  max-width: 60ch;
+}
+
+/* A card per section rather than rules between them. The sections are genuinely
+   separate subjects — sound has nothing to do with git — and a boxed group says
+   that at a glance where a horizontal line only says "and now something else". */
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius-lg);
+  background: var(--pine-1);
+  overflow: hidden;
+  /* Cleared by the sticky save bar, so the last card is never half-covered. */
+  scroll-margin-top: var(--pad-4);
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pad-3);
+  padding: var(--pad-3) var(--pad-4);
+  border-bottom: 1px solid var(--pine-3);
+  background: var(--pine-2);
+}
+
+.settings-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--radius);
+  background: var(--pine-0);
+  color: var(--firefly);
+}
+
+.settings-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-card-title h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--moon);
+}
+
+.settings-card-title p {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--moss-dim);
+  line-height: var(--leading-snug);
+  max-width: 64ch;
+}
+
+.settings-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-4);
+  padding: var(--pad-4);
+}
+
 /* Sits with the page rather than inside whichever section happens to be
-   dirty, because saving applies to all of them at once. */
+   dirty, because saving applies to all of them at once — and it only appears
+   once there is something to save. */
 .settings-save {
   position: sticky;
-  bottom: 0;
+  bottom: var(--pad-3);
   grid-column: 2;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--pad-3);
-  padding: var(--pad-3) 0;
-  background: linear-gradient(to top, var(--pine-0) 60%, transparent);
+  padding: var(--pad-2) var(--pad-3);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius-lg);
+  background: var(--pine-2);
+  box-shadow: var(--shadow-raise);
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.settings-save-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
 .settings-save-note {
+  margin-right: auto;
   font-size: var(--text-sm);
-  color: var(--moss-dim);
-}
-
-.settings-save-on .settings-save-note {
   color: var(--firefly);
 }
 
@@ -4687,7 +5021,19 @@ button:disabled {
 
 .commit-file-on {
   background: var(--pine-2);
-  box-shadow: inset 2px 0 0 var(--firefly);
+  position: relative;
+}
+
+.commit-file-on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  translate: 0 -50%;
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--firefly);
 }
 
 .commit-file-name {
@@ -4707,12 +5053,7 @@ button:disabled {
 }
 
 .commit-file-path {
-  flex: 1;
-  min-width: 0;
   font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .commit-file-count {
@@ -4773,7 +5114,7 @@ button:disabled {
 }
 
 .wt-picked {
-  background: rgb(255 180 84 / 0.09);
+  background: color-mix(in srgb, var(--firefly) 9%, transparent);
 }
 
 .selection-bar {
@@ -4784,7 +5125,7 @@ button:disabled {
   margin-bottom: var(--pad-2);
   border: 1px solid var(--firefly-dim);
   border-radius: var(--radius);
-  background: rgb(255 180 84 / 0.08);
+  background: color-mix(in srgb, var(--firefly) 8%, transparent);
 }
 
 .selection-count {
@@ -4930,7 +5271,7 @@ button:disabled {
 
 /* The line you came here to see, marked so it isn't lost in the file. */
 .tree-file-line-hit {
-  background: rgb(255 180 84 / 0.14);
+  background: color-mix(in srgb, var(--firefly) 14%, transparent);
   box-shadow: inset 2px 0 0 var(--firefly);
 }
 
@@ -5098,7 +5439,7 @@ button:disabled {
 
 .pr-tag-current {
   color: var(--firefly);
-  background: rgb(255 180 84 / 0.12);
+  background: color-mix(in srgb, var(--firefly) 12%, transparent);
 }
 
 .pr-author {
@@ -5252,15 +5593,15 @@ button:disabled {
   font-size: var(--text-xs);
   padding: var(--pad-1) var(--pad-3);
   border-radius: var(--radius);
-  color: var(--ember);
-  border: 1px solid var(--ember-dim);
-  background: rgb(255 107 91 / 0.1);
+  color: var(--waiting);
+  border: 1px solid var(--waiting-dim);
+  background: color-mix(in srgb, var(--waiting) 10%, transparent);
   flex-shrink: 0;
 }
 
 .waiting:hover {
-  background: rgb(255 107 91 / 0.18);
-  border-color: var(--ember);
+  background: color-mix(in srgb, var(--waiting) 18%, transparent);
+  border-color: var(--waiting);
 }
 
 /* Ambient: you look at it only when it isn't green. */
@@ -5356,12 +5697,12 @@ button:disabled {
 }
 
 .chat-header-waiting .chat-state {
-  color: var(--ember);
+  color: var(--waiting);
 }
 
 .chat-header-waiting .chat-state-dot {
-  background: var(--ember);
-  box-shadow: 0 0 6px var(--ember);
+  background: var(--waiting);
+  box-shadow: 0 0 6px var(--waiting);
 }
 
 .chat-header-trouble .chat-state {
@@ -5383,12 +5724,6 @@ button:disabled {
   color: var(--pine-3);
 }
 
-.chat-header-actions {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--pad-2);
-}
 
 .chat-stop {
   display: inline-flex;
@@ -5402,7 +5737,7 @@ button:disabled {
 }
 
 .chat-stop:hover {
-  background: rgb(255 107 91 / 0.14);
+  background: color-mix(in srgb, var(--ember) 14%, transparent);
 }
 
 /* Quieter than Stop: forgetting is deliberate, but it is not an emergency. */
@@ -5503,17 +5838,234 @@ button:disabled {
   }
 }
 
-/* A turn landing: a soft bloom, once. */
-.turn-success {
-  animation: turn-bloom 900ms ease-out;
+/* ── How a block arrives ────────────────────────────────────────────────────
+   A sentence used to *appear*: absent one frame, fully present the next, at
+   full contrast. That is the harshest thing a screen can do, and in a turn it
+   happens twenty times — every sentence, every tool call, every result.
+
+   Only the newest block animates. A block already on screen must never move
+   again: an assistant message is replaced on every streamed chunk, and older
+   ones remount when you scroll back for them. Either would turn the column
+   into a flicker.
+
+   Three to choose from, set as an attribute on the document (lib/motion.ts).
+   None of them is slow enough to be waited for. */
+
+.block-fresh {
+  animation: block-rise 220ms cubic-bezier(0.22, 0.8, 0.28, 1) both;
 }
 
-@keyframes turn-bloom {
+/* Opacity only. Nothing moves; it stops being absent. */
+:root[data-motion="fade"] .block-fresh {
+  animation: block-fade 180ms ease-out both;
+}
+
+:root[data-motion="rise"] .block-fresh {
+  animation: block-rise 220ms cubic-bezier(0.22, 0.8, 0.28, 1) both;
+}
+
+/* Opens downward from its own top edge, as though set down onto the column.
+   The transform origin is what makes it read as unfolding rather than growing:
+   the top stays put and the bottom travels. */
+:root[data-motion="unfold"] .block-fresh {
+  transform-origin: 50% 0;
+  animation: block-unfold 260ms cubic-bezier(0.22, 0.8, 0.28, 1) both;
+}
+
+@keyframes block-fade {
   0% {
-    box-shadow: 0 0 0 0 rgb(127 208 104 / 0.45);
+    opacity: 0;
   }
   100% {
-    box-shadow: 0 0 0 14px rgb(127 208 104 / 0);
+    opacity: 1;
+  }
+}
+
+@keyframes block-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes block-unfold {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.84) translateY(-2px);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+  }
+}
+
+/* ── How a turn ends ────────────────────────────────────────────────────────
+   A seam across the transcript, not a message in it.
+
+   The ending used to be a little centred chip, which put it in the same
+   register as everything the agent said — one more line in the column, easy to
+   scroll straight past. What it actually marks is a boundary: everything above
+   belongs to the turn that just finished. So it is drawn as one: a hairline
+   running the width of the column, broken in the middle by a badge saying how
+   it went. Scrolling a long conversation, the rules are what you see, and the
+   turns become things you can count.
+
+   One choreography for all three outcomes, because they are the same event:
+   the rule draws outward from the centre, then the badge settles onto it. What
+   differs is colour, and what happens after it lands. Nothing bounces and
+   nothing shakes — an ending should feel like something coming to rest. */
+
+.turn-seal {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--pad-3);
+  padding: var(--pad-2) 0;
+  /* Each outcome sets these two and changes nothing else. */
+  --seal-ink: var(--moss-dim);
+  --seal-line: var(--pine-3);
+}
+
+.turn-seal-rule {
+  height: 1px;
+  background: var(--seal-line);
+}
+
+/* The rules grow out of the badge rather than in from the edges: the ending
+   happens at the middle of the line, and the mark should start where the event
+   did. */
+.turn-seal-rule:first-child {
+  transform-origin: 100% 50%;
+}
+
+.turn-seal-rule:last-child {
+  transform-origin: 0 50%;
+}
+
+.turn-seal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-2);
+  padding: 3px var(--pad-3);
+  border: 1px solid var(--seal-line);
+  border-radius: 999px;
+  background: var(--pine-1);
+  color: var(--seal-ink);
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.turn-seal-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--seal-ink);
+}
+
+/* The cost rides along inside the badge, quieter than the word it follows —
+   it is the kind of number you look up, not one you are being told. */
+.turn-seal-cost {
+  padding-left: var(--pad-2);
+  border-left: 1px solid var(--pine-3);
+  color: var(--moss-dim);
+  font-family: var(--font-mono);
+  letter-spacing: var(--track-normal);
+  text-transform: none;
+}
+
+.turn-success {
+  --seal-ink: var(--sapling);
+  --seal-line: color-mix(in srgb, var(--sapling) 30%, var(--pine-3));
+}
+
+/* Stopped on purpose. The one outcome with no colour at all: you already know
+   it happened, because you are the one who did it. */
+.turn-interrupted {
+  --seal-ink: var(--moss);
+  --seal-line: var(--pine-3);
+}
+
+.turn-error {
+  --seal-ink: var(--ember);
+  --seal-line: color-mix(in srgb, var(--ember) 32%, var(--pine-3));
+}
+
+/* ---- the choreography ----
+   Only the newest ending plays it. Scrolling back remounts results that landed
+   an hour ago, and a page of them all animating at once is a fireworks display
+   nobody asked for. */
+
+.turn-fresh .turn-seal-rule {
+  animation: seal-draw 560ms cubic-bezier(0.22, 0.7, 0.2, 1) both;
+}
+
+.turn-fresh .turn-seal-badge {
+  /* Waits for the rule to be most of the way out, so the badge reads as
+     landing on a line that was already there. */
+  animation: seal-land 420ms cubic-bezier(0.22, 0.7, 0.2, 1) 160ms both;
+}
+
+/* Landed cleanly: one soft bloom leaving the badge, once, after it settles.
+   The whole reward. */
+.turn-fresh.turn-success .turn-seal-badge {
+  animation:
+    seal-land 420ms cubic-bezier(0.22, 0.7, 0.2, 1) 160ms both,
+    seal-bloom 900ms ease-out 420ms both;
+}
+
+/* Failed: the mark breathes twice and stops. Slow enough to read as concern
+   rather than an alarm — the error itself is already on screen. */
+.turn-fresh.turn-error .turn-seal-icon {
+  animation: seal-breathe 1.6s ease-in-out 520ms 2 both;
+}
+
+@keyframes seal-draw {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes seal-land {
+  0% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes seal-bloom {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--sapling) 38%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 16px color-mix(in srgb, var(--sapling) 0%, transparent);
+  }
+}
+
+@keyframes seal-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
   }
 }
 
@@ -5522,7 +6074,10 @@ button:disabled {
   .agent-body-working::before,
   .fireflies i,
   .prompt-bar-sent,
-  .turn-success,
+  .block-fresh,
+  .turn-fresh .turn-seal-rule,
+  .turn-fresh .turn-seal-badge,
+  .turn-fresh .turn-seal-icon,
   .conn-pip.conn-disconnected {
     animation: none;
   }
@@ -5560,12 +6115,6 @@ a svg,
 
 .faq-open .faq-chevron {
   transform: rotate(90deg);
-}
-
-.turn-result {
-  display: flex;
-  align-items: center;
-  gap: var(--pad-2);
 }
 
 .tree-glyph {
@@ -5674,7 +6223,7 @@ a svg,
 }
 
 .rail-tree.wt-picked {
-  background: rgb(255 180 84 / 0.16);
+  background: color-mix(in srgb, var(--firefly) 16%, transparent);
 }
 
 .rail-dot {
@@ -5898,18 +6447,47 @@ a svg,
   gap: var(--pad-2);
 }
 
+/* One control, two halves: the editor is the click, the caret is everything
+   else. They share a border so it reads as a single button with a lid on it
+   rather than two buttons that happen to be touching. */
+.wt-launch-split {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.wt-launch-split .wt-launch-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.wt-launch-split .wt-launch-toggle {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: none;
+  padding-left: var(--pad-2);
+  padding-right: var(--pad-2);
+}
+
+/* With the editor switched off the caret is the whole button again. */
+.wt-launch-toggle.wt-launch-alone {
+  border-radius: var(--radius);
+  border-left: 1px solid var(--pine-3);
+  padding-left: var(--pad-3);
+}
+
 .wt-launch-caret {
   font-size: var(--text-xxs);
   color: var(--moss-dim);
 }
 
-/* Which worktree — asked only when there is more than one to mean. */
+/* Where this worktree can be opened — and, when a dryad tends several, which
+   of them the row means. */
 .wt-launch-menu {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
   z-index: 40;
-  min-width: 180px;
+  min-width: 240px;
   display: flex;
   flex-direction: column;
   padding: var(--pad-1);
@@ -5921,12 +6499,74 @@ a svg,
 
 .wt-launch-item {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--pad-2);
   padding: var(--pad-2);
   border-radius: var(--radius);
   text-align: left;
   color: var(--moon);
+  font-size: var(--text-sm);
+}
+
+.wt-launch-item-label {
+  white-space: nowrap;
+}
+
+/* The editor list: a radio group wearing a menu's clothes. The tick column is
+   always there so the labels don't shuffle sideways when the choice moves. */
+.wt-launch-choice {
+  color: var(--moss);
+}
+
+.wt-launch-choice-on {
+  color: var(--moon);
+}
+
+.wt-launch-tick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  flex: none;
+  color: var(--firefly);
+}
+
+.wt-launch-command {
+  display: flex;
+  gap: var(--pad-1);
+  padding: var(--pad-1) var(--pad-2) var(--pad-2) calc(var(--pad-2) + 13px + var(--pad-2));
+}
+
+.wt-launch-command input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xxs);
+}
+
+.wt-launch-command button {
+  padding: 2px var(--pad-2);
+  font-size: var(--text-xxs);
+}
+
+/* One action, several worktrees: the action names itself once and the rows
+   underneath say which tree, rather than repeating the verb four times. */
+.wt-launch-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.wt-launch-section + .wt-launch-section {
+  margin-top: var(--pad-1);
+  padding-top: var(--pad-1);
+  border-top: 1px solid var(--pine-3);
+}
+
+.wt-launch-section-head {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  color: var(--moss-dim);
+  padding: var(--pad-1) var(--pad-2);
 }
 
 .wt-launch-item:hover {
@@ -6163,7 +6803,7 @@ a svg,
   justify-content: center;
   align-items: flex-start;
   padding: 12vh var(--pad-4) var(--pad-4);
-  background: rgb(0 0 0 / 0.5);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -6290,10 +6930,121 @@ a svg,
   text-align: center;
 }
 
-/* Tokens where a dollar figure used to be, on the forest roster. */
-.ow-chip-tokens {
+/* ── The workspace cards ────────────────────────────────────────────────────
+   Under the map in the forest, and the whole page without one.
+
+   A card rather than a table row, because of what the page is for: you come
+   here to pick a worktree and go to it. A row is something you read along; a
+   card is something you aim at, and the four facts on it are context for the
+   choice rather than a column to be compared down. */
+.wt-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: var(--pad-3);
+}
+
+.wt-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-1);
+  padding: var(--pad-3);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius-lg);
+  background: var(--pine-1);
+  text-align: left;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.wt-card:hover {
+  border-color: var(--moss-dim);
+  background: var(--pine-2);
+}
+
+/* State on the card's own edge, not as a badge: the glyph already says what is
+   happening, and this is the same thing said quietly enough to be read from
+   the other side of the grid. */
+.wt-card-working {
+  border-color: var(--firefly-dim);
+}
+
+.wt-card-error {
+  border-color: var(--ember-dim);
+}
+
+/* The one the pane is holding. */
+.wt-card-on {
+  border-color: var(--firefly);
+}
+
+.wt-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  min-width: 0;
+}
+
+.wt-card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--moon);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.wt-card-unseen {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--firefly);
+}
+
+/* The branch, after the repository and quieter than it — the card leads with
+   what you call the worktree, and this is the line that says which one that
+   is when two repos both have a `login`. */
+.wt-card-branch {
+  margin-left: var(--pad-2);
+  padding-left: var(--pad-2);
+  border-left: 1px solid var(--pine-3);
+  font-family: var(--font-mono);
+}
+
+.wt-card-repo {
+  /* Indented to the branch name above it rather than to the card, so the
+     glyph's column stays the glyph's. */
+  padding-left: calc(24px + var(--pad-2));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--moss-dim);
   font-size: var(--text-xs);
+}
+
+.wt-card-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pad-3);
+  margin-top: var(--pad-2);
+  padding-top: var(--pad-2);
+  border-top: 1px solid var(--pine-3);
+  color: var(--moss);
+  font-size: var(--text-xs);
+}
+
+.wt-card-dirty {
+  color: var(--moon);
+}
+
+/* Last, and pushed to the far edge: the one fact you look at deliberately
+   rather than in passing. */
+.wt-card-tokens {
+  margin-left: auto;
+  color: var(--moss-dim);
 }
 
 /* ── The tab menu ───────────────────────────────────────────────────────────
@@ -6487,18 +7238,6 @@ a svg,
 /* ── @path completion ───────────────────────────────────────────────────────
    Above the prompt box rather than below it: the box sits at the bottom of the
    window, and a list opening downward would be off screen. */
-.prompt-field {
-  position: relative;
-  flex: 1;
-  display: flex;
-  min-width: 0;
-}
-
-.prompt-field textarea {
-  flex: 1;
-  min-width: 0;
-}
-
 .mentions {
   position: absolute;
   bottom: calc(100% + var(--pad-1));
@@ -6561,6 +7300,35 @@ a svg,
   flex-shrink: 0;
   color: var(--stream);
   font-size: var(--text-xxs);
+}
+
+/* What a command expects after it, next to its name — the one thing you cannot
+   guess from the name alone. */
+.slash-args {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  color: var(--firefly-dim);
+}
+
+/* Prose, not a path: left to right, cut at the end, and not monospaced. */
+.slash-desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--moss-dim);
+  font-size: var(--text-xxs);
+}
+
+/* The list is a moment away when nothing is running in this worktree — asking
+   costs a process. Saying so beats an empty box. */
+.mentions-note {
+  padding: var(--pad-2);
+  color: var(--moss-dim);
+  font-size: var(--text-xs);
 }
 
 /* ── The fleet ──────────────────────────────────────────────────────────────
@@ -7027,7 +7795,7 @@ a svg,
   padding: var(--pad-2) var(--pad-3);
   border: 1px solid var(--ember-dim);
   border-radius: var(--radius);
-  background: rgb(255 107 91 / 0.08);
+  background: color-mix(in srgb, var(--ember) 8%, transparent);
   color: var(--ember);
   font-size: var(--text-sm);
 }
