@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { GitPullRequest } from "lucide-react";
 import type { PullRequestResult } from "sylva-shared";
 import { api, ApiFailure } from "../lib/api";
 import { Dialog } from "./Dialog";
@@ -15,9 +16,12 @@ function titleFromBranch(branch: string): string {
 export function CreatePrButton({
   worktreeId,
   branch,
+  /** So the button can join a cluster it is drawn inside rather than beside. */
+  className = "btn-quiet",
 }: {
   worktreeId: string;
   branch: string | null;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(false);
@@ -53,7 +57,7 @@ export function CreatePrButton({
   return (
     <>
       <button
-        className="btn-quiet"
+        className={className}
         onClick={start}
         disabled={!branch}
         data-tip={
@@ -62,7 +66,8 @@ export function CreatePrButton({
             : "Detached HEAD — nothing to open a pull request from"
         }
       >
-        ⑂ Pull request
+        <GitPullRequest size={13} />
+        Pull request
       </button>
 
       <Dialog open={open} title="Open a pull request" onClose={() => setOpen(false)}>

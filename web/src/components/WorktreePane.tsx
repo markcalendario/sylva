@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { PanelsTopLeft } from "lucide-react";
 import { circleMembers, sessionBusy, type BackgroundTask } from "sylva-shared";
 import { api } from "../lib/api";
-import { worktreeLabel } from "../lib/branch";
+
 import { tabCycleChord } from "../lib/shortcuts";
 import { useWords } from "../lib/theme";
 import type { Words } from "../lib/words";
 import { spriteStateFor, TABS, useSylva, type Pane, type Tab } from "../state/store";
+import { BranchName } from "./BranchName";
 import { Sprite } from "../sprites/Sprite";
 import { AgentPanel } from "./AgentPanel";
 import { FilesPanel } from "./FilesPanel";
@@ -277,7 +278,7 @@ export function WorktreePane({ pane }: { pane: Pane }) {
                 {circle.length} worktrees, one {words.agent}
               </span>
             ) : (
-              worktreeLabel(status?.branch, "…")
+              <BranchName branch={status?.branch ?? "…"} />
             )}
           </div>
           <div className="wt-header-sub">

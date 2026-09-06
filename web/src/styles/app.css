@@ -966,7 +966,10 @@ body:has(.sidebar-resizer-on) {
 .wt-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  /* Two pixels was set when a row was one line of text. A row carries a name
+     and a branch under it now, so the same gap read as the two lines of one
+     row being further apart than two neighbouring rows. */
+  gap: var(--pad-2);
   margin-left: 13px;
   padding-left: var(--pad-2);
   border-left: 1px solid var(--pine-3);
@@ -2686,7 +2689,16 @@ button:disabled {
   letter-spacing: 0.02em;
 }
 
-/* ---------- git panel ---------- */
+/* ══════════════════════════════════════════════════════════════════════════
+   Git
+   ══════════════════════════════════════════════════════════════════════════
+   The column reads top to bottom as the order you actually work in: where
+   this branch is (the remote), what other people are asking of it (the PR),
+   what you have changed, and the commit that ends it. Everything is drawn
+   from the tokens alone, so the professional theme inherits the same shapes
+   with the colour taken out — the tone dots and the diff are the only places
+   hue survives there, because those are the only places it carries meaning
+   no shade of grey could. */
 
 .git-panel {
   flex: 1;
@@ -2696,49 +2708,135 @@ button:disabled {
 
 /* The column itself no longer scrolls — only the file lists inside it do — so
    a worktree with sixty changed files can't push the commit box off the
-   bottom of the screen. */
+   bottom of the screen. Padding belongs to the bands inside it rather than
+   to the column, so the head can carry a hairline the full width and the
+   scrollbar can sit against the edge. */
 .git-side {
-  width: 340px;
+  width: 348px;
   flex-shrink: 0;
   border-right: 1px solid var(--pine-3);
-  padding: var(--pad-3);
   display: flex;
   flex-direction: column;
-  gap: var(--pad-3);
   min-height: 0;
+  background: var(--pine-0);
+}
+
+/* ── The band across the top ────────────────────────────────────────────── */
+.git-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+  padding: var(--pad-3) var(--pad-3) var(--pad-2);
+  border-bottom: 1px solid var(--pine-3);
 }
 
 .git-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* No padding at the foot: the commit box sticks to the bottom edge, and a
+     strip of padding under it is a strip of content sliding past in the gap.
+     The spacer below gives the last section its breathing room instead. */
+  padding: var(--pad-3) var(--pad-3) 0;
   display: flex;
   flex-direction: column;
   gap: var(--pad-4);
 }
 
+.git-scroll::after {
+  content: "";
+  flex: 0 0 var(--pad-3);
+}
+
+/* What spans every worktree a shared dryad tends. Sits under the tabs rather
+   than above them: it is a qualifier on the view, not the view itself. */
 .git-toolbar {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: var(--pad-2);
-  padding-bottom: var(--pad-3);
-  border-bottom: 1px solid var(--pine-3);
 }
 
-.git-toolbar-branch {
-  display: flex;
-  align-items: baseline;
-  gap: var(--pad-2);
-  flex-wrap: wrap;
+.git-toolbar-actions {
+  margin-left: auto;
 }
 
-.git-branch-name {
-  font-family: var(--font-mono);
-  font-size: var(--text-md);
+/* ── One cluster of remote actions ───────────────────────────────────────
+   Pull, Push and the pull request are three halves of the same question, so
+   they are drawn as one control with hairlines between them rather than as
+   three floating chips that wrap onto two lines in a 348px column. */
+.git-ops {
+  display: inline-flex;
+  align-items: stretch;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-1);
+  overflow: hidden;
+}
+
+.git-op {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px var(--pad-2);
+  border-left: 1px solid var(--pine-3);
+  color: var(--moss);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.git-op:first-child {
+  border-left: none;
+}
+
+.git-op:hover:not(:disabled) {
+  background: var(--pine-2);
   color: var(--moon);
 }
 
+/* Inside a control with no gaps, a ring drawn outside the button would be
+   clipped by the cluster's own overflow. */
+.git-op:focus-visible {
+  outline-offset: -3px;
+  border-radius: 0;
+}
+
+/* How much there is to pull or push, said on the button that does it. The
+   answer used to live nowhere in this panel at all, so "is there anything
+   waiting on the remote" was a question you left the app to answer. */
+.git-op-num {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--firefly-dim);
+  color: var(--moon);
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ── Where this branch sits ──────────────────────────────────────────────── */
+.git-remote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad-2);
+}
+
+.git-remote-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pad-2);
+  min-width: 0;
+}
+
 .git-upstream {
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--moss-dim);
   overflow: hidden;
@@ -2746,32 +2844,160 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* Not a failure and not styled as one — but it is the reason a push will stop
+   to ask you something, so it is not left at the faintest grey either. */
 .git-upstream-none {
-  color: var(--firefly-dim);
+  color: var(--moss);
 }
 
 .git-divergence {
   margin-left: auto;
+  flex-shrink: 0;
   display: inline-flex;
-  gap: var(--pad-2);
+  align-items: baseline;
+  gap: 5px;
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-xxs);
 }
 
-.git-toolbar-actions {
+/* ── Everything in the worktree at once ──────────────────────────────────
+   Kept in its own strip above the groups, so "all" always means the same
+   thing in the same place and is never a click away from one group's own. */
+.git-work {
   display: flex;
+  align-items: center;
   gap: var(--pad-2);
-  flex-wrap: wrap;
+  padding: var(--pad-1) var(--pad-1) var(--pad-1) var(--pad-2);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  background: var(--pine-1);
+}
+
+.git-work-tally {
+  font-size: var(--text-xs);
+  color: var(--moss);
+}
+
+.git-work-all {
+  margin-left: auto;
+  padding: 2px var(--pad-2);
+  border-radius: var(--radius);
+  font-size: var(--text-xs);
+  color: var(--moss);
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.git-work-all:hover:not(:disabled) {
+  background: var(--pine-3);
+  color: var(--moon);
+}
+
+/* ── The one icon button this panel uses ─────────────────────────────────
+   Same box, same size, wherever it appears — a file's three controls, a
+   group's discard, the diff header. A row of them is a column you can aim at
+   without reading, which is what the mixed-width word buttons weren't. */
+.git-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  color: var(--moss-dim);
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.git-icon:hover:not(:disabled) {
+  background: var(--pine-3);
+  color: var(--moon);
+}
+
+/* Destroying something is always the last control in a row or a header, and
+   always the quiet one until you go for it. It should be reachable without
+   being offered. */
+.git-group-discard:hover,
+.git-file-discard:hover,
+.git-discard-all:hover:not(:disabled),
+.file-row-discard:hover {
+  color: var(--ember);
+  background: var(--ember-dim);
+}
+
+/* One row's discard stays out of the way until the row is under the pointer —
+   a list you are reading should not offer to delete on every line. The two
+   "open it somewhere else" controls keep it company: they are answers to a
+   question you only ask about the row you are already looking at. */
+.git-file-discard,
+.git-file-open,
+.git-file-external,
+.file-row-external,
+.file-row-discard {
+  opacity: 0;
+}
+
+/* The row's own action is the exception: it is the reason the row has a
+   gutter at all, so it is legible before you reach it and only brightens
+   when you do. */
+.git-file-action {
+  opacity: 0.5;
+}
+
+.git-file:hover .git-file-discard,
+.git-file:focus-within .git-file-discard,
+.git-file:hover .git-file-open,
+.git-file:focus-within .git-file-open,
+.git-file:hover .git-file-external,
+.git-file:focus-within .git-file-external,
+.git-file:hover .git-file-action,
+.git-file:focus-within .git-file-action,
+.file-row:hover .file-row-discard,
+.file-row:focus-within .file-row-discard,
+.file-row:hover .file-row-external,
+.file-row:focus-within .file-row-external,
+.git-file-discard:focus-visible,
+.git-file-open:focus-visible,
+.git-file-external:focus-visible,
+.file-row-external:focus-visible,
+.file-row-discard:focus-visible {
+  opacity: 1;
+}
+
+/* Handing a file to the desktop leaves Sylva, so it is drawn in the colour
+   everything that leaves Sylva is drawn in — the same blue as a link and as
+   the Files-tab open beside it. */
+.git-file-external:hover:not(:disabled),
+.file-row-external:hover,
+.open-file-btn:hover:not(:disabled) {
+  color: var(--stream);
+}
+
+/* It failed, and the tooltip now carries the reason. The colour is there to
+   send you to the tooltip; it takes itself back off after a few seconds. */
+.open-file-bad,
+.open-file-bad:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--ember);
 }
 
 .git-group-all {
-  margin-left: auto;
+  padding: 2px var(--pad-1);
+  border-radius: var(--radius);
   font-size: var(--text-xxs);
   color: var(--moss-dim);
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .git-group-all:hover {
-  color: var(--firefly);
+  background: var(--pine-3);
+  color: var(--moon);
 }
 
 /* ── A path that has to fit ──────────────────────────────────────────────────
@@ -2817,66 +3043,113 @@ button:disabled {
   flex-shrink: 0;
 }
 
-.commit-form {
-  border-top: 1px solid var(--pine-3);
-  padding-top: var(--pad-3);
-}
-
-/* Sticky rather than merely last: it stays reachable while the lists above it
-   scroll, which is the whole point of moving the scroll inside.
-   Only for a single worktree — with several, each section carries its own box
-   and several sticky boxes would stack up and eat the panel. */
-.git-section:not(.git-section-shared) .commit-form {
-  position: sticky;
-  bottom: 0;
-  background: var(--pine-0);
-  padding-bottom: var(--pad-2);
-}
-
-.diff-close {
-  margin-left: auto;
-}
-
-.git-clean {
-  color: var(--moss-dim);
-  font-size: var(--text-sm);
+/* ── A group of files ────────────────────────────────────────────────────
+   Three lists that look alike would be one list with headings in it, so each
+   is given a coloured dot and a ruled header: staged is grown, changed is
+   working, new is untracked. The dot is the whole of the colour — the label
+   itself stays plain, which is what keeps three headers in a column from
+   reading as three warnings. */
+.git-group {
+  display: flex;
+  flex-direction: column;
 }
 
 .git-group-head {
   display: flex;
   align-items: center;
   gap: var(--pad-2);
+  padding: 0 var(--pad-1) var(--pad-1) var(--pad-2);
   margin-bottom: var(--pad-1);
+  border-bottom: 1px solid var(--pine-3);
+}
+
+.git-group-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  background: var(--moss-dim);
+}
+
+.git-group-staged .git-group-dot {
+  background: var(--sapling);
+}
+
+.git-group-changed .git-group-dot {
+  background: var(--firefly);
+}
+
+.git-group-new .git-group-dot {
+  background: var(--stream);
+}
+
+.git-group-title {
+  font-family: var(--font-pixel);
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-label);
+  text-transform: lowercase;
+  color: var(--moon);
+}
+
+.git-group-gap {
+  flex: 1;
 }
 
 .git-count {
+  min-width: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--pine-2);
+  color: var(--moss);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--moss-dim);
+  font-size: var(--text-xxs);
+  line-height: 1.5;
+  text-align: center;
 }
 
+.git-group-files {
+  display: flex;
+  flex-direction: column;
+}
+
+.git-clean {
+  margin: 0;
+  padding: var(--pad-3);
+  border: 1px dashed var(--pine-3);
+  border-radius: var(--radius);
+  color: var(--moss-dim);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+/* ── One file ────────────────────────────────────────────────────────────
+   The gutter of controls is always the same width whether or not it is being
+   shown, so a list doesn't reflow under the pointer and the same control is
+   in the same place on every line. */
 .git-file {
+  position: relative;
   display: flex;
   align-items: center;
   border-radius: var(--radius);
 }
 
 .git-file:hover {
-  background: var(--pine-2);
+  background: var(--pine-1);
 }
 
-.git-file-on {
+.git-file-on,
+.git-file-on:hover {
   background: var(--pine-2);
-  position: relative;
 }
 
 .git-file-on::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
+  top: 3px;
+  bottom: 3px;
   width: 2px;
+  border-radius: 2px;
   background: var(--firefly);
 }
 
@@ -2885,7 +3158,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: var(--pad-2);
-  padding: var(--pad-1) var(--pad-2);
+  padding: 3px var(--pad-2);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--moon);
@@ -2896,44 +3169,113 @@ button:disabled {
   white-space: nowrap;
 }
 
-.git-file-action {
-  font-size: var(--text-xs);
-  opacity: 0;
+.git-file-acts {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-right: 2px;
 }
 
-.git-file:hover .git-file-action,
-.git-file:focus-within .git-file-action {
-  opacity: 1;
-}
-
+/* ── The commit ──────────────────────────────────────────────────────────
+   A box rather than a rule and a textarea, because it is the one thing on
+   this panel that ends the work rather than describing it. */
 .commit-form {
   display: flex;
   flex-direction: column;
   gap: var(--pad-2);
+  padding: var(--pad-2);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius-lg);
+  background: var(--pine-1);
+}
+
+/* Sticky rather than merely last: it stays reachable while the lists above it
+   scroll, which is the whole point of moving the scroll inside. The negative
+   offsets pin it past the scroll area's own padding, so nothing slides
+   through the gap underneath it.
+   Only for a single worktree — with several, each section carries its own box
+   and several sticky boxes would stack up and eat the panel. */
+.git-section:not(.git-section-shared) .commit-form {
+  position: sticky;
+  bottom: 0;
+  box-shadow: 0 -8px 14px -8px rgb(0 0 0 / 0.4);
+}
+
+.commit-head {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-2);
+  min-width: 0;
+}
+
+.commit-head-dot {
+  background: var(--firefly);
+}
+
+.commit-head-where {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  color: var(--moss-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A commit message is read back in a terminal, wrapped at seventy-odd
+   columns, so it is written in the face it will be read in. */
+.commit-form textarea {
+  resize: vertical;
+  min-height: 64px;
+  padding: var(--pad-2);
+  background: var(--pine-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
 }
 
 .commit-actions {
   display: flex;
+  align-items: center;
   gap: var(--pad-2);
-  flex-wrap: wrap;
 }
 
-.commit-actions .btn-primary {
+.commit-draft {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: var(--pad-2);
+  border: 1px solid var(--pine-3);
+  border-radius: var(--radius);
+  color: var(--moss);
+  font-size: var(--text-sm);
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.commit-draft:hover:not(:disabled) {
+  background: var(--pine-2);
+  color: var(--moon);
+}
+
+.commit-go {
   flex: 1;
 }
 
-.commit-form textarea {
-  resize: vertical;
-  background: var(--pine-0);
-}
-
+/* The last git command's answer. Kept out of the scroll so it can't be
+   scrolled away from the button that caused it. */
 .git-feedback {
+  margin: 0 var(--pad-3) var(--pad-3);
+  padding: var(--pad-2);
+  border-left: 2px solid var(--firefly-dim);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--pine-1);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--moss);
   white-space: pre-wrap;
-  border-left: 2px solid var(--pine-3);
-  padding-left: var(--pad-2);
 }
 
 .git-loading,
@@ -2941,6 +3283,7 @@ button:disabled {
 .diff-binary {
   margin: auto;
   color: var(--moss-dim);
+  font-size: var(--text-sm);
 }
 
 .git-diff {
@@ -2959,7 +3302,32 @@ button:disabled {
   border-bottom: 1px solid var(--pine-3);
   position: sticky;
   top: 0;
+  z-index: 1;
   background: var(--pine-0);
+}
+
+/* Cut the same way it is cut in the list beside it: directories give up
+   their end, the name keeps its own. */
+.diff-path {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+
+/* Which of the three copies of this file you are looking at. A bordered pill
+   rather than accent-coloured text: it is a fact about the view, not a state
+   that wants you. */
+.diff-state {
+  flex-shrink: 0;
+  padding: 1px var(--pad-2);
+  border: 1px solid var(--pine-3);
+  border-radius: 999px;
+  font-family: var(--font-pixel);
+  font-size: var(--text-xxs);
+  letter-spacing: var(--track-label);
+  text-transform: lowercase;
+  color: var(--moss);
 }
 
 .diff {
@@ -3420,8 +3788,17 @@ button:disabled {
   max-width: 34ch;
 }
 
+/* Full width, because the two tabs are the whole of what this column can be
+   showing and a control sized to its words looks like an afterthought sat on
+   top of one. */
 .git-seg {
-  margin-bottom: var(--pad-3);
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.git-seg button {
+  flex: 1;
+  font-size: var(--text-sm);
 }
 
 /* ── Commit graph ──────────────────────────────────────────────────────────
@@ -4306,9 +4683,9 @@ button:disabled {
 
 /* ── Opening a file from somewhere that isn't the Files tab ─────────────────
    The same control in three places — a tool row, a git file, a diff header —
-   so it looks the same in all three and is learned once. */
-.tool-open,
-.git-file-open {
+   so it looks the same in all three and is learned once. The git panel draws
+   it as a .git-icon, so only the tool row's copy needs sizing of its own. */
+.tool-open {
   opacity: 0;
   flex-shrink: 0;
   padding: 0 var(--pad-1);
@@ -4316,9 +4693,7 @@ button:disabled {
 }
 
 .tool-row:hover .tool-open,
-.git-file:hover .git-file-open,
-.tool-open:focus-visible,
-.git-file-open:focus-visible {
+.tool-open:focus-visible {
   opacity: 1;
 }
 
@@ -4326,11 +4701,6 @@ button:disabled {
 .git-file-open:hover,
 .diff-open:hover {
   color: var(--stream);
-}
-
-.diff-open {
-  flex-shrink: 0;
-  color: var(--moss-dim);
 }
 
 /* ---------- terminals ---------- */
@@ -5545,6 +5915,13 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* The half of a branch name you already know. Set back rather than hidden:
+   it is still half the answer to "which branch am I on", and a header that
+   needed a hover to answer that was a header not doing its job. */
+.branch-prefix {
+  color: var(--moss-dim);
+}
+
 .dests {
   display: inline-flex;
   gap: 2px;
@@ -6193,7 +6570,9 @@ a svg,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  /* Looser than it was, tighter than the open list: a collapsed row is one
+     glyph, so it needs separating without spending the rail's height. */
+  gap: var(--pad-1);
 }
 
 /* Shared dryads sit above the repositories and are ruled off from them, the
@@ -6268,15 +6647,22 @@ a svg,
 
 .git-section-shared {
   border: 1px solid var(--pine-3);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   padding: var(--pad-2);
   background: var(--pine-1);
 }
 
+/* The card's own head sits on the raised surface, so it reads as a lid on the
+   worktree below it rather than as another row inside it. */
 .git-section-head {
   display: flex;
   align-items: center;
   gap: var(--pad-2);
+  margin: calc(-1 * var(--pad-2)) calc(-1 * var(--pad-2)) 0;
+  padding: var(--pad-2);
+  border-bottom: 1px solid var(--pine-3);
+  background: var(--pine-2);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .git-section-toggle {
@@ -6304,24 +6690,31 @@ a svg,
   white-space: nowrap;
 }
 
+/* "clean" is a word and a count is a number, so the count is the one that
+   gets a pill: it is the thing you scan a stack of these cards for. */
 .git-section-count {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--moss-dim);
   flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xxs);
+  color: var(--moss-dim);
 }
 
-.git-section-actions {
-  display: flex;
-  gap: var(--pad-2);
-  flex-wrap: wrap;
+.git-section-count-on {
+  min-width: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--firefly-dim);
+  color: var(--moon);
+  line-height: 1.5;
+  text-align: center;
 }
 
 .git-toolbar-title {
   font-family: var(--font-pixel);
-  font-size: var(--text-xs);
+  font-size: var(--text-xxs);
   letter-spacing: var(--track-label);
-  color: var(--firefly);
+  text-transform: lowercase;
+  color: var(--moss);
 }
 
 .git-history-lane {
@@ -6334,6 +6727,7 @@ a svg,
   display: flex;
   align-items: baseline;
   gap: var(--pad-2);
+  min-width: 0;
   padding-bottom: var(--pad-1);
   border-bottom: 1px solid var(--pine-3);
 }
@@ -6348,10 +6742,11 @@ a svg,
 }
 
 /* The shared commit is the one thing here that spans repositories, so it is
-   the one thing marked. */
+   the one thing marked — and it sits outside the scroll, so it carries the
+   column's margins itself. */
 .commit-form-shared {
-  border-top: 1px solid var(--firefly-dim);
-  padding-top: var(--pad-3);
+  margin: 0 var(--pad-3) var(--pad-3);
+  border-color: var(--firefly-dim);
 }
 
 .commit-shared-head {
@@ -6362,7 +6757,6 @@ a svg,
   font-size: var(--text-xxs);
   letter-spacing: var(--track-label);
   color: var(--firefly);
-  margin-bottom: var(--pad-2);
 }
 
 .commit-shared-where {
@@ -6595,7 +6989,6 @@ a svg,
   display: flex;
   flex-direction: column;
   gap: var(--pad-1);
-  margin-bottom: var(--pad-3);
   padding: var(--pad-2);
   border: 1px solid var(--pine-3);
   border-left: 2px solid var(--pine-3);

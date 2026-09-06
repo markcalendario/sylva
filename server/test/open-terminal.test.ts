@@ -15,6 +15,41 @@ function prefs(patch: Partial<AppPreferences> = {}): AppPreferences {
  * `process` — otherwise two thirds of this file could only ever be checked by
  * whoever happened to be on Windows that week.
  */
+/**
+ * The desktop's own answer, which is the only one that can deal with a file
+ * that isn't text. Same three commands as reveal, deliberately: handed a
+ * directory the shell handler opens a window, handed a file it opens the file.
+ */
+describe("handing a file to the desktop", () => {
+  const FILE = "/tmp/trees/feature branch/docs/plan.pdf";
+
+  it("asks each platform's shell handler, and nothing else", () => {
+    expect(resolveArgv(prefs(), "system", FILE, "darwin")).toEqual(["open", FILE]);
+    expect(resolveArgv(prefs(), "system", FILE, "win32")).toEqual(["explorer.exe", FILE]);
+    expect(resolveArgv(prefs(), "system", FILE, "linux")).toEqual(["xdg-open", FILE]);
+  });
+
+  /**
+   * Neither of these is configurable, and both mean "ask the OS" — so if one
+   * ever grows a flag the other doesn't want, this is what will notice.
+   */
+  it("resolves the same way as revealing a folder", () => {
+    for (const platform of ["darwin", "win32", "linux"] as const) {
+      expect(resolveArgv(prefs(), "system", FILE, platform)).toEqual(
+        resolveArgv(prefs(), "reveal", FILE, platform),
+      );
+    }
+  });
+
+  /** No editor is named at either end, so switching the editor off is irrelevant. */
+  it("still works when the editor is switched off in Settings", () => {
+    expect(resolveArgv(prefs({ editorTarget: "none" }), "system", FILE, "darwin")).toEqual([
+      "open",
+      FILE,
+    ]);
+  });
+});
+
 describe("opening a worktree in a terminal", () => {
   it("asks a Mac for the application, and hands it the path", () => {
     expect(resolveArgv(prefs(), "terminal", WT, "darwin")).toEqual(["open", "-a", "Terminal", WT]);

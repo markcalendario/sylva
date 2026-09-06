@@ -140,6 +140,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(paths === "all" ? { all: true } : { paths }),
     }),
+  /** Throws changes away. Nothing behind it — confirm before calling. */
+  discard: (worktreeId: string, paths: string[] | "all") =>
+    request<{ ok: true }>(`/api/worktrees/${worktreeId}/discard`, {
+      method: "POST",
+      body: JSON.stringify(paths === "all" ? { all: true } : { paths }),
+    }),
   unstage: (worktreeId: string, paths: string[] | "all") =>
     request<{ ok: true }>(`/api/worktrees/${worktreeId}/unstage`, {
       method: "POST",
@@ -275,10 +281,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(opts),
     }),
-  openExternally: (worktreeId: string, kind: OpenKind) =>
+  /**
+   * Hand a worktree — or one file inside it, when `path` is given — to the
+   * editor, the file browser, a terminal, or whatever the desktop thinks owns
+   * this kind of file.
+   */
+  openExternally: (worktreeId: string, kind: OpenKind, path?: string) =>
     request<{ ok: true; ran: string }>(`/api/worktrees/${worktreeId}/open`, {
       method: "POST",
-      body: JSON.stringify({ kind }),
+      body: JSON.stringify(path === undefined ? { kind } : { kind, path }),
     }),
 
   /** The slash commands this dryad answers to, for the `/` popup. */

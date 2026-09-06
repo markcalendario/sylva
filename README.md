@@ -1,6 +1,8 @@
 ![Sylva — mission control for git worktrees and Claude agents](docs/images/brand.png)
 
-Run several Claude agents at once, each in its own git worktree, and see what all of them are doing on one screen. Every worktree gets a dryad: it sleeps at the camp when idle, walks to the workshop when its agent starts working, celebrates in the grove when a turn lands, and waits at the notice board when it needs a decision from you.
+Run several Claude agents at once, each in its own git worktree, and see what all of them are doing on one screen.
+
+Sylva comes in two looks, and opens in **Professional**: black, white and Inter, with colour kept back for the few places it carries something no shade of grey could — a failed check, an added line, a deleted one. **Forest** is the same app with the wood put back. There, every worktree gets a dryad: it sleeps at the camp when idle, walks to the workshop when its agent starts working, celebrates in the grove when a turn lands, and waits at the notice board when it needs a decision from you. One control in Settings switches between them, and the vocabulary follows the palette — what one calls an agent, the other calls a dryad.
 
 Sylva runs entirely on your machine. It talks to `git` through the real CLI and to Claude through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), using the credentials Claude Code already stores — there is no API key to configure and nothing leaves localhost.
 
@@ -12,23 +14,26 @@ Working on three things at once means three worktrees, three terminals, and no i
 
 ## Features
 
+- **Two themes, one app.** Professional is the default — the register you want on a screen someone else is looking at. Forest is the night wood: amber light, pixel dryads, the clearing map, and a music box under it. Every rule in the interface is written against design tokens rather than colours, so a theme is a block of variables rather than a second stylesheet, and the words, the sounds and the map change with it.
 - **A worktree per task.** Name a branch and Sylva creates the worktree, registers it, and opens it — fetching first, by default, so it starts from what the remote has rather than from whatever you last pulled. Remove it when you're done and the directory goes, along with the registration git keeps for it; tick the box in the same dialog and the branch goes too. New repositories can be started from inside Sylva too — initialized, committed, and ready for worktrees.
-- **One dryad, several worktrees.** Shift-click a worktree in the sidebar, pick a few more, and they share a single agent — so it can read the old system and write the new one in the same turn, remembering both.
+- **One agent, several worktrees.** Shift-click a worktree in the sidebar, pick a few more, and they share a single session — so it can read the old system and write the new one in the same turn, remembering both.
 - **One Claude session per worktree.** Sessions are independent — separate transcripts, separate costs, separate settings — and resume across server restarts. **Clear** in the Agent header sends one back to a blank slate: transcript deleted, cost back to zero, the next prompt starting a conversation of its own.
-- **`@`, `/` and attachments in the prompt box.** `@` completes a path across everything the dryad can reach, so naming a file doesn't mean typing it from memory. `/` lists the commands and skills this worktree actually offers — read from the agent itself, so a command the repository adds shows up beside the built-in ones. A file you attach, drop or paste writes its path into the sentence *where the caret was*, so you can point at it mid-thought rather than append a list.
-- **The grove.** A dryad bound to no worktree at all, which knows where every registered repository lives. For the questions that span all of them.
+- **`@`, `/` and attachments in the prompt box.** `@` completes a path across everything the agent can reach, so naming a file doesn't mean typing it from memory. `/` lists the commands and skills this worktree actually offers — read from the agent itself, so a command the repository adds shows up beside the built-in ones. A file you attach, drop or paste writes its path into the sentence *where the caret was*, so you can point at it mid-thought rather than append a list.
+- **The assistant.** An agent bound to no worktree at all, which knows where every registered repository lives. For the questions that span all of them. (The Forest theme calls it the grove.)
 - **Permissions you can actually see.** Tool requests appear inline with Allow / Allow always this session / Deny. There's an opt-in "skip all permissions" mode behind an explicit confirmation.
 - **Live file feed.** A recursive watcher streams every change in the worktree as it happens, ignoring `.git`, `node_modules` and friends.
-- **Everyday git.** Status groups, a diff viewer, stage/unstage, commit, branch list, push/pull with an `--set-upstream` offer — plus a "Draft message" button that writes the commit message from the staged diff. Hover any commit in the history for its body, both identities, dates and diffstat — and click it to open every file it touched, each with its diff as that commit left it.
+- **Everyday git.** Staged, changed and untracked in their own groups, a diff for whichever file you pick, and stage, unstage, open and discard on every row. Pull and Push carry their own counts, so "is there anything waiting on the remote" is answered on the button that does something about it — with an `--set-upstream` offer when the branch tracks nothing yet. The branch's own pull request sits above the change list with its checks, its review and its conflicts, and "Draft message" writes the commit message from the staged diff. Hover any commit in the history for its body, both identities, dates and diffstat — and click it to open every file it touched, each with its diff as that commit left it.
 - **Real terminals.** As many shells per worktree as the work needs, each a proper pty: prompts, colour, `^C`, `git rebase -i`, `vim`. They belong to the server, so they keep running when you switch tabs, reload the page or close the window. Your project command is one button away — it is typed into a fresh shell you can then keep using.
-- **The forest map.** All worktrees across all repositories as one overworld, generated to fit whatever width the panel happens to be.
-- **Sound, optional.** Synthesized notification cues and an ambient forest bed, with separate volumes and a global mute. No audio files.
+- **One page for all of them.** Every worktree across every repository at once — a roster with the counts, the costs and who is blocked, and in the Forest theme an overworld map drawn above it, generated to fit whatever width the panel happens to be.
+- **Sound, optional.** Synthesized notification cues and an ambient bed, with separate volumes and a global mute — a forest at night under one theme, something quieter and stringed under the other. No audio files.
 
 ## Screenshots
 
-**The forest** — every worktree across every repository on one map, generated to fit the panel. Here: two dryads resting at the camp, one at work in the shed, one waiting at the notice board for a permission decision.
+Sylva opens in Professional. The shots below are in **Forest**, which is the louder half of the same app: identical panels, identical counts, identical controls, with the palette, the sprites and the nouns swapped. If you are looking for what it does rather than what it looks like, these answer the first question in either theme.
 
-![The forest view, with dryads at the camp, the workshop and the notice board](docs/images/forest.png)
+**Git** — the branch's remote at the top, with the counts on the buttons that act on them; staged, changed and untracked in their own groups; the branch's pull request above the list; and a diff for whichever file you pick.
+
+![The git panel with a diff open](docs/images/git.png)
 
 **Talking to an agent** — streamed text, tool calls, per-turn cost, and a rail down the right that jumps to any of your earlier prompts.
 
@@ -38,9 +43,9 @@ Working on three things at once means three worktrees, three terminals, and no i
 
 ![A permission request waiting for a decision](docs/images/permission.png)
 
-**Git** — staged, changed and untracked grouped separately, with a diff for whichever file you select.
+**The forest** — every worktree across every repository on one map, generated to fit the panel. Here: two dryads resting at the camp, one at work in the shed, one waiting at the notice board for a permission decision. Professional draws the same set as the roster underneath it, and no map.
 
-![The git panel with a diff open](docs/images/git.png)
+![The forest view, with dryads at the camp, the workshop and the notice board](docs/images/forest.png)
 
 ---
 
@@ -70,10 +75,11 @@ npm start          # everything on http://localhost:4611
 
 1. **Add a repository** — sidebar → **+ Register repo**. Register one that exists, or switch to **Create new** to start one from scratch.
 2. **Grow a worktree** — **✦ New worktree**, then name a branch (`feature/whatever`). Sylva creates the worktree and opens it.
-3. **Prompt the dryad** — the **Agent** tab. Prompts sent while a turn is in flight queue up rather than interrupting.
+3. **Prompt the agent** — the **Agent** tab. Prompts sent while a turn is in flight queue up rather than interrupting.
 4. **Watch it work** — **Files** streams changes live and searches by name or by what's written inside; **Git** shows what's staged, lists open pull requests, lets you commit, and opens any commit in the history to see what it changed; **Terminal** gives you shells in the worktree.
-5. **Work on two worktrees at once** — to put two of them under *one* dryad, shift-click them in the sidebar; they appear together under **shared**.
-6. **Step back** — **⌂ Forest** shows every worktree at once. **✿ Grove** talks to the dryad that belongs to none of them.
+5. **Work on two worktrees at once** — to put two of them under *one* agent, shift-click them in the sidebar; they appear together under **shared**.
+6. **Step back** — **Workspace** shows every worktree at once, and **Assistant** talks to the agent that belongs to none of them. (In the Forest theme the same two are called **Forest** and **Grove**.)
+7. **Change the look** — **⚙ Settings → Theme**. Professional is where Sylva starts; Forest is one click away, and the choice is remembered in this browser.
 
 Sessions persist to `~/.sylva/sessions/` and resume through the Agent SDK, so restarting the server doesn't lose a conversation. Terminals do not: they are real processes, and they end when the server does — and what one said ends with it, on the server and in the browser both. Settings live on their own page behind **⚙ Settings**, including which shell terminals open, how far they scroll back, and the project command each repository runs.
 
@@ -85,6 +91,8 @@ Sessions persist to `~/.sylva/sessions/` and resume through the Agent SDK, so re
 | `SYLVA_PORT` | `4611` | Port the API and production build bind to |
 
 Settings live in two layers: a global default (model, reasoning effort, permission mode, text size, sound) and per-worktree overrides. A worktree inherits anything it doesn't override.
+
+The theme is the exception — it belongs to the browser rather than to the workspace, so it is kept in `localStorage` and applied before React mounts. Sylva starts in Professional; a machine that has never been told otherwise gets black and white.
 
 ## Security
 

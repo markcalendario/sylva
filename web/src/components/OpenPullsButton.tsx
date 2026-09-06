@@ -11,7 +11,14 @@ import { Dialog } from "./Dialog";
  * `gh` can't answer it hands over the repository's pulls page rather than a
  * dead end.
  */
-export function OpenPullsButton({ worktreeId }: { worktreeId: string }) {
+export function OpenPullsButton({
+  worktreeId,
+  /** So the button can join a cluster it is drawn inside rather than beside. */
+  className = "btn-quiet",
+}: {
+  worktreeId: string;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<OpenPullRequests | null>(null);
   const [loading, setLoading] = useState(false);
@@ -30,12 +37,12 @@ export function OpenPullsButton({ worktreeId }: { worktreeId: string }) {
   return (
     <>
       <button
-        className="btn-quiet git-pulls-btn"
+        className={`${className} git-pulls-btn`}
         onClick={() => setOpen(true)}
         data-tip="Pull requests already open on this repository"
       >
         <GitPullRequest size={13} />
-        Open PRs
+        PRs
       </button>
 
       <Dialog title="Open pull requests" open={open} onClose={() => setOpen(false)}>

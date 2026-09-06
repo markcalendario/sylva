@@ -10,12 +10,13 @@ import {
 } from "lucide-react";
 import { circleMembers, GROVE_ID } from "sylva-shared";
 import { api } from "../lib/api";
-import { worktreeLabel } from "../lib/branch";
+
 import { useHasForest, useWords } from "../lib/theme";
 import type { Words } from "../lib/words";
 import { useSylva, type View } from "../state/store";
 import { AudioControls } from "./AudioControls";
 import { BrandMark } from "./BrandMark";
+import { BranchName } from "./BranchName";
 
 interface Destination {
   key: View | "help";
@@ -152,9 +153,11 @@ export function TopBar({ onHelp }: { onHelp: () => void }) {
           <span className="crumb-sep" aria-hidden>
             /
           </span>
-          <span className="crumb-branch" data-tip={`Branch in the active pane: ${where.branch}`}>
-            {worktreeLabel(where.branch, where.branch)}
-          </span>
+          <BranchName
+            branch={where.branch}
+            className="crumb-branch"
+            tip="Branch checked out in the active pane"
+          />
         </nav>
       )}
 

@@ -3,7 +3,7 @@ import { circleMembers, GROVE_ID, type Attachment, type PermissionRequest } from
 import { applyMention, mentionAt, PathMentions, type Mention } from "./PathMentions";
 import { applySlash, slashAt, SlashCommands, type SlashToken } from "./SlashCommands";
 import { api, ApiFailure } from "../lib/api";
-import { worktreeLabel } from "../lib/branch";
+
 import { playCue } from "../lib/audio";
 import { compactTokens } from "../lib/format";
 import {
@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { confirm } from "../lib/confirm";
+import { BranchName } from "./BranchName";
 import { ComposerSettings } from "./ComposerSettings";
 import { CopyButton } from "./CopyButton";
 import { EMPTY_DRAFT, NO_EVENTS, useSylva } from "../state/store";
@@ -604,9 +605,12 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
             }
           >
             <GitBranch size={11} />
-            {/* The leaf, as everywhere else — with the prefixes in the tooltip,
-                which is where a name you already know belongs. */}
-            {named.map((b) => worktreeLabel(b, b)).join(" + ")}
+            {named.map((b, i) => (
+              <span key={b} className="chat-branch-one">
+                {i > 0 && <span className="branch-prefix">+ </span>}
+                <BranchName branch={b} />
+              </span>
+            ))}
           </span>
         )}
 

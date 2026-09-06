@@ -89,6 +89,19 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     return { ok: true };
   });
 
+  /**
+   * Throw changes away. Nothing here is recoverable, which is why the client
+   * asks first — but the check that matters is the one the caller has already
+   * done: this route will do exactly what it is told.
+   */
+  app.post("/api/worktrees/:worktreeId/discard", async (req) => {
+    const { worktreeId } = req.params as { worktreeId: string };
+    const body = pathsSchema.parse(req.body);
+    await gitOps.discard(worktreeId, "all" in body ? "all" : body.paths);
+    await broadcastStatus(worktreeId);
+    return { ok: true };
+  });
+
   app.post("/api/worktrees/:worktreeId/commit", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
     const body = commitSchema.parse(req.body);

@@ -500,8 +500,14 @@ export const GLOBAL_DEFAULTS: AgentSettings = {
  * right directory and beside the diff. "terminal" here is for the times it
  * isn't: a full-screen TUI, a long build you want to keep watching after
  * closing Sylva, tmux, anything your own terminal does that a tab can't.
+ *
+ * "system" is the odd one out: it names no application at all and asks the
+ * desktop what it would do with this file if you double-clicked it — `open` on
+ * a Mac, the shell handler on Windows, `xdg-open` everywhere else. It is what
+ * the other three can't be, because a .png, a .pdf and a .csv each want a
+ * different program and none of them is an editor.
  */
-export type OpenKind = "editor" | "reveal" | "terminal";
+export type OpenKind = "editor" | "reveal" | "terminal" | "system";
 
 export type OpenTarget = "vscode" | "cursor" | "zed" | "custom" | "none";
 

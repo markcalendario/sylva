@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { isAbsolute, join, normalize, sep, basename } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
@@ -19,7 +20,15 @@ const transcriptSearchSchema = z.object({
   q: z.string().min(1).max(200),
   mode: z.enum(["file", "text"]).default("file"),
 });
-const openSchema = z.object({ kind: z.enum(["editor", "reveal", "terminal"]) });
+const openSchema = z.object({
+  kind: z.enum(["editor", "reveal", "terminal", "system"]),
+  /**
+   * A file inside the worktree, relative to it. Absent means the worktree
+   * directory itself, which is what every Open button did before one of them
+   * learned to point at a single file.
+   */
+  path: z.string().min(1).max(1024).optional(),
+});
 const answerSchema = z.object({
   requestId: z.string().min(1),
   answer: z.enum(["allow", "allow-always", "deny"]),
@@ -163,12 +172,37 @@ export function registerAgentRoutes(app: FastifyInstance, ctx: AppContext): void
     return ctx.store.preferences;
   });
 
-  /** Hand the worktree directory to the configured editor, terminal or file browser. */
+  /**
+   * Hand something to the configured editor, terminal or file browser — the
+   * worktree directory by default, or one file inside it when `path` says so.
+   *
+   * The path is checked rather than trusted. It arrives from a browser, and
+   * the whole point of this endpoint is that it launches a program with it: a
+   * `../../..` waved through here would be Sylva opening any file on the
+   * machine on request. Normalizing and refusing anything that climbs out
+   * keeps it to files the caller could already read through the Files tab.
+   */
   app.post("/api/worktrees/:worktreeId/open", async (req) => {
     const { worktreeId } = req.params as { worktreeId: string };
-    const { kind } = openSchema.parse(req.body ?? {});
+    const { kind, path } = openSchema.parse(req.body ?? {});
     const { worktree } = await workspace.resolveWorktree(worktreeId);
-    return openExternal(worktree.path, ctx.store.preferences, kind);
+
+    let target = worktree.path;
+    if (path !== undefined) {
+      const rel = normalize(path);
+      if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) {
+        throw badRequest(`Invalid file path: ${path}`);
+      }
+      target = join(worktree.path, rel);
+      // A file the agent deleted a second ago is the common way to get here
+      // with a path that no longer resolves, and "explorer.exe failed" is a
+      // worse answer to that than saying which file is gone.
+      if (!existsSync(target)) {
+        throw badRequest(`${rel} isn't there any more`);
+      }
+    }
+
+    return openExternal(target, ctx.store.preferences, kind);
   });
 
   /**
