@@ -7,6 +7,7 @@ import { useWords } from "../lib/theme";
 import { useSylva, type DiffSelection } from "../state/store";
 import { CommitGraph } from "./CommitGraph";
 import { DiffView } from "./DiffView";
+import { splitPath } from "./FileGlyph";
 import { GitSection } from "./GitSection";
 import { OpenPullsButton } from "./OpenPullsButton";
 
@@ -46,26 +47,31 @@ export function GitPanel({
   return (
     <div className="git-panel">
       <div className="git-side">
-        {shared && <SharedToolbar members={members} onFeedback={setFeedback} />}
+        {/* One band across the top of the column: which of the two questions
+            you are asking, and — when a dryad tends several worktrees — the
+            handful of actions that genuinely span all of them. */}
+        <div className="git-head">
+          {/* Two different questions — "what have I changed" and "where does
+              this branch sit" — so they get a tab each rather than one long
+              column. Changes leads because that is what you came here to do. */}
+          <div className="seg git-seg" role="group" aria-label="Git view">
+            <button
+              className={view === "changes" ? "seg-on" : ""}
+              onClick={() => setView("changes")}
+              data-tip="Stage, unstage and commit what you've changed"
+            >
+              Changes
+            </button>
+            <button
+              className={view === "history" ? "seg-on" : ""}
+              onClick={() => setView("history")}
+              data-tip="Each branch against its base — ahead, behind, and where they met"
+            >
+              History
+            </button>
+          </div>
 
-        {/* Two different questions — "what have I changed" and "where does this
-            branch sit" — so they get a tab each rather than one long column.
-            Changes leads because that is what you came here to do. */}
-        <div className="seg git-seg" role="group" aria-label="Git view">
-          <button
-            className={view === "changes" ? "seg-on" : ""}
-            onClick={() => setView("changes")}
-            data-tip="Stage, unstage and commit what you've changed"
-          >
-            Changes
-          </button>
-          <button
-            className={view === "history" ? "seg-on" : ""}
-            onClick={() => setView("history")}
-            data-tip="Each branch against its base — ahead, behind, and where they met"
-          >
-            History
-          </button>
+          {shared && <SharedToolbar members={members} onFeedback={setFeedback} />}
         </div>
 
         <div className="git-scroll">
@@ -110,9 +116,14 @@ export function GitPanel({
                   {selectedPlace.repoName}
                 </span>
               )}
-              <code data-tip="File you're looking at">{selection.path}</code>
+              {/* The name is what you are reading; the directories only place
+                  it, so they sit back and give up their end first. */}
+              <code className="diff-path" data-tip="File you're looking at">
+                <span className="path-lead">{splitPath(selection.path).lead}</span>
+                <span className="path-tail">{splitPath(selection.path).tail}</span>
+              </code>
               <span
-                className="pixel-label"
+                className="diff-state"
                 data-tip={
                   selection.commit
                     ? "Showing this file as that commit left it"
@@ -130,7 +141,7 @@ export function GitPanel({
               {/* A patch read in isolation is often not enough; this is the
                   way from "what changed here" to the file it changed. */}
               <button
-                className="ghost diff-open"
+                className="git-icon diff-open"
                 onClick={() =>
                   useSylva.getState().openFile({
                     worktreeId: selection.worktreeId,
@@ -143,7 +154,7 @@ export function GitPanel({
                 <FileCode2 size={13} />
               </button>
               <button
-                className="ghost diff-close"
+                className="git-icon diff-close"
                 onClick={() => onSelect(null)}
                 aria-label="Close this diff"
                 data-tip="Close this diff"
@@ -218,27 +229,27 @@ function SharedToolbar({
 
   return (
     <div className="git-toolbar">
-      <div className="git-toolbar-branch">
-        <span className="git-toolbar-title">{members.length} worktrees</span>
-      </div>
-      <div className="git-toolbar-actions">
+      <span className="git-toolbar-title" data-tip={`Every worktree this ${words.agent} tends`}>
+        all {members.length}
+      </span>
+      <div className="git-ops git-toolbar-actions">
         <button
-          className="btn-quiet"
+          className="git-op"
           disabled={busy}
           onClick={() => void all("Pulled", (id) => api.pull(id))}
           data-tip={`Pull in every worktree this ${words.agent} tends`}
         >
-          <ArrowDown size={13} /> Pull all
+          <ArrowDown size={13} /> Pull
         </button>
         <button
-          className="btn-quiet"
+          className="git-op"
           disabled={busy}
           onClick={() => void all("Pushed", (id) => api.push(id, false))}
           data-tip={`Push every worktree this ${words.agent} tends`}
         >
-          <ArrowUp size={13} /> Push all
+          <ArrowUp size={13} /> Push
         </button>
-        {members[0] && <OpenPullsButton worktreeId={members[0]} />}
+        {members[0] && <OpenPullsButton className="git-op" worktreeId={members[0]} />}
       </div>
     </div>
   );

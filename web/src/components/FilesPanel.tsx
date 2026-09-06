@@ -1,10 +1,13 @@
 import { useMemo } from "react";
-import { GitCompare } from "lucide-react";
+import { GitCompare, Trash2 } from "lucide-react";
 import type { FileChangeKind } from "sylva-shared";
+import { api } from "../lib/api";
+import { confirm } from "../lib/confirm";
 import { useWords } from "../lib/theme";
 import { fileKey, NO_EVENTS, useSylva, type DiffSelection, type Pane } from "../state/store";
 import { FileEditor } from "./FileEditor";
 import { FileTree } from "./FileTree";
+import { OpenFileButton } from "./OpenFileButton";
 
 const CHANGE_GLYPH: Record<FileChangeKind, { glyph: string; cls: string; tip: string }> = {
   added: { glyph: "+", cls: "chg-add", tip: "New file, staged for commit" },
@@ -188,6 +191,26 @@ function ChangeList({
   onOpenDiff: (selection: DiffSelection) => void;
 }) {
   const words = useWords();
+
+  /**
+   * Throwing one file away, with the question asked first — and the question
+   * says which of the two kinds of loss this is, because a tracked file goes
+   * back to its last commit and an untracked one is simply deleted.
+   */
+  const discard = async (row: ChangeRow) => {
+    const gone = row.kind === "untracked";
+    const ok = await confirm({
+      title: gone ? "Delete this file?" : "Discard this change?",
+      body: gone
+        ? `${row.path} was never committed, so it is deleted outright — there is nothing in git to restore it from.`
+        : `${row.path} goes back to its last committed state. Anything changed since is gone, and no part of git remembers it.`,
+      confirmLabel: gone ? "Delete it" : "Discard it",
+      tone: "danger",
+    });
+    if (!ok) return;
+    await api.discard(row.worktreeId, [row.path]);
+  };
+
   if (rows.length === 0) {
     return (
       <div className="files-empty">
@@ -254,6 +277,28 @@ function ChangeList({
               data-tip="Show this file's diff in the Git tab"
             >
               <GitCompare size={12} />
+            </button>
+            {/* The same third destination the Git tab offers: the desktop's
+                own answer, for the changed files that aren't text. */}
+            <OpenFileButton
+              className="ghost file-row-external"
+              worktreeId={row.worktreeId}
+              path={row.path}
+            />
+            {/* The same throw-it-away the Git tab offers, on the list you are
+                more often looking at while the agent works. Kept last and
+                quiet, and it still asks before it does anything. */}
+            <button
+              className="ghost file-row-discard"
+              onClick={() => void discard(row)}
+              aria-label={`Discard changes to ${row.path}`}
+              data-tip={
+                row.kind === "untracked"
+                  ? "Delete this file — it was never committed, so there is nothing to restore it from"
+                  : "Throw away the changes to this file and put it back as it was"
+              }
+            >
+              <Trash2 size={12} />
             </button>
           </div>
         );

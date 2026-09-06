@@ -38,7 +38,8 @@ import { isIgnored } from "./watcher.js";
 import type { Workspace } from "./workspace.js";
 
 /** `--shortstat`'s one line, e.g. " 3 files changed, 12 insertions(+), 4 deletions(-)". */
-const SHORTSTAT = /^\s*(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?\s*$/;
+const SHORTSTAT =
+  /^\s*(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?\s*$/;
 
 /**
  * The body field arrives with the shortstat line appended, because git prints
@@ -91,9 +92,11 @@ function scorePath(path: string, name: string, needle: string): number {
   if (lowerName.includes(needle)) return 800 - lowerName.length;
   if (lowerPath.includes(needle)) return 700 - lowerPath.length;
   // Scattered letters, in order: the fuzzy fallback.
-  return isSubsequence(needle, lowerName) ? 600 - lowerName.length
-    : isSubsequence(needle, lowerPath) ? 500 - lowerPath.length
-    : 0;
+  return isSubsequence(needle, lowerName)
+    ? 600 - lowerName.length
+    : isSubsequence(needle, lowerPath)
+      ? 500 - lowerPath.length
+      : 0;
 }
 
 function isSubsequence(needle: string, haystack: string): boolean {
@@ -122,11 +125,7 @@ export class GitOps {
 
   async status(worktreeId: string): Promise<WorktreeStatus> {
     const { worktree } = await this.workspace.resolveWorktree(worktreeId);
-    const { stdout } = await this.git.run(worktree.path, [
-      "status",
-      "--porcelain=v2",
-      "--branch",
-    ]);
+    const { stdout } = await this.git.run(worktree.path, ["status", "--porcelain=v2", "--branch"]);
     const status = parseStatusV2(stdout, worktreeId);
     status.base = await this.baseDivergence(worktree.path, status.branch);
     return status;
@@ -136,10 +135,7 @@ export class GitOps {
    * How far this worktree has drifted from the repository's base branch.
    * Prefers the remote's default branch, then a local main/master.
    */
-  private async baseDivergence(
-    cwd: string,
-    branch: string | null,
-  ): Promise<BaseDivergence | null> {
+  private async baseDivergence(cwd: string, branch: string | null): Promise<BaseDivergence | null> {
     const base = await this.resolveBaseRef(cwd);
     if (!base) return null;
     // Comparing a branch against itself is noise, not information.
@@ -202,7 +198,11 @@ export class GitOps {
     const events = await Promise.all(
       [...kinds].map(async ([path, kind]): Promise<FileEvent | null> => {
         const change =
-          kind === "deleted" ? "deleted" : kind === "modified" || kind === "renamed" ? "changed" : "added";
+          kind === "deleted"
+            ? "deleted"
+            : kind === "modified" || kind === "renamed"
+              ? "changed"
+              : "added";
         if (change === "deleted") {
           // Nothing on disk to stat; date it to now so it still sorts sensibly.
           return { worktreeId, path, change, at: new Date().toISOString() };
@@ -240,7 +240,13 @@ export class GitOps {
         // --no-index exits 1 when the files differ; the patch is still on stdout.
         let patch = "";
         try {
-          const res = await this.git.run(worktree.path, ["diff", "--no-index", "--", "/dev/null", rel]);
+          const res = await this.git.run(worktree.path, [
+            "diff",
+            "--no-index",
+            "--",
+            "/dev/null",
+            rel,
+          ]);
           patch = res.stdout;
         } catch (e) {
           if (e instanceof GitError && e.exitCode === 1) patch = e.stdout;
@@ -251,7 +257,9 @@ export class GitOps {
       }
     }
 
-    const args = staged ? ["diff", "--cached", "--patch", "--", rel] : ["diff", "--patch", "--", rel];
+    const args = staged
+      ? ["diff", "--cached", "--patch", "--", rel]
+      : ["diff", "--patch", "--", rel];
     const { stdout } = await this.git.run(worktree.path, args);
     const parsed = parseDiff(stdout);
     return parsed[0] ?? { path: rel, binary: false, hunks: [] };
@@ -259,7 +267,8 @@ export class GitOps {
 
   async stage(worktreeId: string, paths: string[] | "all"): Promise<void> {
     const { worktree } = await this.workspace.resolveWorktree(worktreeId);
-    const args = paths === "all" ? ["add", "--all"] : ["add", "--", ...paths.map((p) => this.safeRelPath(p))];
+    const args =
+      paths === "all" ? ["add", "--all"] : ["add", "--", ...paths.map((p) => this.safeRelPath(p))];
     if (paths !== "all" && paths.length === 0) throw badRequest("No paths given");
     await this.git.runExclusive(worktree.path, args);
   }
@@ -272,6 +281,69 @@ export class GitOps {
         : ["restore", "--staged", "--", ...paths.map((p) => this.safeRelPath(p))];
     if (paths !== "all" && paths.length === 0) throw badRequest("No paths given");
     await this.git.runExclusive(worktree.path, args);
+  }
+
+  /**
+   * Throw a change away.
+   *
+   * The one operation in Sylva with nothing behind it: an edit that was never
+   * committed and is now restored has gone from the machine, and no part of
+   * git remembers it. Everything about it is therefore deliberate.
+   *
+   * Two commands, because git has two ideas of "undo" and a file can need
+   * both. `restore` puts a tracked file back to what the index or HEAD says —
+   * `--staged --worktree` together, so discarding a file that was staged
+   * doesn't leave it staged-and-reverted, which is a state nobody asked for.
+   * `clean` is for untracked files, which `restore` has never heard of; it is
+   * the half that actually deletes.
+   */
+  async discard(worktreeId: string, paths: string[] | "all"): Promise<void> {
+    const { worktree } = await this.workspace.resolveWorktree(worktreeId);
+    if (paths !== "all" && paths.length === 0) throw badRequest("No paths given");
+
+    if (paths === "all") {
+      // `:/` rather than `.`: the whole worktree regardless of which directory
+      // git happens to consider current.
+      await this.git.runExclusive(worktree.path, [
+        "restore",
+        "--staged",
+        "--worktree",
+        "--source=HEAD",
+        "--",
+        ":/",
+      ]);
+      // -d for directories a build left behind, -f because git refuses
+      // without it. Ignored files are deliberately spared: node_modules and a
+      // .env are not "changes", and taking them would turn a discard into a
+      // reason to reinstall.
+      await this.git.runExclusive(worktree.path, ["clean", "-fd"]);
+      return;
+    }
+
+    const safe = paths.map((p) => this.safeRelPath(p));
+    // Untracked paths have no HEAD version to restore, and asking git to
+    // restore one fails the whole command — so they are told apart first and
+    // handed to the right half.
+    const tracked: string[] = [];
+    const untracked: string[] = [];
+    for (const path of safe) {
+      const { stdout } = await this.git.run(worktree.path, ["ls-files", "--", path]);
+      (stdout.trim() ? tracked : untracked).push(path);
+    }
+
+    if (tracked.length > 0) {
+      await this.git.runExclusive(worktree.path, [
+        "restore",
+        "--staged",
+        "--worktree",
+        "--source=HEAD",
+        "--",
+        ...tracked,
+      ]);
+    }
+    if (untracked.length > 0) {
+      await this.git.runExclusive(worktree.path, ["clean", "-fd", "--", ...untracked]);
+    }
   }
 
   async commit(worktreeId: string, message: string): Promise<{ head: string }> {
@@ -302,7 +374,11 @@ export class GitOps {
         results.push({ worktreeId, ok: true, head });
       } catch (e) {
         const detail =
-          e instanceof HttpError ? (e.detail ?? e.message) : e instanceof Error ? e.message : String(e);
+          e instanceof HttpError
+            ? (e.detail ?? e.message)
+            : e instanceof Error
+              ? e.message
+              : String(e);
         results.push({ worktreeId, ok: false, error: detail });
       }
     }
@@ -323,9 +399,7 @@ export class GitOps {
     if (!current.upstream && !setUpstream) {
       throw conflict("no-upstream", `Branch ${current.branch} has no upstream`);
     }
-    const args = setUpstream
-      ? ["push", "--set-upstream", "origin", current.branch]
-      : ["push"];
+    const args = setUpstream ? ["push", "--set-upstream", "origin", current.branch] : ["push"];
     const { stderr } = await this.git.runExclusive(worktree.path, args);
     return { output: stderr.trim() };
   }
@@ -412,8 +486,24 @@ export class GitOps {
     if (!commit) throw badRequest(`No commit ${sha} in this worktree`);
 
     const [names, nums] = await Promise.all([
-      this.git.run(worktree.path, ["show", "--format=", "--name-status", "-z", "-m", "--first-parent", rev]),
-      this.git.run(worktree.path, ["show", "--format=", "--numstat", "-z", "-m", "--first-parent", rev]),
+      this.git.run(worktree.path, [
+        "show",
+        "--format=",
+        "--name-status",
+        "-z",
+        "-m",
+        "--first-parent",
+        rev,
+      ]),
+      this.git.run(worktree.path, [
+        "show",
+        "--format=",
+        "--numstat",
+        "-z",
+        "-m",
+        "--first-parent",
+        rev,
+      ]),
     ]);
 
     const counts = parseNumstatZ(nums.stdout);
@@ -464,9 +554,9 @@ export class GitOps {
     // control character, which a determined message *could* contain; that
     // degrades one commit's metadata rather than corrupting the list.
     const RECORD = "\0";
-    const format = [
-      "%H", "%h", "%s", "%an", "%ar", "%ae", "%aI", "%cn", "%ce", "%cI", "%b",
-    ].join(FIELD);
+    const format = ["%H", "%h", "%s", "%an", "%ar", "%ae", "%aI", "%cn", "%ce", "%cI", "%b"].join(
+      FIELD,
+    );
     try {
       const { stdout } = await this.git.run(cwd, [
         "log",
@@ -484,8 +574,18 @@ export class GitOps {
         .filter((record) => record.trim().length > 0)
         .map((record) => {
           const fields = record.split(FIELD);
-          const [sha, short, subject, author, relative, authorEmail, authorDate, committer, committerEmail, committerDate] =
-            fields;
+          const [
+            sha,
+            short,
+            subject,
+            author,
+            relative,
+            authorEmail,
+            authorDate,
+            committer,
+            committerEmail,
+            committerDate,
+          ] = fields;
           // The body is the last field, so anything past it is a field
           // separator that appeared inside the message — put it back.
           const { body, stats } = splitBodyAndStats(fields.slice(10).join(FIELD));
@@ -650,7 +750,8 @@ export class GitOps {
       stdout = res.stdout;
     } catch (e) {
       // git grep exits 1 when nothing matched, which is an answer, not a fault.
-      if (e instanceof GitError && e.exitCode === 1) return { query, matches: [], fileCount: 0, truncated: false };
+      if (e instanceof GitError && e.exitCode === 1)
+        return { query, matches: [], fileCount: 0, truncated: false };
       throw e;
     }
 

@@ -33,13 +33,23 @@ export function splitCommand(template: string): string[] {
 }
 
 /**
- * The desktop's own file browser, per platform.
+ * Whatever this desktop would do with the thing if you double-clicked it.
  *
- * Not configurable, and not meant to be: every desktop has exactly one of
- * these, and it is the one thing the OS is guaranteed to know how to do with a
- * directory. Argv again, never a shell string, for the same reason as above.
+ * Not configurable, and not meant to be: every desktop has exactly one shell
+ * handler, and it is the one thing the OS is guaranteed to know how to do with
+ * a path. Handed a directory it opens a window on it; handed a file it opens
+ * the file in whatever program owns that extension — which is why "reveal" and
+ * "system" resolve to the same call rather than to two. (They would part
+ * company if reveal ever meant *select* the file in its folder — `open -R`,
+ * `explorer /select,` — which is a different verb and not one asked for yet.)
+ *
+ * Argv again, never a shell string, for the same reason as everything above.
+ * Windows in particular gets `explorer.exe` rather than `cmd /c start`: `start`
+ * is a cmd builtin, so reaching it means going through a shell whose quoting
+ * rules are not the ones Node escapes arguments for — and a path with a space
+ * or an ampersand in it is exactly the path that would then break.
  */
-function revealArgv(path: string, platform: NodeJS.Platform): string[] {
+function desktopArgv(path: string, platform: NodeJS.Platform): string[] {
   if (platform === "darwin") return ["open", path];
   if (platform === "win32") return ["explorer.exe", path];
   return ["xdg-open", path];
@@ -126,7 +136,7 @@ export function resolveArgv(
   path: string,
   platform: NodeJS.Platform = process.platform,
 ): string[] {
-  if (kind === "reveal") return revealArgv(path, platform);
+  if (kind === "reveal" || kind === "system") return desktopArgv(path, platform);
   if (kind === "terminal") return terminalArgv(prefs, path, platform);
   const target = prefs.editorTarget;
   if (target === "none") {
@@ -192,15 +202,22 @@ export async function openExternal(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     // Explorer opens the window and then exits 1 anyway — it has done that for
-    // twenty years. Only a missing binary is a real failure here.
-    if (kind === "reveal" && process.platform === "win32" && code !== "ENOENT") {
+    // twenty years. Only a missing binary is a real failure here, and it is
+    // both of the kinds that go through Explorer, not just the one.
+    if (
+      (kind === "reveal" || kind === "system") &&
+      process.platform === "win32" &&
+      code !== "ENOENT"
+    ) {
       return { ok: true, ran: [command, ...args].join(" ") };
     }
     if (code === "ENOENT") {
       throw badRequest(
         kind === "reveal"
           ? `\`${command}\` isn't on your PATH, so Sylva can't ask this machine to show the folder.`
-          : kind === "terminal"
+          : kind === "system"
+            ? `\`${command}\` isn't on your PATH, so Sylva can't ask this machine to open the file.`
+            : kind === "terminal"
             ? `\`${command}\` isn't on your PATH. Install that terminal, or pick a different one in Settings.`
             : `\`${command}\` isn't on your PATH. Install its shell command, or choose a different target in Settings.`,
       );
