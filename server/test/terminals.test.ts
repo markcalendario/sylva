@@ -42,6 +42,26 @@ async function until(
   throw new Error(`terminal never said ${needle}`);
 }
 
+/** Is this process still there? Signal 0 asks without sending. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Poll a condition until it holds, or give up. */
+async function untilTrue(check: () => boolean, timeoutMs = 8000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error("condition never held");
+}
+
 describe("terminals", () => {
   it("runs what is typed at it and keeps what was said", async () => {
     const { terminals } = await harness();
@@ -291,6 +311,8 @@ describe("terminals", () => {
         seq: 0,
         pending: "",
         timer: null,
+        groups: new Set<number>(),
+        tty: null,
       });
     }
 
@@ -307,4 +329,70 @@ describe("terminals", () => {
     const { terminals } = await harness("/nope/not/a/shell");
     await expect(terminals.create("wt1")).rejects.toThrow(/couldn't start/i);
   });
+
+  /**
+   * The expensive things are the ones that outlive the terminal.
+   *
+   * A dev server is typed into a shell, and an interactive shell puts each job
+   * in a process group of its own — so hanging up on the shell's group reaches
+   * the prompt and nothing else, and the server carries on holding a couple of
+   * gigabytes with its parent gone and nothing left saying which worktree it
+   * came from.
+   */
+  it("takes what it started with it, once the shell that started it has gone", async () => {
+    const { terminals } = await harness();
+    const info = await terminals.create("wt1");
+
+    terminals.write(info.id, "sleep 300 & echo started=$!\n");
+    const seen = await until(() => terminals.buffer(info.id).data, /started=\d+/);
+    const child = Number(/started=(\d+)/.exec(seen)![1]);
+    // Its own group, which is the whole difficulty.
+    expect(alive(child)).toBe(true);
+
+    // Long enough to have been noticed while the shell still had it: once the
+    // shell exits, the job is reparented to init and its terminal revoked, and
+    // nothing anywhere connects the two any more.
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // The shell goes on its own, and the tab is closed after it — the ordinary
+    // way a dev server gets left behind.
+    terminals.write(info.id, "exit\n");
+    await untilTrue(() => terminals.list("wt1").every((t) => t.status === "exited"));
+    terminals.close(info.id);
+    expect(terminals.all()).toHaveLength(0);
+
+    await untilTrue(() => !alive(child));
+    expect(alive(child)).toBe(false);
+  }, 20000);
+
+  /**
+   * And if it is never closed at all, shutdown is the last chance.
+   *
+   * Sessions are dropped for reasons of their own — a finished terminal aged
+   * out to make room, a worktree going away — and what they started is not
+   * dropped with them. The groups outlive the sessions so that closing Sylva
+   * can still reach them.
+   */
+  it("sweeps at shutdown what it has already forgotten the terminal for", async () => {
+    const { terminals } = await harness();
+    const info = await terminals.create("wt1");
+
+    terminals.write(info.id, "sleep 300 & echo started=$!\n");
+    const seen = await until(() => terminals.buffer(info.id).data, /started=\d+/);
+    const child = Number(/started=(\d+)/.exec(seen)![1]);
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Lose the session without closing it — standing in for any path that
+    // drops one, none of which the job it started knows anything about.
+    const sessions = (terminals as unknown as { sessions: Map<string, unknown> }).sessions;
+    const session = sessions.get(info.id);
+    (terminals as unknown as { forget(s: unknown): void }).forget(session);
+    sessions.delete(info.id);
+    expect(terminals.all()).toHaveLength(0);
+    expect(alive(child)).toBe(true);
+
+    await terminals.closeAll();
+    await untilTrue(() => !alive(child));
+    expect(alive(child)).toBe(false);
+  }, 20000);
 });

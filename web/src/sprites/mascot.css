@@ -1,0 +1,499 @@
+/* ── The dryad's stand-in ────────────────────────────────────────────────────
+   The flat creature <Sprite> draws in a theme with no forest. Geometry lives
+   in Mascot.tsx; everything that moves or takes a colour lives here.
+
+   Two rules run through all of it.
+
+   Colour only ever lands on the visor band, which is the largest shape in the
+   drawing and sits *inside* the silhouette — which is why there is no badge in
+   the corner any more, and why the creature gets the whole 32×32 to itself.
+   The body is never recoloured: one grey thing that changes expression reads
+   as a character, where a thing that turns red reads as a warning icon that
+   happens to have eyes.
+
+   The band is a display, and it is either off or lit. Off is idle: a dark
+   band with pale eyes on it. Lit is every other state, in that state's own
+   colour, and the eyes invert to dark — so they stay the hole in the light
+   rather than disappearing into it. Two variables carry the whole scheme, and
+   a state only has to say what colour it is lit in.
+
+   And the states that loop are exactly the states that are still true. Working
+   and waiting keep moving, because you might walk past them ten minutes from
+   now. Done and failed play once and settle, because they are news, and news
+   that keeps waving is asking for something when there is nothing left to do. */
+
+.mascot {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+
+  /* The display, and the ink drawn on it. */
+  --band: var(--pine-1);
+  --ink: var(--moon);
+
+  /*
+   * The lit colours. Not the theme's own --sapling / --waiting / --ember,
+   * which are tuned to be read *as* text and are far too bright to draw a
+   * white eye on, and not the --*-dim pair either, which are backgrounds and
+   * go to near-black at 24px. These sit between: dark enough to hold a pale
+   * eye at better than 4.5:1, saturated enough that the hue is unmistakable
+   * across a room.
+   */
+  --band-lit-green: #2f6b45;
+  --band-lit-amber: #8a5418;
+  --band-lit-red: #a33329;
+}
+
+.mascot svg {
+  display: block;
+}
+
+.mascot-skin {
+  fill: var(--moss);
+}
+
+/* The band the face is cut out of. Its fill is the state channel. */
+.mascot-visor {
+  fill: var(--band);
+}
+
+.mascot-eye {
+  fill: var(--ink);
+}
+
+/* The pupil is a hole back through to the display. */
+.mascot-pupil {
+  fill: var(--band);
+}
+
+.mascot-lid {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+/* The mouth sits on the body, below the band, so it is drawn in the dark. */
+.mascot-lips {
+  fill: var(--pine-1);
+}
+
+.mascot-line {
+  fill: none;
+  stroke: var(--pine-1);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+/* Both layers of movement pivot on the feet, which is what makes a lean read
+   as leaning rather than as sliding. */
+.mascot-tilt,
+.mascot-breath {
+  transform-origin: 16px 29px;
+}
+
+.mascot-eyes {
+  transform-origin: 16px 14.8px;
+}
+
+.mascot-mouth {
+  transform-origin: 16px 24.6px;
+}
+
+.mascot-shut {
+  opacity: 0;
+}
+
+/* ── Idle ────────────────────────────────────────────────────────────────
+   Dimmer than the rest, because a sidebar is mostly idle and twenty bright
+   faces is a wall. It breathes, and blinks twice every few seconds. */
+.mascot-idle .mascot-skin {
+  fill: var(--moss-dim);
+}
+
+.mascot-idle .mascot-breath {
+  animation: mascot-breathe 3.2s ease-in-out infinite;
+}
+
+.mascot-idle .mascot-mouth {
+  animation: mascot-purse 3.2s ease-in-out infinite;
+}
+
+.mascot-idle .mascot-open {
+  animation: mascot-eyes-open 4.6s linear infinite;
+}
+
+.mascot-idle .mascot-shut {
+  animation: mascot-eyes-shut 4.6s linear infinite;
+}
+
+@keyframes mascot-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.008, 1.016) translateY(-0.5px);
+  }
+}
+
+@keyframes mascot-purse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08, 0.94);
+  }
+}
+
+/* The blink and its inverse. Two shuts close together, then a long hold — one
+   blink on a metronome reads as a fault in the drawing. */
+@keyframes mascot-eyes-open {
+  0%,
+  84.9% {
+    opacity: 1;
+  }
+  85%,
+  88.4% {
+    opacity: 0;
+  }
+  88.5%,
+  92.9% {
+    opacity: 1;
+  }
+  93%,
+  95.4% {
+    opacity: 0;
+  }
+  95.5%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes mascot-eyes-shut {
+  0%,
+  84.9% {
+    opacity: 0;
+  }
+  85%,
+  88.4% {
+    opacity: 1;
+  }
+  88.5%,
+  92.9% {
+    opacity: 0;
+  }
+  93%,
+  95.4% {
+    opacity: 1;
+  }
+  95.5%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── Working ─────────────────────────────────────────────────────────────
+   It reads across the work: the head sweeps one way and back, the eyes lead
+   the sweep, and underneath it all is a fast peck. The sweep is the point —
+   a body held at a fixed lean is a body that looks stuck, not busy. */
+.mascot-working {
+  --band: var(--moon);
+  --ink: var(--pine-1);
+}
+
+/* The one state whose display is lit in near-white, which is barely a step
+   from the body's grey. Dropping the body to the dim grey buys that step
+   back, so the lit band still reads as lit at 24px. */
+.mascot-working .mascot-skin {
+  fill: var(--moss-dim);
+}
+
+.mascot-working .mascot-tilt {
+  animation: mascot-sweep 2.8s ease-in-out infinite;
+}
+
+.mascot-working .mascot-breath {
+  animation: mascot-peck 0.34s steps(2) infinite;
+}
+
+.mascot-working .mascot-eyes {
+  animation: mascot-scan 2.8s ease-in-out infinite;
+}
+
+@keyframes mascot-sweep {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(6deg);
+  }
+}
+
+@keyframes mascot-scan {
+  0%,
+  100% {
+    transform: translateX(-1.6px);
+  }
+  46%,
+  54% {
+    transform: translateX(1.6px);
+  }
+}
+
+@keyframes mascot-peck {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-0.8px);
+  }
+}
+
+/* ── Done ────────────────────────────────────────────────────────────────
+   One hop, eyes squeezed shut, a grin — and then it settles and stops. */
+.mascot-success {
+  --band: var(--band-lit-green);
+}
+
+.mascot-success .mascot-tilt {
+  animation: mascot-hop 780ms cubic-bezier(0.2, 1.1, 0.35, 1) both;
+}
+
+.mascot-success .mascot-breath {
+  animation: mascot-stretch 780ms cubic-bezier(0.2, 1.1, 0.35, 1) both;
+}
+
+.mascot-success .mascot-eyes {
+  animation: mascot-squeeze 780ms ease-out both;
+}
+
+.mascot-success .mascot-mouth {
+  animation: mascot-grin 780ms cubic-bezier(0.2, 1.1, 0.35, 1) both;
+}
+
+@keyframes mascot-hop {
+  0% {
+    transform: translateY(0);
+  }
+  34% {
+    transform: translateY(-4.5px);
+  }
+  70%,
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes mascot-stretch {
+  0% {
+    transform: scale(1);
+  }
+  24% {
+    transform: scale(0.94, 1.09);
+  }
+  56% {
+    transform: scale(1.04, 0.96);
+  }
+  80%,
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mascot-squeeze {
+  0% {
+    transform: scaleY(1);
+  }
+  30% {
+    transform: scaleY(0.66);
+  }
+  70%,
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes mascot-grin {
+  0% {
+    transform: scale(0.8);
+  }
+  36% {
+    transform: scale(1.22, 1.3);
+  }
+  72%,
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ── Waiting on you ──────────────────────────────────────────────────────
+   Amber, not red: it is a question, not a failure — and when one colour said
+   both, the colour stopped meaning either. The one state that has to still be
+   findable ten minutes after it happened, so the one state where nothing ever
+   stops: it rocks foot to foot, looks round the room for you, and the band
+   glows on a slow beat. */
+.mascot-blocked {
+  --band: var(--band-lit-amber);
+}
+
+.mascot-blocked .mascot-visor {
+  animation: mascot-glow 1.9s ease-in-out infinite;
+}
+
+.mascot-blocked .mascot-tilt {
+  animation: mascot-rock 2.6s ease-in-out infinite;
+}
+
+.mascot-blocked .mascot-breath {
+  animation: mascot-breathe 2.2s ease-in-out infinite;
+}
+
+.mascot-blocked .mascot-eyes {
+  animation: mascot-look 3.8s ease-in-out infinite;
+}
+
+.mascot-blocked .mascot-open {
+  animation: mascot-eyes-open 3.8s linear infinite;
+}
+
+.mascot-blocked .mascot-shut {
+  animation: mascot-eyes-shut 3.8s linear infinite;
+}
+
+.mascot-blocked .mascot-mouth {
+  animation: mascot-hum 2.2s ease-in-out infinite;
+}
+
+@keyframes mascot-rock {
+  0%,
+  100% {
+    transform: rotate(7deg);
+  }
+  50% {
+    transform: rotate(-7deg);
+  }
+}
+
+@keyframes mascot-look {
+  0%,
+  10% {
+    transform: translate(0, 0);
+  }
+  24%,
+  38% {
+    transform: translate(1.6px, -0.5px);
+  }
+  52%,
+  66% {
+    transform: translate(-1.6px, -0.5px);
+  }
+  80%,
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes mascot-hum {
+  0%,
+  100% {
+    transform: scale(0.86);
+  }
+  22% {
+    transform: scale(1.2);
+  }
+}
+
+@keyframes mascot-glow {
+  0%,
+  100% {
+    fill: var(--band-lit-amber);
+  }
+  50% {
+    fill: #b56d1f;
+  }
+}
+
+/* ── Failed ──────────────────────────────────────────────────────────────
+   A flinch, and then it stays where it landed: tipped over, eyes wide, and
+   perfectly still. */
+.mascot-error {
+  --band: var(--band-lit-red);
+}
+
+.mascot-error .mascot-tilt {
+  animation: mascot-slump 820ms ease-out both;
+}
+
+.mascot-error .mascot-eyes {
+  animation: mascot-startle 820ms ease-out both;
+}
+
+.mascot-error .mascot-mouth {
+  animation: mascot-quiver 820ms ease-out both;
+}
+
+@keyframes mascot-slump {
+  0% {
+    transform: rotate(0) translateY(0);
+  }
+  16%,
+  40% {
+    transform: rotate(-4deg) translateY(0.4px);
+  }
+  28%,
+  52% {
+    transform: rotate(4deg) translateY(0.4px);
+  }
+  80%,
+  100% {
+    transform: rotate(-9deg) translateY(1.6px);
+  }
+}
+
+@keyframes mascot-startle {
+  0% {
+    transform: scale(0.7);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mascot-quiver {
+  0%,
+  10% {
+    transform: translateX(0);
+  }
+  24%,
+  48% {
+    transform: translateX(-0.9px);
+  }
+  36%,
+  60% {
+    transform: translateX(0.9px);
+  }
+  76%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Without motion the five states are told apart by whether the display is
+   lit, what colour it is lit in, and the eyes and mouth on it — which is why every state got its own face rather
+   than one face and five dances. */
+@media (prefers-reduced-motion: reduce) {
+  .mascot * {
+    animation: none !important;
+  }
+
+  .mascot-shut {
+    opacity: 0;
+  }
+}

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { accessSync, chmodSync, constants, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -22,6 +23,33 @@ const MAX_PER_WORKTREE = 12;
 const KEEP_EXITED = 6;
 /** How long a hung-up shell is given to go before it is killed outright. */
 const GOODBYE_MS = 500;
+/**
+ * Process groups remembered per run, at most.
+ *
+ * Only a bound on the worst case — a day of opening and closing terminals
+ * shouldn't grow a list forever — and the oldest go first, being the ones
+ * least likely to still be running anything.
+ */
+const REMEMBERED_GROUPS = 256;
+/**
+ * How often to look at what the live shells have started.
+ *
+ * A job's process group can only be found while something still points at it,
+ * and once the shell exits its children reparent to init and the trail is
+ * gone. So the tree is read while it is still a tree. Ten seconds is far
+ * inside the lifetime of anything worth catching — a dev server, a watch
+ * build — and one `ps` at that rate costs nothing measurable.
+ */
+const SAMPLE_MS = 10_000;
+/**
+ * How long after a command is entered to go looking for what it started.
+ *
+ * Pressing return is the one moment worth watching: it is when a job appears,
+ * and a second is long enough for `pnpm dev` to have become a process group
+ * and short enough that nobody could have exited the shell yet. Debounced, so
+ * holding return down is still one `ps`.
+ */
+const HARVEST_DEBOUNCE_MS = 1000;
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
@@ -44,6 +72,33 @@ interface Session {
   seq: number;
   pending: string;
   timer: NodeJS.Timeout | null;
+  /**
+   * Every process group seen under this terminal, the shell's own included.
+   *
+   * One group is not enough. An interactive shell gives each job a group of
+   * its own, so the shell's group holds the shell and almost nothing else —
+   * signalling only that reaches the prompt and leaves the dev server it was
+   * running perfectly untouched.
+   */
+  groups: Set<number>;
+  /**
+   * The pty's own terminal, as `ps` names it — `ttys004` and the like.
+   *
+   * The one identifier that holds. A process group can only be found by
+   * walking down from the shell, and that walk stops working the moment the
+   * shell exits and its children are reparented to init. The controlling
+   * terminal they were started on is carried by every one of them, reparented
+   * or not, for as long as they run.
+   */
+  tty: string | null;
+}
+
+/** A row of the process table, as much of it as any of this needs. */
+interface Proc {
+  pid: number;
+  ppid: number;
+  pgid: number;
+  tty: string;
 }
 
 /**
@@ -85,6 +140,26 @@ function defaultShell(configured: string): string {
 export class TerminalService {
   private sessions = new Map<string, Session>();
   private helperReady = false;
+  /**
+   * Every process group Sylva has started a shell in, this run.
+   *
+   * The session map is not enough to find them by. A terminal that exits is
+   * kept only until `reapExited` needs the room, and closing one drops it at
+   * once — but neither says anything about what the shell had running, which
+   * carries on in that group with its parent gone and no terminal attached.
+   * Once the session is forgotten there is nothing left in Sylva that knows
+   * the group existed, and nothing in Activity Monitor that says it came from
+   * a worktree. So the numbers outlive the sessions, and `closeAll` sweeps
+   * them: whatever else it does, Sylva doesn't leave its children behind.
+   *
+   * Group ids are pids, and pids are eventually reused. A number here can in
+   * principle come to mean some unrelated group by the time we sweep it. The
+   * window is one Sylva run against the whole pid space, and the alternative
+   * is leaving gigabytes running, so it is left at that.
+   */
+  private spawnedGroups = new Set<number>();
+  private sampler: NodeJS.Timeout | null = null;
+  private harvestTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private store: Store,
@@ -181,8 +256,13 @@ export class TerminalService {
       seq: 0,
       pending: "",
       timer: null,
+      groups: new Set([pty.pid]),
+      tty: null,
     };
     this.sessions.set(session.info.id, session);
+    this.remember(pty.pid);
+    this.startSampling();
+    this.scheduleHarvest();
 
     pty.onData((data) => this.ingest(session, data));
     pty.onExit(({ exitCode, signal }) => {
@@ -198,13 +278,20 @@ export class TerminalService {
       // would reach only a shell without job control — every interactive one
       // puts each job in a group of its own — while breaking a rule every
       // terminal on this machine keeps.
+      //
+      // Left behind for now, that is. The group is remembered in
+      // `spawnedGroups`, so what the shell left running outlives the terminal
+      // but not Sylva.
       this.hub.broadcast({ type: "terminal.state", info: { ...session.info } });
     });
 
     // Typed rather than passed as argv: the point of the Run button is that you
     // end up in a shell that has run it, with its history and its cwd, and can
     // then type the next thing.
-    if (command) pty.write(`${command}\r`);
+    if (command) {
+      pty.write(`${command}\r`);
+      this.scheduleHarvest();
+    }
 
     this.hub.broadcast({ type: "terminal.state", info: { ...session.info } });
     return session.info;
@@ -220,7 +307,10 @@ export class TerminalService {
 
   write(terminalId: string, data: string): void {
     const session = this.sessions.get(terminalId);
-    session?.pty?.write(data);
+    if (!session?.pty) return;
+    session.pty.write(data);
+    // Something was entered — in a moment there may be a job to take note of.
+    if (data.includes("\r") || data.includes("\n")) this.scheduleHarvest();
   }
 
   resize(terminalId: string, cols: number, rows: number): void {
@@ -311,17 +401,34 @@ export class TerminalService {
    * instant the signals were sent and the process exited a moment later. So
    * the groups are watched for as long as it is reasonable to hold up a
    * shutdown, and whatever is still standing is killed rather than left.
+   *
+   * Live sessions are only half of it. The expensive things — a dev server, a
+   * watch build — are exactly the ones that outlast the terminal they were
+   * typed into, and by the time Sylva stops, the session that started them is
+   * usually long forgotten. So every group this run ever spawned is swept,
+   * not just the ones still on screen.
    */
   async closeAll(): Promise<void> {
+    this.stopSampling();
+    // Everything still running under every live shell, before any of it is
+    // signalled and the tree stops being readable.
+    this.harvest();
+
     const groups: number[] = [];
     for (const session of this.sessions.values()) {
       if (session.timer) clearTimeout(session.timer);
-      const pid = session.pty?.pid;
-      const swept = this.killPty(session);
-      if (swept && pid !== undefined) groups.push(pid);
+      groups.push(...this.killPty(session));
       this.forget(session);
     }
     this.sessions.clear();
+
+    // And the ones with no session left to find them by: terminals that exited
+    // on their own, or were closed while something they started kept running.
+    // A group that is already gone refuses the signal and is skipped.
+    for (const pid of this.spawnedGroups) {
+      if (!groups.includes(pid) && sweepGroup(pid)) groups.push(pid);
+    }
+    this.spawnedGroups.clear();
     if (groups.length === 0) return;
 
     const deadline = Date.now() + GOODBYE_MS;
@@ -333,8 +440,148 @@ export class TerminalService {
     }
   }
 
+  /**
+   * Note a process group as ours, for `closeAll` to sweep later.
+   *
+   * Kept even after the group has been swept once. A sweep reaches the shell's
+   * own group, and an interactive shell puts each job in a group of its own —
+   * so the shell going quietly is no promise that what it started did, and the
+   * number is worth holding on to either way. Sweeping a group that has long
+   * since gone costs one failed signal.
+   */
+  /**
+   * Read the process table once, as pid -> ppid/pgid.
+   *
+   * Empty on anything that can't answer — Windows has no process groups to
+   * ask about, and a `ps` that fails is not a reason to fail a close.
+   */
+  private snapshot(): Proc[] {
+    if (process.platform === "win32") return [];
+    let out: string;
+    try {
+      out = execFileSync("ps", ["-Ao", "pid=,ppid=,pgid=,tty="], {
+        encoding: "utf8",
+        timeout: 2000,
+        maxBuffer: 8 * 1024 * 1024,
+      });
+    } catch {
+      return [];
+    }
+    const procs: Proc[] = [];
+    for (const line of out.split("\n")) {
+      const fields = line.trim().split(/\s+/);
+      if (fields.length < 4) continue;
+      const [pid, ppid, pgid] = fields.map(Number) as [number, number, number];
+      if (!Number.isFinite(pid) || !Number.isFinite(ppid) || !Number.isFinite(pgid)) continue;
+      procs.push({ pid, ppid, pgid, tty: fields[3] as string });
+    }
+    return procs;
+  }
+
+  /**
+   * Note the process groups under every live shell, so they can be signalled
+   * once the shell that would have named them is gone.
+   *
+   * Walks down from each pty rather than up from each process: what we have is
+   * the shell's pid, and what we want is everything descended from it however
+   * many wrappers deep — `pnpm` starting `turbo` starting `node` is three
+   * generations and three groups before anything interesting is reached.
+   */
+  private harvest(procs = this.snapshot()): void {
+    if (procs.length === 0) return;
+    const rows = new Map<number, Proc>();
+    const byTty = new Map<string, number[]>();
+    const children = new Map<number, number[]>();
+    for (const proc of procs) {
+      rows.set(proc.pid, proc);
+      const siblings = children.get(proc.ppid);
+      if (siblings) siblings.push(proc.pid);
+      else children.set(proc.ppid, [proc.pid]);
+      if (!proc.tty || proc.tty === "??" || proc.tty === "-") continue;
+      const sharing = byTty.get(proc.tty);
+      if (sharing) sharing.push(proc.pgid);
+      else byTty.set(proc.tty, [proc.pgid]);
+    }
+
+    for (const session of this.sessions.values()) {
+      const root = session.pty?.pid;
+      // A pty can take a moment to show up in the process table, so a terminal
+      // that had no tty to record at spawn gets another chance at every look.
+      if (!session.tty && root !== undefined) session.tty = rows.get(root)?.tty || null;
+
+      const found = new Set<number>(session.tty ? byTty.get(session.tty) : undefined);
+      // The tree as well as the terminal. Neither alone is enough: a job that
+      // has detached from the terminal is still a descendant, and a descendant
+      // several wrappers deep — `pnpm` starting `turbo` starting `node` — is
+      // reached faster by its terminal than by the walk.
+      if (root !== undefined) {
+        const queue = [root];
+        const seen = new Set<number>();
+        while (queue.length > 0) {
+          const pid = queue.pop() as number;
+          if (seen.has(pid)) continue;
+          seen.add(pid);
+          const pgid = rows.get(pid)?.pgid;
+          if (pgid !== undefined) found.add(pgid);
+          for (const child of children.get(pid) ?? []) queue.push(child);
+        }
+      }
+
+      for (const pgid of found) {
+        session.groups.add(pgid);
+        this.remember(pgid);
+      }
+    }
+  }
+
+  /** Look shortly, and once, however many times this is called meanwhile. */
+  private scheduleHarvest(): void {
+    if (this.harvestTimer) return;
+    this.harvestTimer = setTimeout(() => {
+      this.harvestTimer = null;
+      this.harvest();
+    }, HARVEST_DEBOUNCE_MS);
+    this.harvestTimer.unref?.();
+  }
+
+  /** Sample while there is anything to sample, and not a moment longer. */
+  private startSampling(): void {
+    if (this.sampler) return;
+    this.sampler = setInterval(() => {
+      if (this.sessions.size === 0) {
+        this.stopSampling();
+        return;
+      }
+      this.harvest();
+    }, SAMPLE_MS);
+    // Never a reason to keep the process alive.
+    this.sampler.unref?.();
+  }
+
+  private stopSampling(): void {
+    if (this.harvestTimer) {
+      clearTimeout(this.harvestTimer);
+      this.harvestTimer = null;
+    }
+    if (!this.sampler) return;
+    clearInterval(this.sampler);
+    this.sampler = null;
+  }
+
+  private remember(pid: number): void {
+    this.spawnedGroups.add(pid);
+    while (this.spawnedGroups.size > REMEMBERED_GROUPS) {
+      const oldest = this.spawnedGroups.values().next();
+      if (oldest.done) break;
+      this.spawnedGroups.delete(oldest.value);
+    }
+  }
+
   /** Drop what a terminal said. Called the moment it stops being one. */
   private forget(session: Session): void {
+    // The output is what is being forgotten. What the terminal started is not:
+    // the numbers go to `spawnedGroups`, which outlives every session.
+    for (const pgid of session.groups) this.remember(pgid);
     session.chunks.length = 0;
     session.bufferLength = 0;
     session.pending = "";
@@ -354,17 +601,22 @@ export class TerminalService {
    * terminal is supposed to clear up. The shell is a session leader, so the
    * negative pid reaches everything it started.
    */
-  private killPty(session: Session): boolean {
+  private killPty(session: Session): number[] {
     const pty = session.pty;
-    if (!pty) return false;
+    // A last look either way. The shell being gone is no reason to skip it:
+    // the terminal it was attached to still names everything it started, which
+    // is exactly the case where something was left behind.
+    this.harvest();
+    if (!pty) return [...session.groups].filter((pgid) => sweepGroup(pgid));
     session.pty = null;
-    if (sweepGroup(pty.pid)) return true;
+    const swept = [...session.groups].filter((pgid) => sweepGroup(pgid));
+    if (swept.length > 0) return swept;
     try {
       pty.kill();
     } catch {
       // Already gone; nothing left to signal.
     }
-    return false;
+    return [];
   }
 
   /**

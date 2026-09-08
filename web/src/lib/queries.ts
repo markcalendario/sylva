@@ -126,6 +126,24 @@ export function usePlanUsage() {
 }
 
 /**
+ * How hard the machine is working.
+ *
+ * Polled far harder than the plan window, because it is answering about right
+ * now — a reading a minute old would be describing a turn that has finished.
+ * The server-side cost is two counters and a `vm_stat`, and React Query stops
+ * asking entirely while the window is in the background.
+ */
+export function useMachineLoad() {
+  return useQuery({
+    queryKey: ["machine"],
+    queryFn: api.machine,
+    staleTime: 2_000,
+    refetchInterval: 4_000,
+    retry: false,
+  });
+}
+
+/**
  * Which lines of the open file differ from the last commit.
  *
  * Invalidated alongside the diff, since they are two readings of one fact — a

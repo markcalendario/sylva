@@ -34,6 +34,21 @@ const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
 /** How long to wait for an interrupted query to actually finish before moving on. */
 const SHUTDOWN_GRACE_MS = 5000;
 
+/**
+ * How long a session with nothing to do keeps its CLI process.
+ *
+ * Each one holds something like a third of a gigabyte whether or not it is
+ * thinking, and a session is per worktree — so a few worktrees left open over
+ * lunch is a gigabyte of resident memory doing nothing, which on a 16GB
+ * machine is the difference between working and swapping.
+ *
+ * Letting it go costs nothing that can be noticed: `sdkSessionId` is already
+ * persisted, `create` already passes it as `resume`, and `prompt` already
+ * stands a session back up when there isn't one. The next prompt picks the
+ * conversation up where it was, a spawn slower.
+ */
+const IDLE_RETIRE_MS = 15 * 60 * 1000;
+
 /** Resolve when the promise does, or when we've waited long enough. Never rejects. */
 async function withTimeout(promise: Promise<void> | null, ms: number): Promise<void> {
   if (!promise) return;
@@ -132,6 +147,8 @@ interface ActiveSession {
   alwaysAllow: Set<string>;
   pendingPermissions: Map<string, PendingPermission>;
   loopDone: Promise<void> | null;
+  /** Counting down to letting an idle CLI process go. Null whenever busy. */
+  idleTimer: NodeJS.Timeout | null;
   /**
    * Live background work, by task id.
    *
@@ -378,6 +395,7 @@ export class SessionManager {
     session.tasks.clear();
     session.info.backgroundTasks = [];
     this.appendEvent(session, { kind: "result", outcome: "interrupted", at: now() });
+    this.armIdleRetire(session);
     this.broadcastSession(session);
     return session.info;
   }
@@ -488,6 +506,7 @@ export class SessionManager {
       // Mark before ending: the query's own teardown persists the session, and
       // the flag is what stops it writing the record back after we delete it.
       active.cleared = true;
+      this.holdIdleRetire(active);
       if (active.q) await active.q.interrupt().catch(() => {});
       active.input.end();
       // The loop unregisters itself on the way out. Waiting for it means a
@@ -514,6 +533,7 @@ export class SessionManager {
   private async restart(worktreeId: string): Promise<void> {
     const session = this.activeByWorktree(worktreeId);
     if (!session) return;
+    this.holdIdleRetire(session);
     if (session.q) await session.q.interrupt().catch(() => {});
     session.input.end();
   }
@@ -659,6 +679,7 @@ export class SessionManager {
       alwaysAllow: new Set(),
       pendingPermissions: new Map(),
       loopDone: null,
+      idleTimer: null,
       tasks: new Map(),
       taskSetSeen: false,
       cleared: false,
@@ -717,6 +738,7 @@ export class SessionManager {
   }
 
   private dispatch(session: ActiveSession, text: string): void {
+    this.holdIdleRetire(session);
     session.info.status = "running";
     this.appendEvent(session, { kind: "user-prompt", text, at: now() });
     session.input.push({
@@ -749,6 +771,7 @@ export class SessionManager {
         pending.resolve("timeout");
       }
       session.pendingPermissions.clear();
+      this.holdIdleRetire(session);
       // The query is gone, and with it anything it had running: a background
       // task can only report back into a conversation that is still open.
       session.tasks.clear();
@@ -871,6 +894,7 @@ export class SessionManager {
           this.dispatch(session, nextPrompt.text);
         } else {
           session.info.status = "idle";
+          this.armIdleRetire(session);
           this.broadcastSession(session);
         }
         break;
@@ -1008,8 +1032,55 @@ export class SessionManager {
    */
   private markRunning(session: ActiveSession): void {
     if (session.info.status !== "idle") return;
+    this.holdIdleRetire(session);
     session.info.status = "running";
     this.broadcastSession(session);
+  }
+
+  /**
+   * Start the clock on an idle session's CLI process.
+   *
+   * `unref` so a session sitting idle is never the reason node stays up: this
+   * timer exists to release a resource, and holding the process open to wait
+   * for it would be the opposite of the point.
+   */
+  private armIdleRetire(session: ActiveSession): void {
+    this.holdIdleRetire(session);
+    if (!session.q) return;
+    session.idleTimer = setTimeout(() => this.retireIdle(session), IDLE_RETIRE_MS);
+    session.idleTimer.unref?.();
+  }
+
+  /** Stop that clock — the session has work again, or is going away. */
+  private holdIdleRetire(session: ActiveSession): void {
+    if (!session.idleTimer) return;
+    clearTimeout(session.idleTimer);
+    session.idleTimer = null;
+  }
+
+  /**
+   * Let an idle session's CLI process go.
+   *
+   * Checked again rather than trusted: the timer was set a quarter of an hour
+   * ago, and everything about the session may have changed since. A prompt
+   * queued behind a permission that has only just been answered is still work,
+   * and a session that has already been cleared and replaced is somebody
+   * else's now.
+   *
+   * Ending the input is the whole of it. The loop sees its iterator finish and
+   * runs the same teardown it runs whenever a query ends — unregistering the
+   * watchers, persisting `sdkSessionId` — so the next prompt resumes rather
+   * than starting over.
+   */
+  private retireIdle(session: ActiveSession): void {
+    session.idleTimer = null;
+    if (this.sessions.get(session.info.id) !== session) return;
+    if (session.cleared) return;
+    if (session.info.status !== "idle" && session.info.status !== "interrupted") return;
+    if (session.info.queuedPrompts.length > 0) return;
+    if (session.pendingPermissions.size > 0) return;
+    session.input.end();
+    void session.q?.interrupt().catch(() => {});
   }
 
   private broadcastSession(session: ActiveSession): void {
@@ -1035,6 +1106,7 @@ export class SessionManager {
 
   async shutdown(): Promise<void> {
     for (const session of this.sessions.values()) {
+      this.holdIdleRetire(session);
       session.input.end();
       if (session.q) await session.q.interrupt().catch(() => {});
     }

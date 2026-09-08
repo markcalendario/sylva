@@ -509,11 +509,13 @@ export function AgentPanel({ worktreeId }: { worktreeId: string }) {
 
         const store = useSylva.getState();
         const current = store.drafts[worktreeId]?.text ?? "";
-        // Labelled against the list this file is joining. A first arrival keeps
-        // its own name, which is why nothing already in the sentence has to
-        // move when one more file lands.
+        // Labelled against the list this file is joining, which setAttachments
+        // has already appended it to — so this reads the list as it now stands
+        // rather than adding the name a second time. A first arrival keeps its
+        // own name, which is why nothing already in the sentence has to move
+        // when one more file lands.
         const list = store.drafts[worktreeId]?.attachments ?? [];
-        const labels = attachmentLabels([...list.map((a) => a.name), attachment.name]);
+        const labels = attachmentLabels(list.map((a) => a.name));
         const label = labels[labels.length - 1] ?? attachment.name;
         const next = insertAtCaret(current, caretRef.current, attachmentToken(label));
         store.setDraft(worktreeId, { text: next.text });

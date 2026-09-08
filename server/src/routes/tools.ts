@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { readMachineLoad } from "../services/machine.js";
 import { killPorts, scanPorts } from "../services/ports.js";
 
 const port = z.coerce.number().int().min(1).max(65535);
@@ -41,4 +42,10 @@ export function registerToolRoutes(app: FastifyInstance): void {
     const unique = [...new Set(body.ports)];
     return { results: await killPorts(unique) };
   });
+
+  /**
+   * What the machine is doing. Sits beside the plan window in the strip: one
+   * says how much Claude you have left, the other how much laptop.
+   */
+  app.get("/api/machine", async () => readMachineLoad());
 }
