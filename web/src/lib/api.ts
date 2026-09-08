@@ -22,6 +22,7 @@ import type {
   FleetDigest,
   KillPortResult,
   LineBlame,
+  MachineLoad,
   OpenKind,
   PlanUsage,
   PortScan,
@@ -248,6 +249,8 @@ export const api = {
     request<CurrentPullRequestResponse>(`/api/worktrees/${worktreeId}/pull`),
   /** What's left of the Claude plan — shared across every pane. */
   usage: () => request<PlanUsage>("/api/usage"),
+
+  machine: () => request<MachineLoad>("/api/machine"),
   /** Which dryads touched a file, or said a thing, across every session. */
   searchTranscripts: (q: string, mode: TranscriptSearchMode) =>
     request<TranscriptSearchResponse>(

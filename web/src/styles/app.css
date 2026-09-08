@@ -6792,6 +6792,51 @@ a svg,
   color: var(--ember);
 }
 
+/* ── What the machine is doing ──────────────────────────────────────────────
+   No bar. The plan window above already spends one, and a strip with three of
+   them stops being a strip. Grey until it is the answer to "why is this slow". */
+.machine {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pad-3);
+  flex-shrink: 0;
+}
+
+/* Its own group, between the plan window and whatever worktree is open: both
+   neighbours are facts about something else. */
+.statusstrip .machine {
+  padding-right: var(--pad-4);
+  border-right: 1px solid var(--pine-3);
+}
+
+.machine-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--pad-1);
+  color: var(--moss);
+}
+
+/* The word is the label, not the number — it stays out of the way so a glance
+   lands on the digits. */
+.machine-label {
+  color: var(--moss-dim);
+  font-size: var(--text-xxs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.machine-calm {
+  color: var(--moss);
+}
+
+.machine-warn {
+  color: var(--firefly);
+}
+
+.machine-danger {
+  color: var(--ember);
+}
+
 /* ── Command palette ────────────────────────────────────────────────────────
    Deliberately the only thing on screen while it is open: it exists to be
    typed at, and anything else competing for the eye is working against it. */

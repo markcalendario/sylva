@@ -2,6 +2,7 @@ import { GitBranch } from "lucide-react";
 import { compactTokens } from "../lib/format";
 import { useWords } from "../lib/theme";
 import { useSylva } from "../state/store";
+import { MachineMeter } from "./MachineMeter";
 import { UsageMeter } from "./UsageMeter";
 
 export function StatusStrip({ onAbout }: { onAbout: () => void }) {
@@ -21,6 +22,10 @@ export function StatusStrip({ onAbout }: { onAbout: () => void }) {
           looking — so it leads the strip rather than trailing off the far end
           of it, where a wide window puts it half a screen from your eyes. */}
       <UsageMeter />
+
+      {/* Beside it, for the same reason: how much machine is left is true of
+          every pane at once, and it is the other half of "why is this slow". */}
+      <MachineMeter />
 
       {!worktreeId || !status ? (
         <span className="strip-item" data-tip="Open a worktree to see its git status here">

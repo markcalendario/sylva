@@ -377,6 +377,31 @@ export interface PlanUsage {
   fetchedAt: string;
 }
 
+/**
+ * How hard the machine itself is working.
+ *
+ * Sylva's whole job is running other people's processes — agents, dev servers,
+ * terminals — and it is the only window on the screen that knows how many of
+ * them are yours. When a turn goes slow the question is always the same: is
+ * Claude thinking, or is the laptop out of room? The strip answers it without
+ * a trip to Activity Monitor.
+ */
+export interface MachineLoad {
+  /** Percent of every core busy since the last reading, or null when it can't be measured. */
+  cpu: number | null;
+  /** How many cores that percentage is spread over. */
+  cores: number;
+  /**
+   * Bytes in use, counted the way the platform's own monitor counts them.
+   * Free memory is not the complement of this: an OS holding a gigabyte of
+   * cache it would hand back on request is not a machine under pressure.
+   */
+  memoryUsed: number;
+  memoryTotal: number;
+  /** When this reading was taken. */
+  sampledAt: string;
+}
+
 export interface DiffLine {
   type: "context" | "add" | "del";
   content: string;
