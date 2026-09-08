@@ -1,15 +1,24 @@
 /*
  * The professional theme.
  *
- * Black and white, and almost nothing else. Sylva's own theme spends colour
- * freely — amber for anything working, green for anything grown — which reads
- * as a workshop, and a workshop is not always what you want on a screen someone
- * else is looking at. Here the whole palette is grey, and hierarchy is carried
- * by weight and by the hairline between surfaces instead.
+ * Sylva's own theme spends colour freely — amber for anything working, green
+ * for anything grown — which reads as a workshop, and a workshop is not always
+ * what you want on a screen someone else is looking at. This one drains that
+ * out: the palette is grey, and hierarchy is carried by the step between
+ * surfaces and by the hairline between them instead of by hue.
  *
- * Three colours survive, and only where colour is carrying information no shade
- * of grey can: red for something that failed, green for a line added, red again
- * for a line deleted. A diff drained to grey is a diff you have to read twice.
+ * The greys are a slate rather than a true neutral — a few points of blue in
+ * every one of them. A dead-neutral ramp is the flattest thing a screen can
+ * show: at the dark end the steps between #0f0f0f and #1a1a1a are below what
+ * the eye reliably separates, so every panel reads as one continuous sheet and
+ * you end up hunting for edges that are technically there. The cast costs
+ * nothing — nobody looks at this and calls it blue — and it gives the surfaces
+ * somewhere to be relative to each other.
+ *
+ * Three colours survive, and only where colour is carrying information no
+ * shade of grey can: red for something that failed, green for a line added,
+ * red again for a line deleted. A diff drained to grey is a diff you have to
+ * read twice.
  *
  * Everything below is a re-statement of a name from tokens.css. There are no
  * new names and no new rules for components — anything that needed a rule here
@@ -17,46 +26,60 @@
  * the component instead.
  */
 :root[data-theme="professional"] {
-  /* surfaces — black canvas, each step up a shade lighter */
-  --pine-0: #000000; /* canvas */
-  --pine-1: #0d0d0d; /* cards, sidebar */
-  --pine-2: #1a1a1a; /* raised: hover, inputs */
-  --pine-3: #2e2e2e; /* hairline borders */
+  /*
+   * Surfaces. Four steps, and the gaps between them are roughly double what
+   * they were, because contrast compresses badly down here: two greys eight
+   * hex points apart look identical at #101010 and obviously different at
+   * #808080. The canvas is the floor and nothing else uses it, so panels have
+   * something to sit above rather than blend into.
+   */
+  --pine-0: #0b0d10; /* canvas, and sunken wells cut into a panel */
+  --pine-1: #171a1f; /* cards, sidebar, tab bars — anything that is a panel */
+  --pine-2: #232830; /* raised: hover, inputs, the selected row */
 
-  /* text */
-  --moon: #f4f4f4; /* primary */
-  --moss: #a3a3a3; /* muted */
-  --moss-dim: #6e6e6e; /* faint */
+  /*
+   * The hairline, and the reason the rest of the ramp can stay quiet. Every
+   * panel in the app already draws a 1px border in this colour, so lifting it
+   * well clear of the surfaces separates all of them at once — an edge the eye
+   * catches immediately, where a fill difference this small never would.
+   */
+  --pine-3: #3d434d;
 
-  /* The accent. White, so "this is the action" is said with brightness rather
-     than with hue, and the ink on top of it goes black. */
-  --firefly: #f4f4f4;
-  --firefly-dim: #494949;
-  --on-accent: #000000;
+  /* Text. Off-white rather than white: at these sizes on a dark ground, pure
+     white haloes, and the difference is an hour of reading. */
+  --moon: #e4e7ec; /* primary */
+  --moss: #a2aab6; /* muted */
+  --moss-dim: #737c88; /* faint */
+
+  /* The accent. Near-white, so "this is the action" is said with brightness
+     rather than with hue, and the ink on top of it goes down to the canvas. */
+  --firefly: #e4e7ec;
+  --firefly-dim: #4a515c;
+  --on-accent: #0b0d10;
 
   /* The two exceptions, held to the quietest version of themselves that still
-     reads as green and red against black. */
+     reads as green and red against slate. */
   --sapling: #5fb87a; /* success, added lines */
-  --sapling-dim: #29452f;
+  --sapling-dim: #22402b;
   --ember: #e5544b; /* error, deleted lines */
-  --ember-dim: #4d211d;
+  --ember-dim: #4a2320;
 
   /* The third exception, and for the same reason as the other two: a worktree
      waiting on you is the one state you must not miss, and there is no shade
      of grey that says "waiting" rather than "off". Held well under the red so
      the two are never mistaken for each other at a glance. */
   --waiting: #d98b3a;
-  --waiting-dim: #4a2f12;
+  --waiting-dim: #452e14;
 
   /* Links and branch names. Grey, and underlined by the app's own rules — the
      forest could spend a blue here because everything around it was green. */
-  --stream: #cfcfcf;
+  --stream: #c3cad4;
 
-  /* Bright enough to find on black, thin enough not to draw a box round the
-     whole interface as you tab through it. */
-  --focus: #9a9a9a;
+  /* Bright enough to find, thin enough not to draw a box round the whole
+     interface as you tab through it. */
+  --focus: #8d97a5;
 
-  --select-bg: #3d3d3d;
+  --select-bg: #33404f;
   --select-fg: #ffffff;
 
   /* type — Inter for the interface, JetBrains Mono for anything monospaced.
@@ -72,28 +95,30 @@
   --radius: 4px;
   --radius-lg: 6px;
 
-  --shadow-raise: 0 4px 24px rgb(0 0 0 / 0.6);
-  --scrim: rgb(0 0 0 / 0.72);
+  /* A panel is lifted by its border here, not by its shadow, so the shadow is
+     only for the things that genuinely float — dialogs, the palette. */
+  --shadow-raise: 0 8px 28px rgb(0 0 0 / 0.55);
+  --scrim: rgb(4 6 9 / 0.66);
 
   /* Terminal colours. Output that arrives already coloured — a test runner's
      pass and fail, a compiler's error — keeps red and green for exactly that
      reason; the rest of the ANSI palette collapses onto the greys, so a
      progress bar or a syntax-highlighted stack trace stops being a rainbow. */
-  --ansi-black: #1a1a1a;
+  --ansi-black: #232830;
   --ansi-red: #e5544b;
   --ansi-green: #5fb87a;
-  --ansi-yellow: #c8c8c8;
-  --ansi-blue: #9a9a9a;
-  --ansi-magenta: #b4b4b4;
-  --ansi-cyan: #a8a8a8;
-  --ansi-white: #d6d6d6;
-  --ansi-bright-black: #6e6e6e;
+  --ansi-yellow: #c5ccd6;
+  --ansi-blue: #98a2b0;
+  --ansi-magenta: #b2bac6;
+  --ansi-cyan: #a6b0bd;
+  --ansi-white: #d3d9e1;
+  --ansi-bright-black: #737c88;
   --ansi-bright-red: #ff7d75;
   --ansi-bright-green: #86d19b;
-  --ansi-bright-yellow: #e8e8e8;
-  --ansi-bright-blue: #c4c4c4;
-  --ansi-bright-magenta: #dcdcdc;
-  --ansi-bright-cyan: #d0d0d0;
+  --ansi-bright-yellow: #e4e7ec;
+  --ansi-bright-blue: #c0c8d3;
+  --ansi-bright-magenta: #d8dee6;
+  --ansi-bright-cyan: #ccd3dc;
   --ansi-bright-white: #ffffff;
 }
 
